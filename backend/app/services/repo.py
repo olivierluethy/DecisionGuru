@@ -204,6 +204,68 @@ def delete_transaction(id_: int) -> None:
     db.execute("DELETE FROM transactions WHERE id = ?", (id_,))
 
 
+# ---- account events (DEGIRO Account statement) ------------------------------
+
+def _instrument_id_for_isin(isin: str | None) -> int | None:
+    """DB-only ISIN→instrument lookup (never triggers a Yahoo resolve)."""
+    if not isin:
+        return None
+    row = db.q("SELECT id FROM instruments WHERE isin = ?").get((isin,))
+    return row["id"] if row else None
+
+
+def insert_account_event(ev: dict) -> dict:
+    isin = ev.get("isin") or None
+    instrument_id = _instrument_id_for_isin(isin)
+    db.execute(
+        "INSERT OR IGNORE INTO account_events "
+        "(date, time, valueDate, name, isin, description, type, fx, currency, amount, "
+        " balanceCurrency, balance, orderId, instrumentId, reversed, source, dedupeKey) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            ev.get("date"),
+            ev.get("time"),
+            ev.get("valueDate"),
+            ev.get("name") or None,
+            isin,
+            ev.get("description"),
+            ev.get("type") or "unknown",
+            ev.get("fx"),
+            ev.get("currency"),
+            ev.get("amount") or 0,
+            ev.get("balanceCurrency"),
+            ev.get("balance"),
+            ev.get("orderId"),
+            instrument_id,
+            1 if ev.get("reversed") else 0,
+            ev.get("source") or "import",
+            ev.get("dedupeKey"),
+        ),
+    )
+    row = db.q("SELECT * FROM account_events WHERE dedupeKey = ?").get((ev.get("dedupeKey"),))
+    return dict(row) if row else {}
+
+
+def all_account_events() -> list[dict]:
+    return [dict(r) for r in db.q("SELECT * FROM account_events ORDER BY date, time, id").all()]
+
+
+def account_events_count() -> int:
+    return db.q("SELECT COUNT(*) AS c FROM account_events").get(())["c"]
+
+
+def link_account_events_to_instruments() -> int:
+    """Backfill instrumentId on account events whose ISIN now matches an instrument.
+    Runs after either import order so dividends attach regardless of upload sequence."""
+    cur = db.execute(
+        "UPDATE account_events SET instrumentId = ("
+        "  SELECT id FROM instruments WHERE instruments.isin = account_events.isin) "
+        "WHERE instrumentId IS NULL AND isin IS NOT NULL AND isin != '' "
+        "  AND EXISTS (SELECT 1 FROM instruments WHERE instruments.isin = account_events.isin)"
+    )
+    return cur.rowcount
+
+
 # ---- notes ------------------------------------------------------------------
 
 def list_notes(target: str, target_id: int | None) -> list[dict]:

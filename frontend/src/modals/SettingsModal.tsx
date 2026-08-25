@@ -31,6 +31,19 @@ export function SettingsModal() {
     },
   });
 
+  const [confirmWipe, setConfirmWipe] = useState(false);
+  const resolveTickers = useMutation({
+    mutationFn: () => api.reresolveAll(false),
+    onSuccess: () => qc.invalidateQueries(),
+  });
+  const wipeData = useMutation({
+    mutationFn: () => api.resetData(true),
+    onSuccess: () => {
+      setConfirmWipe(false);
+      qc.invalidateQueries();
+    },
+  });
+
   if (!s) return null;
   const tax = s.tax;
   const setTax = (patch: Partial<TaxSettings>) => setS({ ...s, tax: { ...s.tax, ...patch } });
@@ -109,6 +122,47 @@ export function SettingsModal() {
               As a professional trader, realised gains would be taxed as income — the private-investor thesis no longer applies cleanly.
             </div>
           )}
+        </Group>
+
+        <Group title="Data management">
+          <div className="col-span-2 space-y-3">
+            <div className="flex items-center justify-between gap-3 bg-surface-2 rounded p-3">
+              <div>
+                <div className="text-sm text-text">Resolve tickers</div>
+                <p className="text-[11px] text-text-faint mt-0.5">
+                  Retry Yahoo lookup for instruments still missing a ticker (uses live search).
+                </p>
+              </div>
+              <button className="btn-secondary" onClick={() => resolveTickers.mutate()} disabled={resolveTickers.isPending}>
+                {resolveTickers.isPending ? 'Resolving…' : resolveTickers.isSuccess ? 'Done' : 'Resolve'}
+              </button>
+            </div>
+
+            <div className="flex items-start gap-2 text-sm border border-loss/40 rounded p-3">
+              <AlertTriangle size={16} className="shrink-0 mt-0.5 text-loss" />
+              <div className="flex-1">
+                <div className="text-text">Reset all data</div>
+                <p className="text-[11px] text-text-faint mt-0.5">
+                  Deletes every transaction, position and cached price so you can re-import from
+                  scratch. Tax settings and resolved tickers are kept. This cannot be undone.
+                </p>
+                {!confirmWipe ? (
+                  <button className="btn-danger mt-3" onClick={() => setConfirmWipe(true)}>
+                    Reset all data
+                  </button>
+                ) : (
+                  <div className="flex items-center gap-2 mt-3">
+                    <button className="btn-danger" onClick={() => wipeData.mutate()} disabled={wipeData.isPending}>
+                      {wipeData.isPending ? 'Deleting…' : 'Yes, delete everything'}
+                    </button>
+                    <button className="btn-secondary" onClick={() => setConfirmWipe(false)}>
+                      Cancel
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
         </Group>
       </div>
     </Modal>

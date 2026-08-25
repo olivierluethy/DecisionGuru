@@ -86,6 +86,7 @@ const STATUS_META: Record<
 > = {
   ok: { dot: 'bg-gain', text: 'text-text-faint', label: 'live' },
   stale: { dot: 'bg-warn', text: 'text-warn', label: 'cached' },
+  pricing: { dot: 'bg-azure animate-pulse', text: 'text-azure', label: 'pricing…' },
   unresolved: { dot: 'bg-loss', text: 'text-loss', label: 'no ticker' },
   'no-data': { dot: 'bg-warn', text: 'text-warn', label: 'no data' },
 };

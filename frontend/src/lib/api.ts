@@ -186,6 +186,10 @@ export interface PortfolioResponse {
     netDividendsCHF: number;
     absolutePLChf: number;
   };
+  /** ISO timestamp of the oldest quote among held positions ("prices as of"). */
+  quotesUpdatedAt: string | null;
+  /** True while the background pool is refreshing quotes/history. */
+  refreshInProgress: boolean;
 }
 
 export interface CompareResponse {

@@ -31,8 +31,8 @@ export interface Instrument {
 
 /** Per-instrument market-data health, surfaced as a badge in the UI. */
 export interface InstrumentDataStatus {
-  /** 'ok' | 'stale' | 'unresolved' | 'no-data' */
-  state: 'ok' | 'stale' | 'unresolved' | 'no-data';
+  /** 'ok' | 'stale' | 'pricing' | 'unresolved' | 'no-data' */
+  state: 'ok' | 'stale' | 'pricing' | 'unresolved' | 'no-data';
   resolutionSource?: string | null;
   quoteAsOf?: string | null;
   priceCoverageDays?: number | null;

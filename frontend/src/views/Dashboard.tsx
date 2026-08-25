@@ -9,6 +9,17 @@ import { BenchmarkSelect } from '../components/BenchmarkSelect';
 import { buildPortfolioExport } from '../lib/exporters';
 import { downloadExport } from '../lib/api';
 
+function timeAgo(iso: string | null): string | null {
+  if (!iso) return null;
+  const secs = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
+  if (secs < 60) return 'just now';
+  const mins = Math.round(secs / 60);
+  if (mins < 60) return `${mins} min ago`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return `${hrs} h ago`;
+  return `${Math.round(hrs / 24)} d ago`;
+}
+
 export function Dashboard() {
   const { benchmark, preTax, setPreTax, selectInstrument, openModal, compareSelection, toggleCompare, clearCompare } =
     useApp();
@@ -17,6 +28,12 @@ export function Dashboard() {
   const { data, isLoading, error } = useQuery({
     queryKey: ['portfolio', benchmark, preTax],
     queryFn: () => api.portfolio(benchmark, preTax),
+    // Poll while the background pool is refreshing prices, until they land.
+    refetchInterval: (query) => {
+      const d = query.state.data;
+      const pending = d?.refreshInProgress || d?.positions.some((p) => p.dataStatus?.state === 'pricing');
+      return pending ? 2500 : false;
+    },
   });
 
   const retryResolve = async (id: number) => {
@@ -61,6 +78,18 @@ export function Dashboard() {
         <div>
           <div className="eyebrow mb-1">Portfolio</div>
           <h1 className="font-display text-2xl font-semibold">Actual vs. ETF counterfactual</h1>
+          <div className="mt-1 flex items-center gap-1.5 text-xs text-text-faint">
+            {data.quotesUpdatedAt ? `Prices updated ${timeAgo(data.quotesUpdatedAt)}` : 'Fetching prices…'}
+            {data.refreshInProgress && (
+              <>
+                <span className="text-text-faint/50">·</span>
+                <span className="inline-flex items-center gap-1 text-azure">
+                  <span className="w-1.5 h-1.5 rounded-full bg-azure animate-pulse" />
+                  Refreshing…
+                </span>
+              </>
+            )}
+          </div>
         </div>
         <div className="flex items-center gap-3">
           <BenchmarkSelect />

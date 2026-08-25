@@ -1,0 +1,38 @@
+# dependencies
+node_modules/
+*/node_modules/
+
+# builds
+dist/
+build/
+*/dist/
+*/build/
+
+# local data (private financial data — never commit)
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+data/
+backend/data/
+uploads/
+*.db
+
+# env
+.env
+.env.local
+*.local
+
+# logs
+*.log
+npm-debug.log*
+
+# editor / os
+.DS_Store
+.vscode/
+.idea/
+*.swp
+
+# misc
+.cache/
+coverage/

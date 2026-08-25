@@ -1,5 +1,5 @@
 import type { AllocationBreakdown, AllocationSlice, HoldingSlice, Instrument } from '@decisionguru/shared';
-import { COUNTRY_COORDS, countryFromSymbol } from '@decisionguru/shared';
+import { COUNTRY_COORDS, countryFromSymbol, countryFromIsin } from '@decisionguru/shared';
 import { getFundSummary } from './marketdata.js';
 
 const SECTOR_LABELS: Record<string, string> = {
@@ -32,12 +32,16 @@ export async function buildAllocation(instrument: Instrument): Promise<Allocatio
     return buildFundAllocation(summary);
   }
 
-  // Single stock: HQ country + single holding + sector.
+  // Single stock: HQ country + single holding + sector. Prefer the reliable signals —
+  // the ISIN prefix and the stored country — over a possibly-empty Yahoo profile, so
+  // Swiss/EU companies are never defaulted to the US.
   const profile = summary?.summaryProfile ?? summary?.assetProfile ?? {};
   const countryName: string = profile.country ?? '';
+  const profileCc = Object.keys(COUNTRY_COORDS).find((k) => COUNTRY_COORDS[k].name === countryName);
   const cc =
-    Object.keys(COUNTRY_COORDS).find((k) => COUNTRY_COORDS[k].name === countryName) ??
     instrument.country ??
+    countryFromIsin(instrument.isin) ??
+    profileCc ??
     countryFromSymbol(instrument.symbol) ??
     'US';
   const sector = profile.sector ?? instrument.sector ?? 'Unknown';

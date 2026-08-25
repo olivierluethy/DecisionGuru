@@ -11,13 +11,20 @@ const coverageStmt = db.prepare(
  * Market-data health for one instrument, used to render a per-instrument badge so the UI
  * never silently shows a 0 as if it were a real value.
  */
-export function instrumentDataStatus(inst: Instrument): InstrumentDataStatus {
+export function instrumentDataStatus(
+  inst: Instrument,
+  openQuantity?: number,
+): InstrumentDataStatus {
   if (inst.unresolved || (inst.isin && inst.symbol === inst.isin)) {
     return {
       state: 'unresolved',
       resolutionSource: inst.resolutionSource ?? 'unresolved',
       message: 'No ticker resolved — value & charts unavailable. Edit the symbol or retry resolve.',
     };
+  }
+  // A fully-closed position has a definitive value of 0 — that is not "missing data".
+  if (openQuantity != null && openQuantity <= 0) {
+    return { state: 'ok', resolutionSource: inst.resolutionSource ?? null, message: 'Position closed.' };
   }
   const quote = quoteStmt.get(inst.symbol) as { price: number; fetchedAt: number } | undefined;
   const cov = coverageStmt.get(inst.symbol) as { c: number; mx: string | null };

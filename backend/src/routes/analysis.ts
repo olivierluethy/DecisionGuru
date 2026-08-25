@@ -82,6 +82,56 @@ analysisRouter.get('/dividend-shock/:id', async (req, res) => {
   });
 });
 
+// Flexible comparison: an arbitrary basket of instruments vs one or more benchmark ETFs.
+// Body: { instrumentIds: number[], benchmarks?: string[], preTax?: boolean }
+analysisRouter.post('/compare', async (req, res) => {
+  const settings = getSettings();
+  const preTax = boolParam(req.body?.preTax);
+  const ids: number[] = Array.isArray(req.body?.instrumentIds) ? req.body.instrumentIds : [];
+  const benchmarks: string[] =
+    Array.isArray(req.body?.benchmarks) && req.body.benchmarks.length
+      ? req.body.benchmarks
+      : [settings.defaultBenchmarkSymbol];
+
+  const instruments = (ids.length ? ids.map((id) => getInstrument(id)) : listInstruments())
+    .filter((i): i is NonNullable<typeof i> => !!i);
+
+  // Positions are benchmark-independent; compute once.
+  const positions = [];
+  const withTx: { inst: (typeof instruments)[number]; txs: ReturnType<typeof getTransactions> }[] = [];
+  for (const inst of instruments) {
+    const txs = getTransactions(inst.id);
+    if (!txs.length) continue;
+    withTx.push({ inst, txs });
+    positions.push((await buildPosition(inst, txs, settings.tax, preTax)).position);
+  }
+
+  const comparisons = [];
+  for (const benchmark of benchmarks) {
+    const counterfactuals = [];
+    for (const { inst, txs } of withTx) {
+      const cf = await computeCounterfactual(inst, txs, benchmark, settings, preTax);
+      counterfactuals.push({ instrumentId: inst.id, symbol: inst.symbol, name: inst.name, counterfactual: cf });
+    }
+    const aggregate = aggregateCounterfactuals(counterfactuals.map((c) => c.counterfactual));
+    comparisons.push({
+      benchmark,
+      benchmarkName:
+        settings.benchmarks.find((b: { symbol: string; name: string }) => b.symbol === benchmark)?.name ??
+        benchmark,
+      aggregate,
+      perPosition: counterfactuals,
+    });
+  }
+
+  res.json({
+    preTax,
+    instrumentIds: instruments.map((i) => i.id),
+    positions,
+    comparisons,
+  });
+});
+
 // Whole portfolio: all positions + aggregate counterfactual
 analysisRouter.get('/portfolio', async (req, res) => {
   const settings = getSettings();

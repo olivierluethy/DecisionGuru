@@ -164,7 +164,7 @@ export async function buildPosition(
     dividends: divSummary,
     priceAsOf: quote?.time ?? null,
     stale,
-    dataStatus: instrumentDataStatus(instrument),
+    dataStatus: instrumentDataStatus(instrument, openQty),
     metrics: {
       absolutePLChf,
       absolutePLChfPreTax,

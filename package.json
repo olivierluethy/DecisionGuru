@@ -1,0 +1,24 @@
+{
+  "name": "decisionguru",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Swiss tax-aware investment counterfactual analyzer — stocks vs. ETF decision engine",
+  "workspaces": [
+    "shared",
+    "backend",
+    "frontend"
+  ],
+  "scripts": {
+    "dev": "concurrently -n api,web -c blue,magenta \"npm:dev:backend\" \"npm:dev:frontend\"",
+    "dev:backend": "npm --workspace backend run dev",
+    "dev:frontend": "npm --workspace frontend run dev",
+    "build": "npm --workspace frontend run build",
+    "start": "npm --workspace backend run start"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

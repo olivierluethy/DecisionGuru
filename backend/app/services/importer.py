@@ -199,18 +199,63 @@ DEGIRO_MAPPING_DISPLAY = [
 ]
 
 
+# ---- DEGIRO Account statement (Kontoauszug) detection ------------------------
+
+# Columns 9 (mutation amount) and 11 (running balance) have BLANK headers; the file
+# also carries Valutadatum/Beschreibung/Saldo which the Transactions export lacks.
+ACCOUNT_SIGNATURE = ["datum", "valutadatum", "produkt", "isin", "beschreibung", "saldo", "orderid"]
+
+ACCOUNT_BROKER_NAME = "DeGiro — Account statement (Kontoauszug)"
+
+ACCOUNT_MAPPING_DISPLAY = [
+    {"header": "Datum", "field": "date", "note": "DD-MM-YYYY"},
+    {"header": "Uhrze", "field": "time", "note": "booking time (header typo for Uhrzeit)"},
+    {"header": "Valutadatum", "field": "valueDate"},
+    {"header": "Produkt", "field": "name", "note": "empty on pure cash/FX/fee rows"},
+    {"header": "ISIN", "field": "isin", "note": "attributes dividends to a security"},
+    {"header": "Beschreibung", "field": "description", "note": "→ normalized event type"},
+    {"header": "FX", "field": "fx", "note": "only on Währungswechsel rows"},
+    {"header": "Änderung", "field": "currency", "note": "currency of the mutation"},
+    {"header": "(blank)", "field": "amount", "note": "signed mutation amount — parsed by position"},
+    {"header": "Saldo", "field": "balanceCurrency", "note": "currency of the running balance"},
+    {"header": "(blank)", "field": "balance", "note": "running balance per currency — by position"},
+    {"header": "Order-ID", "field": "orderId", "note": "empty on cash events"},
+]
+
+
+def detect_account(raw_headers: list[str]) -> bool:
+    norm = [norm_header(h) for h in raw_headers]
+    has_all = all(sig in norm for sig in ACCOUNT_SIGNATURE)
+    idx_ander = norm.index("anderung") if "anderung" in norm else -1
+    idx_saldo = norm.index("saldo") if "saldo" in norm else -1
+    blank_after_ander = idx_ander >= 0 and (norm[idx_ander + 1] if idx_ander + 1 < len(norm) else "x") == ""
+    blank_after_saldo = idx_saldo >= 0 and (norm[idx_saldo + 1] if idx_saldo + 1 < len(norm) else "x") == ""
+    return has_all and blank_after_ander and blank_after_saldo
+
+
 # ---- parse entrypoints ------------------------------------------------------
 
+def _detect_kinds(raw_headers: list[str]) -> tuple[str | None, str | None]:
+    """Returns (detectedBroker, detectedKind). Kind ∈ 'transactions' | 'account' | None."""
+    if detect_account(raw_headers):
+        return None, "account"
+    broker = detect_broker(raw_headers)
+    return broker, ("transactions" if broker == "degiro" else None)
+
+
 def _finalize_parsed(filename: str, sheets: list[dict], encoding: str,
-                    detected_broker: str | None) -> dict:
+                    detected_broker: str | None, detected_kind: str | None = None) -> dict:
+    is_degiro_tx = detected_broker == "degiro"
+    is_account = detected_kind == "account"
     parsed = {
         "fileId": secrets.token_urlsafe(8)[:10],
         "filename": filename,
         "sheets": sheets,
         "encoding": encoding,
         "detectedBroker": detected_broker,
-        "brokerName": DEGIRO_BROKER_NAME if detected_broker == "degiro" else None,
-        "brokerMapping": DEGIRO_MAPPING_DISPLAY if detected_broker == "degiro" else None,
+        "detectedKind": detected_kind,
+        "brokerName": DEGIRO_BROKER_NAME if is_degiro_tx else (ACCOUNT_BROKER_NAME if is_account else None),
+        "brokerMapping": DEGIRO_MAPPING_DISPLAY if is_degiro_tx else (ACCOUNT_MAPPING_DISPLAY if is_account else None),
     }
     _store[parsed["fileId"]] = parsed
     return parsed
@@ -220,8 +265,8 @@ def parse_csv(file_path: str, filename: str) -> dict:
     text, encoding = decode_text(Path(file_path).read_bytes())
     rows = parse_csv_rows(text)
     sheet = build_sheet("CSV", rows)
-    detected = detect_broker(sheet["rawHeaders"])
-    return _finalize_parsed(filename, [sheet], encoding, detected)
+    broker, kind = _detect_kinds(sheet["rawHeaders"])
+    return _finalize_parsed(filename, [sheet], encoding, broker, kind)
 
 
 def parse_workbook(file_path: str, filename: str) -> dict:
@@ -235,8 +280,8 @@ def parse_workbook(file_path: str, filename: str) -> dict:
         sheet = build_sheet(name, rows)
         if sheet["rows"]:
             sheets.append(sheet)
-    detected = detect_broker(sheets[0]["rawHeaders"]) if sheets else None
-    return _finalize_parsed(filename, sheets, "binary", detected)
+    broker, kind = _detect_kinds(sheets[0]["rawHeaders"]) if sheets else (None, None)
+    return _finalize_parsed(filename, sheets, "binary", broker, kind)
 
 
 def parse_pdf(file_path: str, filename: str) -> dict:
@@ -566,4 +611,174 @@ def transform_degiro(file_id: str, sheet_name: str | None = None) -> list[dict]:
             "dedupeKey": dedupe_key,
         }
         out.append({"ok": len(errors) == 0, "errors": errors, "category": category, "label": label, "tx": tx})
+    return out
+
+
+# ---- DEGIRO Account statement dedicated transform ---------------------------
+
+_ACCOUNT_TYPE_LABELS = {
+    "deposit": "Deposit",
+    "cash_sweep": "Cash sweep",
+    "fx_conversion": "FX conversion",
+    "dividend": "Dividend",
+    "withholding_tax": "Dividend tax",
+    "corp_action_fee": "Corporate-action fee",
+    "connectivity_fee": "Connectivity fee",
+    "unknown": "Unknown",
+}
+
+
+def _classify_account_type(desc: str) -> str:
+    dl = (desc or "").strip().lower()
+    if not dl:
+        return "unknown"
+    if dl.startswith("einzahlung"):
+        return "deposit"
+    if "flatexdegiro" in dl or "cash sweep" in dl or "geldkonto" in dl:
+        return "cash_sweep"
+    if "wahrungswechsel" in dl.replace("ä", "a") or "währungswechsel" in dl:
+        return "fx_conversion"
+    # dividendensteuer must be checked before dividende (prefix collision)
+    if dl.startswith("dividendensteuer"):
+        return "withholding_tax"
+    if dl.startswith("dividende"):
+        return "dividend"
+    if "kapitalma" in dl:  # Gebühr für Kapitalmaßnahme / Kapitalmassnahme
+        return "corp_action_fee"
+    if "handelsmodalit" in dl:  # Einrichtung von Handelsmodalitäten …
+        return "connectivity_fee"
+    return "unknown"
+
+
+def _account_dt(date_iso: str | None, time_str: str) -> datetime | None:
+    if not date_iso:
+        return None
+    t = (time_str or "").strip()
+    try:
+        if re.fullmatch(r"\d{1,2}:\d{2}", t):
+            return datetime.strptime(f"{date_iso} {t}", "%Y-%m-%d %H:%M")
+        return datetime.strptime(date_iso, "%Y-%m-%d")
+    except ValueError:
+        return None
+
+
+def _minutes_apart(a: datetime | None, b: datetime | None) -> float:
+    if a is None or b is None:
+        return float("inf")
+    return abs((a - b).total_seconds()) / 60.0
+
+
+def transform_account(file_id: str, sheet_name: str | None = None) -> list[dict]:
+    """Parse a DEGIRO Account statement into normalized cash/dividend/fee events.
+
+    Columns 8 (mutation amount) and 10 (running balance) have blank headers and are
+    read BY POSITION relative to the Änderung / Saldo currency columns. Reversal
+    (storno) pairs are matched on same security + type + |amount| + currency within
+    10 minutes and flagged `reversed` so they net out.
+    """
+    file = _store.get(file_id)
+    if not file:
+        return []
+    sheet = (sheet_name and next((s for s in file["sheets"] if s["name"] == sheet_name), None)) or \
+        (file["sheets"][0] if file["sheets"] else None)
+    if not sheet:
+        return []
+
+    norm = [norm_header(h) for h in sheet["rawHeaders"]]
+
+    def at(key: str) -> int:
+        return norm.index(key) if key in norm else -1
+
+    idx_ander = at("anderung")
+    idx_saldo = at("saldo")
+    time_idx = at("uhrze")
+    if time_idx < 0:
+        time_idx = at("uhrzeit")
+    if time_idx < 0 and at("datum") >= 0:
+        time_idx = at("datum") + 1
+    idx = {
+        "date": at("datum"),
+        "time": time_idx,
+        "valueDate": at("valutadatum"),
+        "name": at("produkt"),
+        "isin": at("isin"),
+        "desc": at("beschreibung"),
+        "fx": at("fx"),
+        "currency": idx_ander,
+        "amount": idx_ander + 1 if idx_ander >= 0 else -1,
+        "balanceCurrency": idx_saldo,
+        "balance": idx_saldo + 1 if idx_saldo >= 0 else -1,
+        "orderId": at("orderid"),
+    }
+
+    def cell(row: list[str], i: int) -> str:
+        return (row[i] if 0 <= i < len(row) else "").strip() if i >= 0 else ""
+
+    events: list[dict] = []
+    for row in sheet["rows"]:
+        date_iso = parse_date(cell(row, idx["date"]), ["%d-%m-%Y"])
+        time_str = cell(row, idx["time"])
+        desc = cell(row, idx["desc"])
+        ev = {
+            "date": date_iso,
+            "time": time_str,
+            "valueDate": parse_date(cell(row, idx["valueDate"]), ["%d-%m-%Y"]),
+            "name": cell(row, idx["name"]),
+            "isin": cell(row, idx["isin"]),
+            "description": desc,
+            "type": _classify_account_type(desc),
+            "fx": parse_num(cell(row, idx["fx"])),
+            "currency": (cell(row, idx["currency"]) or "").upper() or None,
+            "amount": parse_num(cell(row, idx["amount"])) or 0.0,
+            "balanceCurrency": (cell(row, idx["balanceCurrency"]) or "").upper() or None,
+            "balance": parse_num(cell(row, idx["balance"])),
+            "orderId": cell(row, idx["orderId"]) or None,
+            "reversed": False,
+            "_dt": _account_dt(date_iso, time_str),
+        }
+        events.append(ev)
+
+    # Reversal (storno) netting: same security + type + |amount| + currency, opposite
+    # signs, within 10 minutes → flag both so they cancel (handles re-booked triples too).
+    groups: dict[tuple, list[dict]] = {}
+    for e in events:
+        skey = e["isin"] or _base_name(e["name"] or "")
+        key = (skey, e["type"], round(abs(e["amount"]), 2), e["currency"])
+        groups.setdefault(key, []).append(e)
+    for g in groups.values():
+        if len(g) < 2:
+            continue
+        pos = [e for e in g if e["amount"] > 0 and not e["reversed"]]
+        neg = [e for e in g if e["amount"] < 0 and not e["reversed"]]
+        used: set[int] = set()
+        for p in pos:
+            for i, n in enumerate(neg):
+                if i in used:
+                    continue
+                if _minutes_apart(p["_dt"], n["_dt"]) <= 10:
+                    p["reversed"] = True
+                    n["reversed"] = True
+                    used.add(i)
+                    break
+
+    out: list[dict] = []
+    for e in events:
+        errors: list[str] = []
+        if not e["date"]:
+            errors.append("Unrecognised date")
+        if e["type"] == "unknown":
+            errors.append(f"Unmapped description: {e['description'] or '(empty)'}")
+        dedupe_key = (
+            f"account:{e['date']}:{e['time']}:{e['isin']}:{e['description']}:"
+            f"{e['amount']}:{e['balance']}"
+        )
+        event = {k: v for k, v in e.items() if k != "_dt"}
+        event["dedupeKey"] = dedupe_key
+        out.append({
+            "ok": len(errors) == 0,
+            "errors": errors,
+            "type": e["type"],
+            "label": _ACCOUNT_TYPE_LABELS.get(e["type"], "Unknown"),
+            "event": event,
+        })
     return out

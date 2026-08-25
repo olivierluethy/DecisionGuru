@@ -24,7 +24,7 @@ import {
 import { DeltaChart } from '../components/DeltaChart';
 import { ProjectionChart } from '../components/ProjectionChart';
 import { Globe } from '../components/Globe';
-import { Segmented, Spinner, Stat, KindBadge, StaleDot } from '../components/ui';
+import { Segmented, Spinner, Stat, KindBadge, StaleDot, DataStatusBadge } from '../components/ui';
 import { BenchmarkSelect } from '../components/BenchmarkSelect';
 import { NotesPanel } from '../components/NotesPanel';
 import { buildPositionExport } from '../lib/exporters';
@@ -91,7 +91,17 @@ export function PositionDetail() {
           <div>
             <h1 className="font-display text-2xl font-semibold flex items-center gap-2">
               {inst.symbol}
-              <StaleDot stale={p.stale} />
+              {p.dataStatus && p.dataStatus.state !== 'ok' ? (
+                <DataStatusBadge
+                  status={p.dataStatus}
+                  onRetry={async () => {
+                    await api.reresolveInstrument(inst.id).catch(() => undefined);
+                    qc.invalidateQueries();
+                  }}
+                />
+              ) : (
+                <StaleDot stale={p.stale} />
+              )}
             </h1>
             <p className="text-sm text-text-muted">{inst.name}</p>
           </div>

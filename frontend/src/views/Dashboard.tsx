@@ -1,21 +1,27 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Download, ArrowUpRight, ArrowDownRight } from 'lucide-react';
 import { api } from '../lib/api';
 import { useApp } from '../store';
 import { fmtCHF, fmtCHFSigned, fmtPct, fmtPctSigned, plClass } from '../lib/format';
 import { DeltaChart } from '../components/DeltaChart';
-import { Segmented, Spinner, EmptyState, KindBadge, Stat } from '../components/ui';
+import { Segmented, Spinner, EmptyState, KindBadge, Stat, DataStatusBadge } from '../components/ui';
 import { BenchmarkSelect } from '../components/BenchmarkSelect';
 import { buildPortfolioExport } from '../lib/exporters';
 import { downloadExport } from '../lib/api';
 
 export function Dashboard() {
   const { benchmark, preTax, setPreTax, selectInstrument, openModal } = useApp();
+  const queryClient = useQueryClient();
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['portfolio', benchmark, preTax],
     queryFn: () => api.portfolio(benchmark, preTax),
   });
+
+  const retryResolve = async (id: number) => {
+    await api.reresolveInstrument(id).catch(() => undefined);
+    queryClient.invalidateQueries({ queryKey: ['portfolio'] });
+  };
 
   if (isLoading) return <Spinner label="Computing after-tax counterfactuals…" />;
   if (error) return <div className="text-loss p-6 text-sm">Failed to load: {(error as Error).message}</div>;
@@ -143,9 +149,12 @@ export function Dashboard() {
                     <td className="td">
                       <div className="flex items-center gap-2">
                         <KindBadge kind={p.instrument.kind} />
-                        <div>
-                          <div className="font-mono text-text">{p.instrument.symbol}</div>
-                          <div className="text-xs text-text-faint truncate max-w-[220px]">{p.instrument.name}</div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-text">{p.instrument.symbol}</span>
+                            <DataStatusBadge status={p.dataStatus} onRetry={() => retryResolve(p.instrument.id)} />
+                          </div>
+                          <div className="text-xs text-text-faint truncate max-w-[240px]">{p.instrument.name}</div>
                         </div>
                       </div>
                     </td>

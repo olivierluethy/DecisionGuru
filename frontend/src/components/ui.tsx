@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { Loader2 } from 'lucide-react';
 import clsx from 'clsx';
+import type { InstrumentDataStatus } from '@decisionguru/shared';
 
 export function Stat({
   label,
@@ -75,6 +76,54 @@ export function StaleDot({ stale, asOf }: { stale?: boolean; asOf?: string | nul
     <span className="inline-flex items-center gap-1.5 text-[11px] text-text-faint">
       <span className={clsx('w-1.5 h-1.5 rounded-full', stale ? 'bg-warn' : 'bg-gain')} />
       {stale ? 'cached' : 'live'}
+    </span>
+  );
+}
+
+const STATUS_META: Record<
+  InstrumentDataStatus['state'],
+  { dot: string; text: string; label: string }
+> = {
+  ok: { dot: 'bg-gain', text: 'text-text-faint', label: 'live' },
+  stale: { dot: 'bg-warn', text: 'text-warn', label: 'cached' },
+  unresolved: { dot: 'bg-loss', text: 'text-loss', label: 'no ticker' },
+  'no-data': { dot: 'bg-warn', text: 'text-warn', label: 'no data' },
+};
+
+/**
+ * Per-instrument market-data health. Never let a 0 read as a real value: an unresolved
+ * or dataless instrument shows an explicit badge (with the reason on hover) instead.
+ */
+export function DataStatusBadge({
+  status,
+  showOk = false,
+  onRetry,
+}: {
+  status?: InstrumentDataStatus | null;
+  showOk?: boolean;
+  onRetry?: () => void;
+}) {
+  if (!status) return null;
+  if (status.state === 'ok' && !showOk) return null;
+  const m = STATUS_META[status.state];
+  return (
+    <span
+      className={clsx('inline-flex items-center gap-1.5 text-[11px]', m.text)}
+      title={status.message ?? undefined}
+    >
+      <span className={clsx('w-1.5 h-1.5 rounded-full', m.dot)} />
+      {m.label}
+      {status.state === 'unresolved' && onRetry && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onRetry();
+          }}
+          className="underline underline-offset-2 hover:text-azure"
+        >
+          retry
+        </button>
+      )}
     </span>
   );
 }

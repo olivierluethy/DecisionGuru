@@ -15,6 +15,7 @@ import type {
   ParsedFile,
   ImportMapping,
   ImportPreviewRow,
+  InstrumentDataStatus,
 } from '@decisionguru/shared';
 
 const BASE = '/api';
@@ -56,6 +57,14 @@ export const api = {
   updateInstrument: (id: number, patch: Partial<Instrument>) =>
     req<Instrument>(`/instruments/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
   deleteInstrument: (id: number) => req<{ ok: true }>(`/instruments/${id}`, { method: 'DELETE' }),
+  instrumentStatus: (id: number) => req<InstrumentDataStatus>(`/instruments/${id}/status`),
+  reresolveInstrument: (id: number) =>
+    req<Instrument>(`/instruments/${id}/reresolve`, { method: 'POST', body: JSON.stringify({}) }),
+  reresolveAll: (offline = false) =>
+    req<{ attempted: number; results: unknown[] }>('/instruments/reresolve-all', {
+      method: 'POST',
+      body: JSON.stringify({ offline }),
+    }),
   getTransactions: (id: number) => req<Transaction[]>(`/instruments/${id}/transactions`),
   addManual: (body: Record<string, unknown>) =>
     req<{ instrument: Instrument; transaction: Transaction; derivedPrice: number }>('/instruments/manual', {
@@ -99,6 +108,18 @@ export const api = {
     req<PortfolioResponse>(
       `/analysis/portfolio?preTax=${preTax}${benchmark ? `&benchmark=${benchmark}` : ''}`,
     ),
+  compare: (instrumentIds: number[], benchmarks: string[], preTax = false) =>
+    req<CompareResponse>('/analysis/compare', {
+      method: 'POST',
+      body: JSON.stringify({ instrumentIds, benchmarks, preTax }),
+    }),
+
+  // data management
+  resetData: (keepResolutions = true) =>
+    req<{ ok: true; cleared: string[]; keptResolutions: boolean }>('/data/reset', {
+      method: 'POST',
+      body: JSON.stringify({ keepResolutions }),
+    }),
 
   // market
   allocation: (instrumentId: number) => req<AllocationBreakdown>(`/market/allocation/${instrumentId}`),
@@ -165,6 +186,24 @@ export interface PortfolioResponse {
     netDividendsCHF: number;
     absolutePLChf: number;
   };
+}
+
+export interface CompareResponse {
+  preTax: boolean;
+  instrumentIds: number[];
+  positions: Position[];
+  comparisons: Array<{
+    benchmark: string;
+    benchmarkName: string;
+    aggregate: {
+      actualValueCHF: number;
+      counterfactualValueCHF: number;
+      deltaCHF: number;
+      deltaPct: number;
+      series: CounterfactualResult['series'];
+    };
+    perPosition: Array<{ instrumentId: number; symbol: string; name?: string; counterfactual: CounterfactualResult }>;
+  }>;
 }
 
 /** POST a JSON body and stream the response as a file download. */

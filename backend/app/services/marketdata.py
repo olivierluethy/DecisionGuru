@@ -15,7 +15,7 @@ from . import refresh
 from ..core import db
 from ..core.config import settings
 from ..core.logging import get_logger
-from ..core.timefmt import iso_from_ms, iso_now
+from ..core.timefmt import iso_from_ms
 from ..providers.yfinance_provider import provider
 
 log = get_logger("marketdata")

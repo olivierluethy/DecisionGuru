@@ -134,6 +134,34 @@ CREATE TABLE IF NOT EXISTS symbol_map (
   source TEXT,
   resolvedAt INTEGER NOT NULL
 );
+
+-- DEGIRO Account statement (Kontoauszug) events: cash movements, dividends,
+-- taxes, fees, deposits, FX conversions. Separate from `transactions` (positions).
+-- instrumentId has NO foreign-key constraint so an account import never fails when
+-- the matching position hasn't been imported yet; it is backfilled on ISIN later.
+CREATE TABLE IF NOT EXISTS account_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  date TEXT NOT NULL,
+  time TEXT,
+  valueDate TEXT,
+  name TEXT,
+  isin TEXT,
+  description TEXT,
+  type TEXT NOT NULL,
+  fx REAL,
+  currency TEXT,
+  amount REAL NOT NULL DEFAULT 0,
+  balanceCurrency TEXT,
+  balance REAL,
+  orderId TEXT,
+  instrumentId INTEGER,
+  reversed INTEGER NOT NULL DEFAULT 0,
+  source TEXT,
+  dedupeKey TEXT,
+  createdAt TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_account_dedupe ON account_events(dedupeKey) WHERE dedupeKey IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_account_isin ON account_events(isin);
 """
 
 _lock = threading.RLock()

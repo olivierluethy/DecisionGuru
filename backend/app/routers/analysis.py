@@ -10,6 +10,7 @@ from ..services.analytics import aggregate_counterfactuals
 from ..services.counterfactual import compute_counterfactual
 from ..services.finance import build_position
 from ..services.projection import benchmark_cagr, compute_break_even, project_hold_vs_etf
+from ..services.whatif import compute_whatif_sale
 from ._util import bool_param
 
 router = APIRouter()
@@ -77,6 +78,28 @@ async def projection(instrument_id: int, benchmark: str | None = None, years: fl
         stock_c = stockCagr if stockCagr is not None else (built["position"]["metrics"]["cagr"] or etf_c)
         result = project_hold_vs_etf(built["position"]["currentValueCHF"] or 0, stock_c, etf_c, years)
         return {**result, "benchmark": bench}
+
+    return await run_in_threadpool(_work)
+
+
+@router.get("/whatif/{instrument_id}")
+async def whatif_sale(instrument_id: int, benchmark: str | None = None,
+                      saleDate: str | None = None, salePrice: float | None = None,
+                      reinvestAmount: float | None = None, preTax: str = "false",
+                      years: float = 5) -> dict:
+    inst = repo.get_instrument(instrument_id)
+    if not inst:
+        raise ApiError("Instrument not found", 404)
+    settings = get_settings()
+    bench = benchmark or settings["defaultBenchmarkSymbol"]
+    pre_tax = bool_param(preTax)
+
+    def _work() -> dict:
+        return compute_whatif_sale(
+            inst, repo.get_transactions(inst["id"]), bench, settings,
+            sale_date=saleDate, sale_price=salePrice,
+            reinvest_amount_chf=reinvestAmount, pre_tax=pre_tax, forward_years=years,
+        )
 
     return await run_in_threadpool(_work)
 

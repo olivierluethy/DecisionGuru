@@ -18,8 +18,12 @@ lets you draw conclusions. A persistent "Not financial advice" note is shown thr
 - **Swiss tax model** — capital gains tax-free; dividends (incl. the income component of
   *accumulating* ETFs) taxed at your marginal rate; withholding-tax reclaim; wealth tax.
   Fully configurable; pre-tax / after-tax toggle everywhere. See `docs/TAX-MODEL.md`.
-- **Generic importer** — upload XLS/XLSX/CSV/PDF, map columns to canonical fields in a
-  modal, preview, dedupe, commit. Adapts to any broker; presets can be saved.
+- **Importer** — **DeGiro is a first-class, auto-detected preset**: drop the `Transactions`
+  CSV export and it's fingerprinted, encoding-corrected (UTF-8/Windows-1252), and mapped
+  automatically (signed quantity → buy/sell, the two empty currency columns bound, quoted
+  product names parsed, corporate actions — ISIN changes / class swaps / delistings —
+  labelled and excluded from P/L). Any other XLS/XLSX/CSV/PDF falls back to the generic
+  column-mapping modal with preview, dedupe and savable presets.
 - **Manual entry** — add a position with just ticker + date + amount (price auto-derived).
 - **Break-even, 5-year projections, dividend-shock** scenarios with adjustable sliders.
 - **Scenario workbench** — single stock, bundled baskets, or whole-portfolio

@@ -2,6 +2,14 @@
 node_modules/
 */node_modules/
 
+# python
+.venv/
+*/.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+
 # builds
 dist/
 build/

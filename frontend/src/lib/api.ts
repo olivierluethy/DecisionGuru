@@ -132,12 +132,12 @@ export const api = {
     return res.json();
   },
   previewImport: (mapping: ImportMapping) =>
-    req<{ rows: ImportPreviewRow[]; okCount: number; total: number }>('/imports/preview', {
-      method: 'POST',
-      body: JSON.stringify(mapping),
-    }),
+    req<{ rows: ImportPreviewRow[]; okCount: number; total: number; trades: number; corporateActions: number }>(
+      '/imports/preview',
+      { method: 'POST', body: JSON.stringify(mapping) },
+    ),
   commitImport: (mapping: ImportMapping) =>
-    req<{ imported: number; skipped: number; instruments: number[] }>('/imports/commit', {
+    req<{ imported: number; skipped: number; corporateActions: number; instruments: number[] }>('/imports/commit', {
       method: 'POST',
       body: JSON.stringify(mapping),
     }),

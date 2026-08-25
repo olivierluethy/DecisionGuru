@@ -17,6 +17,8 @@ import type {
   ImportMapping,
   ImportPreviewRow,
   InstrumentDataStatus,
+  RangeKey,
+  RangeSeries,
 } from '@decisionguru/shared';
 
 const BASE = '/api';
@@ -129,6 +131,10 @@ export const api = {
     req<PortfolioResponse>(
       `/analysis/portfolio?preTax=${preTax}${benchmark ? `&benchmark=${benchmark}` : ''}`,
     ),
+  portfolioSeries: (range: RangeKey = '1Y') =>
+    req<RangeSeries>(`/analysis/portfolio/series?range=${range}`),
+  instrumentSeries: (id: number, range: RangeKey = '1Y') =>
+    req<RangeSeries>(`/analysis/series/${id}?range=${range}`),
   compare: (instrumentIds: number[], benchmarks: string[], preTax = false) =>
     req<CompareResponse>('/analysis/compare', {
       method: 'POST',

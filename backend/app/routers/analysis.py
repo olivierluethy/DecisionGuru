@@ -11,6 +11,7 @@ from ..services import refresh, repo
 from ..services.analytics import aggregate_counterfactuals
 from ..services.counterfactual import compute_counterfactual
 from ..services.finance import build_position
+from ..services.history import instrument_series, portfolio_series
 from ..services.projection import benchmark_cagr, compute_break_even, project_hold_vs_etf
 from ..services.whatif import compute_whatif_sale
 from ._util import bool_param
@@ -194,6 +195,18 @@ async def compare(request: Request) -> dict:
         }
 
     return await run_in_threadpool(_work)
+
+
+@router.get("/portfolio/series")
+async def portfolio_value_series(range: str = "1Y") -> dict:
+    return await run_in_threadpool(portfolio_series, range)
+
+
+@router.get("/series/{instrument_id}")
+async def instrument_value_series(instrument_id: int, range: str = "1Y") -> dict:
+    if not repo.get_instrument(instrument_id):
+        raise ApiError("Instrument not found", 404)
+    return await run_in_threadpool(instrument_series, instrument_id, range)
 
 
 @router.get("/portfolio")

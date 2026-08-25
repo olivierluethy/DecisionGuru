@@ -89,6 +89,24 @@ export interface Position {
   weight?: number;
 }
 
+export type RangeKey = '1D' | '30D' | '1M' | '2M' | '5M' | '6M' | '1Y' | '2Y' | '5Y' | 'MAX';
+
+export interface RangeStats {
+  high: number;
+  low: number;
+  start: number;
+  end: number;
+  changeAbs: number;
+  changePct: number | null;
+}
+
+/** A value-over-time series sliced to a range, with summary stats for the range. */
+export interface RangeSeries {
+  range: RangeKey;
+  points: Array<{ date: string; value: number }>;
+  stats: RangeStats | null;
+}
+
 /** Net dividend aggregation for one security, from the DEGIRO account statement. */
 export interface AccountDividend {
   isin: string;

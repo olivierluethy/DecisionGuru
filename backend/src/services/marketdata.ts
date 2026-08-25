@@ -57,8 +57,9 @@ export async function ensureHistory(symbol: string, from: string): Promise<void>
   if (!needsBackfill && !isStale) return;
 
   const last = lastHistoryAttempt.get(symbol) ?? 0;
-  // If we already have some coverage and tried recently, don't hammer the provider.
-  if (cov.c > 0 && Date.now() - last < HISTORY_COOLDOWN_MS) return;
+  // Don't retry a symbol within the cooldown — including zero-coverage symbols whose fetch
+  // just failed (e.g. provider rate-limiting), so one request can't fan into dozens of calls.
+  if (Date.now() - last < HISTORY_COOLDOWN_MS) return;
   lastHistoryAttempt.set(symbol, Date.now());
 
   const start = needsBackfill ? from : cov.mx ?? from;

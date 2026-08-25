@@ -271,6 +271,7 @@ async def portfolio(preTax: str = "false", benchmark: str | None = None) -> dict
         return {"benchmark": bench, "preTax": pre_tax, "positions": positions,
                 "counterfactuals": counterfactuals, "aggregate": aggregate, "totals": totals,
                 "cash": cash,
+                "accountDividends": sorted(div_by_isin.values(), key=lambda d: -d["netCHF"]),
                 "hasPositions": bool(positions),
                 "hasAccount": bool(events),
                 "unknownEvents": acct.events_summary(events)["unknownCount"],

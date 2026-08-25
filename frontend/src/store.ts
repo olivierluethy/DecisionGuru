@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-export type View = 'dashboard' | 'position' | 'scenarios';
+export type View = 'dashboard' | 'position' | 'scenarios' | 'advisory';
 
 export type ModalKind =
   | { kind: 'import' }
@@ -11,6 +11,7 @@ export type ModalKind =
   | { kind: 'scenario'; scenarioId?: number }
   | { kind: 'export'; context: 'portfolio' | 'position'; instrumentId?: number }
   | { kind: 'compare'; instrumentIds: number[] }
+  | { kind: 'cash-detail' }
   | null;
 
 interface AppState {

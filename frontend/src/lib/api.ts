@@ -19,6 +19,7 @@ import type {
   InstrumentDataStatus,
   RangeKey,
   RangeSeries,
+  AccountDividend,
 } from '@decisionguru/shared';
 
 const BASE = '/api';
@@ -223,6 +224,8 @@ export interface PortfolioResponse {
     totalCHF: number;
     byCurrency: Record<string, { amount: number; chf: number }>;
   };
+  /** Net dividend history by security (from the account statement), richest first. */
+  accountDividends: AccountDividend[];
   hasPositions: boolean;
   hasAccount: boolean;
   unknownEvents: number;

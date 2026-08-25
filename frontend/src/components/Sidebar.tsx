@@ -1,9 +1,19 @@
-import { LayoutDashboard, GitCompareArrows, Upload, Plus, Settings, TrendingUpDown } from 'lucide-react';
+import {
+  LayoutDashboard,
+  GitCompareArrows,
+  Scale,
+  Sparkles,
+  Upload,
+  Plus,
+  Settings,
+  TrendingUpDown,
+} from 'lucide-react';
 import clsx from 'clsx';
 import { useApp } from '../store';
 
 const NAV = [
-  { view: 'dashboard', label: 'Portfolio', icon: LayoutDashboard },
+  { view: 'dashboard', label: 'Overview', icon: LayoutDashboard },
+  { view: 'advisory', label: 'Advisory', icon: Sparkles },
   { view: 'scenarios', label: 'Scenarios', icon: GitCompareArrows },
 ] as const;
 
@@ -19,7 +29,7 @@ export function Sidebar() {
             Decision<span className="text-azure">Guru</span>
           </span>
         </div>
-        <p className="text-[11px] text-text-faint mt-1">Stocks vs. ETF — after Swiss tax</p>
+        <p className="text-[11px] text-text-faint mt-1">Portfolio overview · after Swiss tax</p>
       </div>
 
       <nav className="p-3 flex flex-col gap-1">
@@ -40,12 +50,20 @@ export function Sidebar() {
             </button>
           );
         })}
+        {/* Comparison is a modal (secondary destination, not the landing page). */}
+        <button
+          onClick={() => openModal({ kind: 'compare', instrumentIds: [] })}
+          className="flex items-center gap-3 px-3 h-9 rounded text-sm transition-colors text-left text-text-muted hover:text-text hover:bg-surface-2/60"
+        >
+          <Scale size={16} />
+          Comparison
+        </button>
       </nav>
 
       <div className="p-3 mt-2 flex flex-col gap-2">
         <div className="eyebrow px-2 mb-1">Add data</div>
         <button className="btn-secondary w-full justify-start" onClick={() => openModal({ kind: 'import' })}>
-          <Upload size={15} /> Import history
+          <Upload size={15} /> Import data
         </button>
         <button className="btn-secondary w-full justify-start" onClick={() => openModal({ kind: 'manual-add' })}>
           <Plus size={15} /> Add position

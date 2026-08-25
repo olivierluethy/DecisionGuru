@@ -4,6 +4,7 @@ import { Sidebar } from './components/Sidebar';
 import { Dashboard } from './views/Dashboard';
 import { PositionDetail } from './views/PositionDetail';
 import { Scenarios } from './views/Scenarios';
+import { Advisory } from './views/Advisory';
 import { ModalHost } from './modals/ModalHost';
 import { useApp } from './store';
 import { api } from './lib/api';
@@ -26,6 +27,7 @@ export default function App() {
         {view === 'dashboard' && <Dashboard />}
         {view === 'position' && <PositionDetail />}
         {view === 'scenarios' && <Scenarios />}
+        {view === 'advisory' && <Advisory />}
       </main>
       <ModalHost />
     </div>

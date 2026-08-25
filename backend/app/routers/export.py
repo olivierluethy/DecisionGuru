@@ -48,7 +48,6 @@ def _build_pdf(body: dict) -> bytes:
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
-    from reportlab.lib.units import pt
     from reportlab.lib.utils import ImageReader
     from reportlab.platypus import Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
@@ -78,9 +77,9 @@ def _build_pdf(body: dict) -> bytes:
             iw, ih = reader.getSize()
             width = 500
             height = width * ih / iw if iw else 250
-            flow.append(Spacer(1, 10 * pt))
+            flow.append(Spacer(1, 10))
             flow.append(Image(io.BytesIO(raw), width=width, height=height))
-            flow.append(Spacer(1, 10 * pt))
+            flow.append(Spacer(1, 10))
         except Exception:  # noqa: BLE001
             pass
 

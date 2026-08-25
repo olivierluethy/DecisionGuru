@@ -28,7 +28,10 @@ export async function buildPosition(
   tax: TaxSettings,
   preTax = false,
 ): Promise<BuiltPosition> {
-  const sorted = [...txs].sort((a, b) => a.date.localeCompare(b.date));
+  // Corporate actions (ISIN swaps, delistings) are tracked but excluded from P/L.
+  const sorted = [...txs]
+    .filter((t) => t.category !== 'corporate_action')
+    .sort((a, b) => a.date.localeCompare(b.date));
 
   let openQty = 0;
   let openCostCHF = 0; // CHF basis of currently-open shares (avg cost)

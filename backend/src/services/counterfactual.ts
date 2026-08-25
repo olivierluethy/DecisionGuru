@@ -60,7 +60,10 @@ export async function computeCounterfactual(
 ): Promise<CounterfactualResult> {
   const tax = settings.tax;
   const bench = resolveBenchmark(benchmarkSymbol, settings);
-  const sorted = [...txs].sort((a, b) => a.date.localeCompare(b.date));
+  // Exclude corporate actions (swaps/delistings) from the counterfactual cash-flow mirror.
+  const sorted = [...txs]
+    .filter((t) => t.category !== 'corporate_action')
+    .sort((a, b) => a.date.localeCompare(b.date));
   const buys = sorted.filter((t) => t.action === 'buy');
   const sells = sorted.filter((t) => t.action === 'sell');
   const today = dayjs().format('YYYY-MM-DD');

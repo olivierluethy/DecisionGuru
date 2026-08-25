@@ -1,4 +1,4 @@
-import type { AppSettings, BenchmarkEtf, TaxSettings } from './types.js';
+import type { AppSettings, BenchmarkEtf, TaxSettings } from './types';
 
 export const DEFAULT_TAX_SETTINGS: TaxSettings = {
   professionalTrader: false,

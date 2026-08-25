@@ -101,4 +101,18 @@ CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
+
+-- Permanent ISIN -> Yahoo symbol resolution cache. Populated by the curated seed or a
+-- (rate-limited) Yahoo search; a resolved ISIN is never looked up again.
+CREATE TABLE IF NOT EXISTS symbol_map (
+  isin TEXT PRIMARY KEY,
+  symbol TEXT NOT NULL,
+  currency TEXT,
+  kind TEXT,
+  country TEXT,
+  name TEXT,
+  exchange TEXT,
+  source TEXT,           -- 'curated' | 'yahoo' | 'manual'
+  resolvedAt INTEGER NOT NULL
+);
 `;

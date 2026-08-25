@@ -16,6 +16,8 @@ function ensureColumn(table: string, column: string, ddl: string) {
   }
 }
 ensureColumn('transactions', 'category', "category TEXT DEFAULT 'trade'");
+ensureColumn('instruments', 'resolutionSource', 'resolutionSource TEXT');
+ensureColumn('instruments', 'unresolved', 'unresolved INTEGER DEFAULT 0');
 
 // Seed settings row if absent.
 const settingsRow = db.prepare('SELECT value FROM settings WHERE key = ?').get('app') as

@@ -1,12 +1,12 @@
 import { db } from '../db/index.js';
 import type { Instrument, Transaction, Note, Scenario } from '@decisionguru/shared';
-import { countryFromSymbol } from '@decisionguru/shared';
-import { searchSymbol, getQuote, getFundSummary } from './marketdata.js';
+import { resolveSymbol } from './resolution.js';
 
 function rowToInstrument(r: any): Instrument {
   return {
     ...r,
     allocationOverride: r.allocationOverride ? JSON.parse(r.allocationOverride) : null,
+    unresolved: !!r.unresolved,
   };
 }
 
@@ -37,8 +37,8 @@ export function allTransactions(): Transaction[] {
 export function insertInstrument(data: Partial<Instrument>): Instrument {
   const info = db
     .prepare(
-      `INSERT INTO instruments (symbol, isin, name, kind, currency, domicile, exchange, country, sector, incomeYieldOverride, allocationOverride)
-       VALUES (@symbol, @isin, @name, @kind, @currency, @domicile, @exchange, @country, @sector, @incomeYieldOverride, @allocationOverride)`,
+      `INSERT INTO instruments (symbol, isin, name, kind, currency, domicile, exchange, country, sector, incomeYieldOverride, allocationOverride, resolutionSource, unresolved)
+       VALUES (@symbol, @isin, @name, @kind, @currency, @domicile, @exchange, @country, @sector, @incomeYieldOverride, @allocationOverride, @resolutionSource, @unresolved)`,
     )
     .run({
       symbol: data.symbol,
@@ -52,6 +52,8 @@ export function insertInstrument(data: Partial<Instrument>): Instrument {
       sector: data.sector ?? null,
       incomeYieldOverride: data.incomeYieldOverride ?? null,
       allocationOverride: data.allocationOverride ? JSON.stringify(data.allocationOverride) : null,
+      resolutionSource: data.resolutionSource ?? null,
+      unresolved: data.unresolved ? 1 : 0,
     });
   return getInstrument(Number(info.lastInsertRowid))!;
 }
@@ -63,7 +65,8 @@ export function updateInstrument(id: number, patch: Partial<Instrument>): Instru
   db.prepare(
     `UPDATE instruments SET symbol=@symbol, isin=@isin, name=@name, kind=@kind, currency=@currency,
       domicile=@domicile, exchange=@exchange, country=@country, sector=@sector,
-      incomeYieldOverride=@incomeYieldOverride, allocationOverride=@allocationOverride WHERE id=@id`,
+      incomeYieldOverride=@incomeYieldOverride, allocationOverride=@allocationOverride,
+      resolutionSource=@resolutionSource, unresolved=@unresolved WHERE id=@id`,
   ).run({
     id,
     symbol: merged.symbol,
@@ -77,6 +80,8 @@ export function updateInstrument(id: number, patch: Partial<Instrument>): Instru
     sector: merged.sector ?? null,
     incomeYieldOverride: merged.incomeYieldOverride ?? null,
     allocationOverride: merged.allocationOverride ? JSON.stringify(merged.allocationOverride) : null,
+    resolutionSource: merged.resolutionSource ?? null,
+    unresolved: merged.unresolved ? 1 : 0,
   });
   return getInstrument(id);
 }
@@ -85,72 +90,68 @@ export function deleteInstrument(id: number) {
   db.prepare('DELETE FROM instruments WHERE id = ?').run(id);
 }
 
-/** Find an existing instrument by symbol/isin, or create one (enriching via Yahoo). */
+/** Find an existing instrument by isin/symbol, or create one (resolving via the tiered resolver). */
 export async function resolveInstrument(ident: {
   symbol?: string;
   isin?: string;
   name?: string;
 }): Promise<Instrument> {
-  if (ident.symbol) {
-    const bySym = getInstrumentBySymbol(ident.symbol);
-    if (bySym) return bySym;
-  }
+  // Prefer ISIN as the stable key (a broker's ISIN never changes; the symbol may).
   if (ident.isin) {
     const byIsin = db.prepare('SELECT * FROM instruments WHERE isin = ?').get(ident.isin);
     if (byIsin) return rowToInstrument(byIsin);
   }
-
-  // Try to resolve a canonical symbol from Yahoo using the best identifier we have.
-  const query = ident.symbol || ident.isin || ident.name || '';
-  let symbol = ident.symbol;
-  let kind: 'stock' | 'etf' = 'stock';
-  let currency = 'USD';
-  let name = ident.name;
-  const results = await searchSymbol(query);
-  if (results.length) {
-    const best = results[0];
-    symbol = symbol || best.symbol;
-    kind = best.kind as 'stock' | 'etf';
-    name = name || best.name;
-  }
-  if (!symbol) {
-    // fall back to a slug so the row is still creatable
-    symbol = (ident.isin || ident.name || 'UNKNOWN').replace(/\s+/g, '-').toUpperCase().slice(0, 24);
+  if (ident.symbol) {
+    const bySym = getInstrumentBySymbol(ident.symbol);
+    if (bySym) return bySym;
   }
 
-  // enrich currency/domicile/country from quote + profile
-  try {
-    const q = await getQuote(symbol);
-    currency = q.currency || currency;
-    name = name || q.name;
-  } catch {
-    /* ignore */
-  }
-  let domicile: string | null = null;
-  let country: string | null = countryFromSymbol(symbol);
-  let sector: string | null = null;
-  try {
-    const summary = await getFundSummary(symbol);
-    const profile = summary?.summaryProfile ?? summary?.assetProfile ?? {};
-    sector = profile.sector ?? null;
-    if (summary?.assetProfile?.country) country = null; // resolved later by allocation
-    if (summary?.quoteType?.quoteType === 'ETF') kind = 'etf';
-  } catch {
-    /* ignore */
-  }
-  // Heuristic domicile: US-listed bare symbols -> US; .SW -> CH; .L UCITS -> often IE
-  domicile = country;
-
+  const r = await resolveSymbol(ident);
   return insertInstrument({
-    symbol,
+    symbol: r.symbol,
     isin: ident.isin ?? null,
-    name: name ?? symbol,
-    kind,
-    currency,
-    domicile,
-    country,
-    sector,
+    name: r.name ?? ident.name ?? r.symbol,
+    kind: r.kind,
+    currency: r.currency,
+    domicile: r.country, // issuer domicile ≈ ISIN country for tax routing
+    country: r.country,
+    exchange: r.exchange ?? null,
+    resolutionSource: r.source,
+    unresolved: r.unresolved,
   });
+}
+
+/**
+ * Re-resolve one instrument's symbol/metadata. Used to repair rows imported before the
+ * resolver existed (symbol still equals the ISIN) or that were left unresolved.
+ * Preserves any user edits by only overwriting when we get a confident (non-unresolved) hit.
+ */
+export async function reresolveInstrument(id: number): Promise<Instrument | null> {
+  const inst = getInstrument(id);
+  if (!inst) return null;
+  const r = await resolveSymbol({ isin: inst.isin, name: inst.name, symbol: null });
+  if (r.unresolved) {
+    // Couldn't resolve — just flag it so the UI can show the badge; keep existing fields.
+    return updateInstrument(id, { unresolved: true, resolutionSource: 'unresolved' });
+  }
+  return updateInstrument(id, {
+    symbol: r.symbol,
+    kind: r.kind,
+    currency: r.currency,
+    domicile: r.country ?? inst.domicile,
+    country: r.country ?? inst.country,
+    exchange: r.exchange ?? inst.exchange,
+    name: inst.name || r.name || r.symbol,
+    resolutionSource: r.source,
+    unresolved: false,
+  });
+}
+
+/** Rows whose symbol was never resolved to a real ticker (symbol == ISIN or flagged). */
+export function unresolvedInstruments(): Instrument[] {
+  return listInstruments().filter(
+    (i) => i.unresolved || (i.isin && i.symbol === i.isin),
+  );
 }
 
 export function insertTransaction(

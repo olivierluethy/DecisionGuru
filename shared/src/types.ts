@@ -41,10 +41,14 @@ export interface Transaction {
   netAmount?: number | null;
   /** For dividends: withholding tax already deducted at source, tx currency. */
   withholding?: number | null;
+  /** 'trade' for ordinary buys/sells, 'corporate_action' for swaps/delistings (excluded from P/L). */
+  category?: TxCategory | null;
   note?: string | null;
   source?: string | null; // import batch / 'manual'
   createdAt: string;
 }
+
+export type TxCategory = 'trade' | 'corporate_action';
 
 /** Derived holding for an instrument given its transactions. */
 export interface Position {
@@ -257,15 +261,30 @@ export type CanonicalField =
   | 'withholding'
   | 'ignore';
 
+/** A recognised broker whose layout is auto-mapped. */
+export type DetectedBroker = 'degiro';
+
+export interface BrokerMappingRow {
+  header: string; // the broker's own column header (may be '(currency)' for the empty ones)
+  field: string; // canonical field it binds to
+  note?: string;
+}
+
 export interface ParsedFile {
   fileId: string;
   filename: string;
   sheets: ParsedSheet[];
+  /** Non-null when the file's header matches a known broker signature. */
+  detectedBroker?: DetectedBroker | null;
+  brokerName?: string; // display label, e.g. "DeGiro — Transactions export"
+  brokerMapping?: BrokerMappingRow[]; // read-only mapping to show immediately
+  encoding?: string; // 'utf-8' | 'windows-1252'
 }
 
 export interface ParsedSheet {
   name: string;
-  headers: string[];
+  headers: string[]; // display headers (empty ones renamed)
+  rawHeaders: string[]; // original headers, empty positions preserved
   rows: string[][]; // raw cell strings
   suggestedMapping: Record<string, CanonicalField>; // header -> field
 }
@@ -283,12 +302,33 @@ export interface ImportMapping {
   };
   dateFormat?: string; // hint, optional
   defaultCurrency?: Currency;
+  /** When set, the backend uses the broker's hardcoded parser instead of `mapping`. */
+  broker?: DetectedBroker;
+}
+
+/** Extra display/derivation fields carried alongside a preview row's tx. */
+export interface PreviewTx extends Partial<Transaction> {
+  symbol?: string;
+  isin?: string;
+  name?: string;
+  nativePrice?: number | null;
+  priceCurrency?: string;
+  localCurrency?: string;
+  valueCHF?: number | null;
+  totalCHF?: number | null;
+  referenceExchange?: string;
+  executionVenue?: string;
+  orderId?: string;
+  time?: string;
 }
 
 export interface ImportPreviewRow {
   ok: boolean;
   errors: string[];
-  tx: Partial<Transaction> & { symbol?: string; isin?: string; name?: string };
+  category?: TxCategory;
+  /** Human label: 'Buy' | 'Sell' | 'ISIN change' | 'Delisting' | 'Class swap' */
+  label?: string;
+  tx: PreviewTx;
 }
 
 export interface ImportPreset {

@@ -12,9 +12,12 @@ CREATE TABLE IF NOT EXISTS instruments (
   sector TEXT,
   incomeYieldOverride REAL,
   allocationOverride TEXT,
-  createdAt TEXT NOT NULL DEFAULT (datetime('now')),
-  UNIQUE(symbol)
+  resolutionSource TEXT,
+  unresolved INTEGER DEFAULT 0,
+  createdAt TEXT NOT NULL DEFAULT (datetime('now'))
 );
+-- ISIN is the stable instrument key; a corporate-action chain may share one Yahoo symbol.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_instruments_isin ON instruments(isin) WHERE isin IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS transactions (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

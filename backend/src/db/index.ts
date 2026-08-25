@@ -19,6 +19,57 @@ ensureColumn('transactions', 'category', "category TEXT DEFAULT 'trade'");
 ensureColumn('instruments', 'resolutionSource', 'resolutionSource TEXT');
 ensureColumn('instruments', 'unresolved', 'unresolved INTEGER DEFAULT 0');
 
+// Migration: the stable instrument key is the ISIN, not the Yahoo symbol. A corporate-action
+// chain (e.g. an ISIN change) legitimately maps several ISINs to one ticker, which the old
+// UNIQUE(symbol) constraint forbade. Rebuild the table keyed on ISIN when the old constraint
+// is still present.
+function symbolIsUnique(): boolean {
+  const idxs = db.prepare('PRAGMA index_list(instruments)').all() as Array<{ name: string; unique: number; origin: string }>;
+  for (const ix of idxs) {
+    if (ix.origin !== 'u' || !ix.unique) continue;
+    const cols = db.prepare(`PRAGMA index_info(${JSON.stringify(ix.name)})`).all() as Array<{ name: string }>;
+    if (cols.length === 1 && cols[0].name === 'symbol') return true;
+  }
+  return false;
+}
+
+if (symbolIsUnique()) {
+  db.pragma('foreign_keys = OFF');
+  const rebuild = db.transaction(() => {
+    db.exec(`
+      CREATE TABLE instruments_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        symbol TEXT NOT NULL,
+        isin TEXT,
+        name TEXT NOT NULL,
+        kind TEXT NOT NULL DEFAULT 'stock',
+        currency TEXT NOT NULL DEFAULT 'USD',
+        domicile TEXT,
+        exchange TEXT,
+        country TEXT,
+        sector TEXT,
+        incomeYieldOverride REAL,
+        allocationOverride TEXT,
+        resolutionSource TEXT,
+        unresolved INTEGER DEFAULT 0,
+        createdAt TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      INSERT INTO instruments_new
+        (id, symbol, isin, name, kind, currency, domicile, exchange, country, sector,
+         incomeYieldOverride, allocationOverride, resolutionSource, unresolved, createdAt)
+      SELECT id, symbol, isin, name, kind, currency, domicile, exchange, country, sector,
+         incomeYieldOverride, allocationOverride, resolutionSource, unresolved, createdAt
+      FROM instruments;
+      DROP TABLE instruments;
+      ALTER TABLE instruments_new RENAME TO instruments;
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_instruments_isin ON instruments(isin) WHERE isin IS NOT NULL;
+    `);
+  });
+  rebuild();
+  db.pragma('foreign_keys = ON');
+  console.log('[db] migrated instruments to ISIN-keyed (dropped UNIQUE(symbol))');
+}
+
 // Seed settings row if absent.
 const settingsRow = db.prepare('SELECT value FROM settings WHERE key = ?').get('app') as
   | { value: string }

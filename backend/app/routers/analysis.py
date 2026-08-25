@@ -5,7 +5,7 @@ from fastapi.concurrency import run_in_threadpool
 
 from ..core.db import get_settings
 from ..core.errors import ApiError
-from ..services import repo
+from ..services import refresh, repo
 from ..services.analytics import aggregate_counterfactuals
 from ..services.counterfactual import compute_counterfactual
 from ..services.finance import build_position
@@ -187,7 +187,14 @@ async def portfolio(preTax: str = "false", benchmark: str | None = None) -> dict
             "netDividendsCHF": sum(p["dividends"]["netAfterTaxCHF"] for p in positions),
             "absolutePLChf": sum((p["metrics"]["absolutePLChf"] or 0) for p in positions),
         }
+        # "Prices as of" = oldest quote among held positions; background refresh state
+        # lets the frontend poll until pending prices land, instead of blocking.
+        priced = [p["priceAsOf"] for p in positions
+                  if p["openQuantity"] > 0 and p.get("priceAsOf")]
+        quotes_updated_at = min(priced) if priced else None
         return {"benchmark": bench, "preTax": pre_tax, "positions": positions,
-                "counterfactuals": counterfactuals, "aggregate": aggregate, "totals": totals}
+                "counterfactuals": counterfactuals, "aggregate": aggregate, "totals": totals,
+                "quotesUpdatedAt": quotes_updated_at,
+                "refreshInProgress": refresh.refresh_in_progress()}
 
     return await run_in_threadpool(_work)

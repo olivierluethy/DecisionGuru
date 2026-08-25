@@ -29,9 +29,14 @@ def _is_rate_limited(exc: Exception) -> bool:
 
 class YFinanceProvider(MarketDataProvider):
     def __init__(self) -> None:
-        self._gate = threading.Lock()
+        # Bounded concurrency instead of a single global lock: up to yf_concurrency
+        # upstream calls run at once, so a portfolio refresh fans out in parallel
+        # instead of serializing ~39 symbols behind a 700ms gap.
+        self._gate = threading.Semaphore(settings.yf_concurrency)
         self._last_call = 0.0
-        self._timeout_pool = ThreadPoolExecutor(max_workers=4, thread_name_prefix="yf")
+        self._timeout_pool = ThreadPoolExecutor(
+            max_workers=settings.yf_concurrency, thread_name_prefix="yf"
+        )
 
     # ---- serialise + space out + retry-with-backoff + timeout ----
     def _call(self, label: str, fn):

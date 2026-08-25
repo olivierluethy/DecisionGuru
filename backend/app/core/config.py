@@ -32,7 +32,9 @@ class Settings(BaseSettings):
     db_path: str = str(DB_PATH)
 
     # Cache TTLs (seconds) — mirror the retired Node backend's CACHE_TTL_MS.
-    cache_ttl_quote: int = 15 * 60           # 15 min
+    # Quotes are served stale-while-revalidate, so a longer TTL only cuts refresh
+    # churn; the UI never blocks on expiry.
+    cache_ttl_quote: int = 60 * 60           # 1 h
     cache_ttl_history: int = 12 * 60 * 60    # 12 h
     cache_ttl_fund: int = 7 * 24 * 60 * 60   # 7 d
     cache_ttl_fx: int = 12 * 60 * 60         # 12 h
@@ -41,10 +43,13 @@ class Settings(BaseSettings):
     redis_url: str = ""
 
     # yfinance reliability knobs
-    yf_min_gap_ms: int = 700       # min spacing between upstream calls
+    yf_min_gap_ms: int = 150       # min spacing between upstream calls (politeness)
     yf_retries: int = 4            # attempts on rate-limit
     yf_timeout_s: float = 20.0
     history_cooldown_ms: int = 60 * 1000
+    # Background refresh: how many upstream fetches may run concurrently. Also the
+    # provider's concurrency gate. Kept modest to respect Yahoo rate-limiting.
+    yf_concurrency: int = 4
 
     # PySpark heavy path
     spark_enabled: bool = True

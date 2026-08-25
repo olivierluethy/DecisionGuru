@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import pandas as pd
 
+from . import refresh
 from ..core import db
 from ..core.timefmt import iso_from_ms
 
@@ -25,6 +26,14 @@ def instrument_data_status(inst: dict, open_quantity: float | None = None) -> di
     cov = db.q("SELECT COUNT(*) AS c, MAX(date) AS mx FROM price_cache WHERE symbol = ?").get((symbol,))
     has_quote = bool(quote) and quote["price"] > 0
     coverage_days = (cov["c"] if cov else 0) or 0
+
+    if not has_quote and refresh.is_quote_pending(symbol):
+        return {
+            "state": "pricing",
+            "resolutionSource": inst.get("resolutionSource"),
+            "priceCoverageDays": coverage_days,
+            "message": "Fetching latest price…",
+        }
 
     if not has_quote and not coverage_days:
         return {

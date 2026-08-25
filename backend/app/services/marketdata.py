@@ -11,6 +11,7 @@ import time
 
 import pandas as pd
 
+from . import refresh
 from ..core import db
 from ..core.config import settings
 from ..core.logging import get_logger
@@ -68,10 +69,9 @@ def ensure_history(symbol: str, from_date: str) -> None:
         _last_history_attempt[symbol] = _now_ms()
 
     start = from_date if needs_backfill else (mx or from_date)
-    try:
-        _fetch_chart(symbol, start)
-    except Exception as exc:  # noqa: BLE001
-        log.warning("history fetch failed for %s: %s", symbol, exc)
+    # Never block the request path: backfill runs in the background pool. Whatever
+    # is already cached is served now; the fresh rows land on a later poll.
+    refresh.enqueue_history(symbol, lambda: _fetch_chart(symbol, start))
 
 
 def get_history(symbol: str, from_date: str, to: str | None = None) -> list[dict]:
@@ -106,7 +106,27 @@ def get_dividends(symbol: str, from_date: str) -> list[dict]:
 
 # ---- quote ------------------------------------------------------------------
 
+def _refresh_quote(symbol: str) -> None:
+    """Fetch a fresh quote and write the cache. Runs in the background pool."""
+    q = provider.quote(symbol)
+    price = q.price if q else 0.0
+    if price and price > 0:
+        currency = (q.currency if q else "USD") or "USD"
+        name = (q.name if q else symbol) or symbol
+        db.execute(
+            "INSERT OR REPLACE INTO quote_cache (symbol, price, currency, name, fetchedAt) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (symbol, price, currency, name, _now_ms()),
+        )
+
+
 def get_quote(symbol: str) -> dict:
+    """Stale-while-revalidate: never blocks on Yahoo.
+
+    Fresh cache → served as-is. Stale cache → served immediately + background
+    refresh. No cache row → a ``pending`` sentinel + background refresh; the real
+    price lands on a later poll.
+    """
     cached = db.q("SELECT * FROM quote_cache WHERE symbol = ?").get((symbol,))
     fresh = cached and (_now_ms() - cached["fetchedAt"] < settings.cache_ttl_quote * 1000)
     if cached and fresh:
@@ -117,32 +137,17 @@ def get_quote(symbol: str) -> dict:
             "name": cached["name"],
             "time": iso_from_ms(cached["fetchedAt"]),
             "stale": False,
+            "pending": False,
         }
-    try:
-        q = provider.quote(symbol)
-        price = q.price if q else 0.0
-        currency = (q.currency if q else "USD") or "USD"
-        name = (q.name if q else symbol) or symbol
-        if price and price > 0:
-            db.execute(
-                "INSERT OR REPLACE INTO quote_cache (symbol, price, currency, name, fetchedAt) "
-                "VALUES (?, ?, ?, ?, ?)",
-                (symbol, price, currency, name, _now_ms()),
-            )
-            return {"symbol": symbol, "price": price, "currency": currency, "name": name,
-                    "time": iso_now(), "stale": False}
-        if cached:
-            return {"symbol": symbol, "price": cached["price"], "currency": cached["currency"],
-                    "name": cached["name"], "time": iso_from_ms(cached["fetchedAt"]), "stale": True}
-        return {"symbol": symbol, "price": 0, "currency": currency, "name": name,
-                "time": iso_now(), "stale": True}
-    except Exception as exc:  # noqa: BLE001
-        log.warning("quote failed for %s: %s", symbol, exc)
-        if cached:
-            return {"symbol": symbol, "price": cached["price"], "currency": cached["currency"],
-                    "name": cached["name"], "time": iso_from_ms(cached["fetchedAt"]), "stale": True}
-        return {"symbol": symbol, "price": 0, "currency": "USD", "name": symbol,
-                "time": iso_now(), "stale": True}
+
+    refresh.enqueue_quote(symbol, lambda: _refresh_quote(symbol))
+
+    if cached:
+        return {"symbol": symbol, "price": cached["price"], "currency": cached["currency"],
+                "name": cached["name"], "time": iso_from_ms(cached["fetchedAt"]),
+                "stale": True, "pending": False}
+    return {"symbol": symbol, "price": 0, "currency": "USD", "name": symbol,
+            "time": None, "stale": True, "pending": True}
 
 
 # ---- fund / instrument profile ----------------------------------------------

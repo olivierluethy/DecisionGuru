@@ -78,12 +78,14 @@ def build_position(instrument: dict, txs: list[dict], tax: dict, pre_tax: bool =
             flows_after_tax.append({"date": tx["date"], "amount": bd.netAfterTaxCHF})
             flows_pre_tax.append({"date": tx["date"], "amount": gross_chf})
 
-    # Current valuation
+    # Current valuation. A "pending" quote (no cached price yet, refresh in flight)
+    # leaves value unknown (None) rather than 0, so the row renders a pending state.
     quote = get_quote(instrument["symbol"]) if open_qty > 0 else None
+    pending = bool(quote and quote.get("pending"))
     current_price = None
     current_value_chf = None
     stale = False
-    if open_qty > 0 and quote:
+    if open_qty > 0 and quote and not pending:
         current_price = quote["price"]
         stale = quote["stale"]
         fx = get_fx_rate(quote["currency"] or instrument["currency"], "CHF", today)
@@ -148,7 +150,7 @@ def build_position(instrument: dict, txs: list[dict], tax: dict, pre_tax: bool =
         "realizedCHF": realized_chf,
         "unrealizedCHF": unrealized_chf,
         "dividends": div_summary,
-        "priceAsOf": quote["time"] if quote else None,
+        "priceAsOf": quote["time"] if (quote and not pending) else None,
         "stale": stale,
         "dataStatus": instrument_data_status(instrument, open_qty),
         "metrics": {

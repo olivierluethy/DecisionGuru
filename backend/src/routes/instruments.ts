@@ -1,0 +1,96 @@
+import { Router } from 'express';
+import dayjs from 'dayjs';
+import {
+  listInstruments,
+  getInstrument,
+  getTransactions,
+  insertInstrument,
+  updateInstrument,
+  deleteInstrument,
+  resolveInstrument,
+  insertTransaction,
+} from '../services/repo.js';
+import { searchSymbol, priceOn } from '../services/marketdata.js';
+
+export const instrumentsRouter = Router();
+
+instrumentsRouter.get('/', (_req, res) => {
+  res.json(listInstruments());
+});
+
+instrumentsRouter.get('/search', async (req, res) => {
+  const q = String(req.query.q ?? '').trim();
+  if (!q) return res.json([]);
+  res.json(await searchSymbol(q));
+});
+
+instrumentsRouter.get('/:id', (req, res) => {
+  const inst = getInstrument(Number(req.params.id));
+  if (!inst) return res.status(404).json({ error: 'Not found' });
+  res.json(inst);
+});
+
+instrumentsRouter.get('/:id/transactions', (req, res) => {
+  res.json(getTransactions(Number(req.params.id)));
+});
+
+// Create instrument explicitly (from a search pick)
+instrumentsRouter.post('/', async (req, res) => {
+  const body = req.body ?? {};
+  if (!body.symbol && !body.isin && !body.name) {
+    return res.status(400).json({ error: 'symbol, isin or name required' });
+  }
+  const inst = await resolveInstrument(body);
+  const patched = updateInstrument(inst.id, {
+    domicile: body.domicile ?? inst.domicile,
+    kind: body.kind ?? inst.kind,
+    incomeYieldOverride: body.incomeYieldOverride ?? inst.incomeYieldOverride,
+  });
+  res.json(patched ?? inst);
+});
+
+instrumentsRouter.patch('/:id', (req, res) => {
+  const updated = updateInstrument(Number(req.params.id), req.body ?? {});
+  if (!updated) return res.status(404).json({ error: 'Not found' });
+  res.json(updated);
+});
+
+instrumentsRouter.delete('/:id', (req, res) => {
+  deleteInstrument(Number(req.params.id));
+  res.json({ ok: true });
+});
+
+/**
+ * Manual position entry (no transaction history): identify instrument, then derive a
+ * single buy from either an invested amount or a number of units at a given date.
+ */
+instrumentsRouter.post('/manual', async (req, res) => {
+  const { symbol, isin, name, date, amount, units, currency, action = 'buy' } = req.body ?? {};
+  if (!date) return res.status(400).json({ error: 'date required' });
+  const inst = await resolveInstrument({ symbol, isin, name });
+  const ccy = currency || inst.currency;
+
+  const priceAtDate = await priceOn(inst.symbol, date);
+  if (priceAtDate == null) {
+    return res.status(422).json({ error: `No historical price for ${inst.symbol} near ${date}` });
+  }
+
+  let qty = units != null ? Number(units) : 0;
+  if (!qty && amount != null) {
+    // amount is given in `ccy`; derive units = amount / price
+    qty = Number(amount) / priceAtDate;
+  }
+  if (!qty || qty <= 0) return res.status(400).json({ error: 'Provide amount or units' });
+
+  const tx = insertTransaction({
+    instrumentId: inst.id,
+    action: action === 'sell' ? 'sell' : 'buy',
+    date: dayjs(date).format('YYYY-MM-DD'),
+    quantity: qty,
+    unitPrice: priceAtDate,
+    fees: 0,
+    currency: ccy,
+    source: 'manual',
+  });
+  res.json({ instrument: inst, transaction: tx, derivedPrice: priceAtDate });
+});

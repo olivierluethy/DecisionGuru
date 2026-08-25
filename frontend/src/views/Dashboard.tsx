@@ -10,7 +10,8 @@ import { buildPortfolioExport } from '../lib/exporters';
 import { downloadExport } from '../lib/api';
 
 export function Dashboard() {
-  const { benchmark, preTax, setPreTax, selectInstrument, openModal } = useApp();
+  const { benchmark, preTax, setPreTax, selectInstrument, openModal, compareSelection, toggleCompare, clearCompare } =
+    useApp();
   const queryClient = useQueryClient();
 
   const { data, isLoading, error } = useQuery({
@@ -127,6 +128,7 @@ export function Dashboard() {
           <table className="w-full text-sm">
             <thead>
               <tr>
+                <th className="th w-9"></th>
                 <th className="th">Instrument</th>
                 <th className="th text-right">Invested</th>
                 <th className="th text-right">Value</th>
@@ -143,9 +145,20 @@ export function Dashboard() {
                 return (
                   <tr
                     key={p.instrument.id}
-                    className="hover:bg-surface-2 cursor-pointer transition-colors"
+                    className={`hover:bg-surface-2 cursor-pointer transition-colors ${
+                      compareSelection.includes(p.instrument.id) ? 'bg-surface-2/60' : ''
+                    }`}
                     onClick={() => selectInstrument(p.instrument.id)}
                   >
+                    <td className="td text-center" onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        className="accent-azure align-middle"
+                        checked={compareSelection.includes(p.instrument.id)}
+                        onChange={() => toggleCompare(p.instrument.id)}
+                        aria-label={`Select ${p.instrument.symbol} for comparison`}
+                      />
+                    </td>
                     <td className="td">
                       <div className="flex items-center gap-2">
                         <KindBadge kind={p.instrument.kind} />
@@ -179,6 +192,25 @@ export function Dashboard() {
           </table>
         </div>
       </section>
+
+      {compareSelection.length > 0 && (
+        <div className="sticky bottom-4 mt-4 flex justify-center pointer-events-none">
+          <div className="pointer-events-auto flex items-center gap-3 bg-surface border border-hairline-strong rounded-lg shadow-modal px-4 py-2.5">
+            <span className="text-sm text-text-muted">
+              <span className="font-mono text-text">{compareSelection.length}</span> selected
+            </span>
+            <button
+              className="btn-primary !h-8"
+              onClick={() => openModal({ kind: 'compare', instrumentIds: compareSelection })}
+            >
+              Compare vs ETF
+            </button>
+            <button className="btn-ghost !h-8" onClick={clearCompare}>
+              Clear
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -4,11 +4,14 @@ import { ManualAddModal } from './ManualAddModal';
 import { AddTransactionModal } from './AddTransactionModal';
 import { EditInstrumentModal } from './EditInstrumentModal';
 import { SettingsModal } from './SettingsModal';
+import { CompareModal } from './CompareModal';
 
 export function ModalHost() {
   const modal = useApp((s) => s.modal);
   if (!modal) return null;
   switch (modal.kind) {
+    case 'compare':
+      return <CompareModal instrumentIds={modal.instrumentIds} />;
     case 'import':
       return <ImportModal />;
     case 'manual-add':

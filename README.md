@@ -36,17 +36,22 @@ lets you draw conclusions. A persistent "Not financial advice" note is shown thr
 ## Stack
 
 - **Frontend** React + Vite + TypeScript + Tailwind (dark mode only), Recharts, cobe, lucide.
-- **Backend** Node + Express + TypeScript, `better-sqlite3`, `yahoo-finance2`,
-  frankfurter.app (ECB FX), SheetJS, pdf-parse, exceljs, pdfmake.
-- **shared/** TypeScript types shared by both.
+- **Backend** Python 3.12 + **FastAPI** (uv-managed), served by uvicorn (dev) / gunicorn +
+  uvicorn workers (prod). Market data via **yfinance** behind a `MarketDataProvider`
+  interface; analytics on **pandas/numpy/scipy** for interactive endpoints and **PySpark**
+  for the bulk/heavy path; `sqlite3`, frankfurter.app (ECB FX), openpyxl + reportlab exports.
+- **shared/** TypeScript types shared by the frontend (the API contract lives in
+  `docs/API_CONTRACT.md`).
 
 ## Run it
 
-Requires Node ≥ 20.
+Requires **Python 3.12 + [uv](https://docs.astral.sh/uv/)** for the backend and **Node ≥ 20**
+for the frontend. See `docs/RUNNING.md` for details.
 
 ```bash
-npm install          # installs all workspaces
-npm run dev          # starts API (http://localhost:5178) + web (http://localhost:5173)
+cd backend && uv sync && cd ..   # install backend deps (creates backend/.venv)
+npm install                      # install frontend workspaces
+npm run dev                      # API (uvicorn :5178) + web (vite :5173)
 ```
 
 Then open **http://localhost:5173**. The Vite dev server proxies `/api` to the backend.
@@ -54,11 +59,12 @@ Then open **http://localhost:5173**. The Vite dev server proxies `/api` to the b
 Individually:
 
 ```bash
-npm run dev:backend   # API only
+npm run dev:backend   # FastAPI (uvicorn --reload) only
 npm run dev:frontend  # web only
 ```
 
-Production build of the web app: `npm run build` (output in `frontend/dist`).
+Interactive API docs are at **http://localhost:5178/docs**. Production build of the web app:
+`npm run build` (output in `frontend/dist`).
 
 ## Data & privacy
 

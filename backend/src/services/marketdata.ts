@@ -42,20 +42,31 @@ async function fetchChart(symbol: string, from: string) {
   );
 }
 
+// Per-symbol cooldown so one analysis (which samples many dates) never fans a single
+// stale/backfill need into dozens of upstream calls, and so a rate-limited provider is
+// retried at most once per window rather than on every sample.
+const HISTORY_COOLDOWN_MS = 60 * 1000;
+const lastHistoryAttempt = new Map<string, number>();
+
 /** Ensure price history covering `from`..today is cached. */
 export async function ensureHistory(symbol: string, from: string): Promise<void> {
   const cov = priceCoverage.get(symbol) as { mn: string | null; mx: string | null; c: number };
   const today = dayjs().format('YYYY-MM-DD');
   const needsBackfill = !cov.c || !cov.mn || dayjs(from).isBefore(dayjs(cov.mn));
   const isStale = !cov.mx || dayjs(cov.mx).isBefore(dayjs(today).subtract(3, 'day'));
-  if (needsBackfill || isStale) {
-    const start = needsBackfill ? from : cov.mx ?? from;
-    try {
-      await fetchChart(symbol, start);
-    } catch (err) {
-      // leave whatever is cached; upstream flags staleness
-      console.warn(`[marketdata] history fetch failed for ${symbol}:`, (err as Error).message);
-    }
+  if (!needsBackfill && !isStale) return;
+
+  const last = lastHistoryAttempt.get(symbol) ?? 0;
+  // If we already have some coverage and tried recently, don't hammer the provider.
+  if (cov.c > 0 && Date.now() - last < HISTORY_COOLDOWN_MS) return;
+  lastHistoryAttempt.set(symbol, Date.now());
+
+  const start = needsBackfill ? from : cov.mx ?? from;
+  try {
+    await fetchChart(symbol, start);
+  } catch (err) {
+    // leave whatever is cached; upstream flags staleness
+    console.warn(`[marketdata] history fetch failed for ${symbol}:`, (err as Error).message);
   }
 }
 

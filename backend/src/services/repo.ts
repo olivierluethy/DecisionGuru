@@ -153,7 +153,9 @@ export async function resolveInstrument(ident: {
   });
 }
 
-export function insertTransaction(tx: Partial<Transaction> & { instrumentId: number }): Transaction {
+export function insertTransaction(
+  tx: Partial<Transaction> & { instrumentId: number; dedupeKey?: string },
+): Transaction {
   const dedupeKey = tx.dedupeKey ?? makeDedupeKey(tx);
   const info = db
     .prepare(
@@ -178,7 +180,9 @@ export function insertTransaction(tx: Partial<Transaction> & { instrumentId: num
   return db.prepare('SELECT * FROM transactions WHERE id = ?').get(Number(info.lastInsertRowid)) as Transaction;
 }
 
-export function makeDedupeKey(tx: Partial<Transaction> & { instrumentId?: number }): string {
+export function makeDedupeKey(
+  tx: Partial<Transaction> & { instrumentId?: number; dedupeKey?: string },
+): string {
   return [tx.instrumentId, tx.action, tx.date, tx.quantity, tx.unitPrice, tx.currency].join('|');
 }
 

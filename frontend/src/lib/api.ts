@@ -5,6 +5,7 @@ import type {
   Position,
   CounterfactualResult,
   ProjectionResult,
+  WhatIfSaleResult,
   BreakEvenResult,
   Scenario,
   ScenarioConfig,
@@ -95,6 +96,26 @@ export const api = {
     if (opts.stockCagr != null) p.set('stockCagr', String(opts.stockCagr));
     if (opts.etfCagr != null) p.set('etfCagr', String(opts.etfCagr));
     return req<ProjectionResult & { benchmark: string }>(`/analysis/projection/${id}?${p}`);
+  },
+  whatifSale: (
+    id: number,
+    opts: {
+      benchmark?: string;
+      saleDate?: string;
+      salePrice?: number;
+      reinvestAmount?: number;
+      preTax?: boolean;
+      years?: number;
+    },
+  ) => {
+    const p = new URLSearchParams();
+    if (opts.benchmark) p.set('benchmark', opts.benchmark);
+    if (opts.saleDate) p.set('saleDate', opts.saleDate);
+    if (opts.salePrice != null) p.set('salePrice', String(opts.salePrice));
+    if (opts.reinvestAmount != null) p.set('reinvestAmount', String(opts.reinvestAmount));
+    if (opts.preTax != null) p.set('preTax', String(opts.preTax));
+    if (opts.years != null) p.set('years', String(opts.years));
+    return req<WhatIfSaleResult>(`/analysis/whatif/${id}?${p}`);
   },
   dividendShock: (id: number, cut: number) =>
     req<{

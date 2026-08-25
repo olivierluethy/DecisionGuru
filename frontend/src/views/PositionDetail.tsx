@@ -195,6 +195,10 @@ export function PositionDetail() {
         <DividendShockSection id={id} />
       </div>
 
+      <div className="mt-6">
+        <WhatIfSaleSection id={id} benchmark={benchmark} preTax={preTax} currency={inst.currency} />
+      </div>
+
       <div className="grid lg:grid-cols-[1fr_360px] gap-6 mt-6">
         <TransactionsCard txs={txs.data ?? []} onDelete={(txId) => removeTx.mutate(txId)} currency={inst.currency} />
         <AllocationCard instrumentId={id} />
@@ -322,6 +326,157 @@ function DividendShockSection({ id }: { id: number }) {
         </div>
       ) : (
         <Spinner />
+      )}
+    </section>
+  );
+}
+
+// ---- What-if: sell & reinvest ------------------------------------------
+
+function WhatIfSaleSection({
+  id,
+  benchmark,
+  preTax,
+  currency,
+}: {
+  id: number;
+  benchmark: string;
+  preTax: boolean;
+  currency: string;
+}) {
+  const today = new Date().toISOString().slice(0, 10);
+  const [saleDate, setSaleDate] = useState(today);
+  const [salePrice, setSalePrice] = useState<number | null>(null);
+  const [reinvest, setReinvest] = useState<number | null>(null);
+  const [years, setYears] = useState(5);
+
+  const wi = useQuery({
+    queryKey: ['whatif', id, benchmark, preTax, saleDate, salePrice, reinvest, years],
+    queryFn: () =>
+      api.whatifSale(id, {
+        benchmark,
+        saleDate,
+        preTax,
+        years,
+        salePrice: salePrice ?? undefined,
+        reinvestAmount: reinvest ?? undefined,
+      }),
+  });
+
+  const d = wi.data;
+  const ahead = (d?.deltaCHF ?? 0) >= 0;
+  const held = (d?.quantityHeld ?? 0) > 0;
+
+  return (
+    <section className="card">
+      <div className="flex items-center justify-between mb-1">
+        <h3 className="font-display text-base font-semibold">What if I'd sold &amp; reinvested?</h3>
+        <span className="chip">hypothetical</span>
+      </div>
+      <p className="text-xs text-text-muted mb-4">
+        Model selling on any date — at any price — and putting the proceeds (or any amount) into{' '}
+        {benchmark}. Compares that against having kept the shares.
+      </p>
+
+      <div className="grid sm:grid-cols-3 gap-3 mb-5">
+        <div>
+          <div className="eyebrow mb-2">Sale date</div>
+          <input
+            type="date"
+            className="input"
+            max={today}
+            value={saleDate}
+            onChange={(e) => {
+              setSaleDate(e.target.value);
+              setSalePrice(null);
+              setReinvest(null);
+            }}
+          />
+        </div>
+        <div>
+          <div className="eyebrow mb-2">Sale price ({currency}/share)</div>
+          <input
+            type="number"
+            className="input"
+            step="0.01"
+            value={salePrice ?? (d ? d.salePrice : '')}
+            onChange={(e) => setSalePrice(e.target.value === '' ? null : Number(e.target.value))}
+          />
+        </div>
+        <div>
+          <div className="eyebrow mb-2">Reinvest (CHF)</div>
+          <input
+            type="number"
+            className="input"
+            step="1"
+            value={reinvest ?? (d ? Math.round(d.reinvestAmountCHF) : '')}
+            onChange={(e) => setReinvest(e.target.value === '' ? null : Number(e.target.value))}
+          />
+        </div>
+      </div>
+
+      {!d ? (
+        <Spinner />
+      ) : !held ? (
+        <p className="text-sm text-text-muted">
+          No shares were held on {fmtDate(saleDate)} — nothing to reinvest. Pick a date while you held the position.
+        </p>
+      ) : (
+        <>
+          <div className={`text-display-l font-mono font-semibold tnum leading-none ${plClass(d.deltaCHF)}`}>
+            {fmtCHFSigned(d.deltaCHF)}
+          </div>
+          <p className={`mt-2 text-sm ${ahead ? 'text-gain' : 'text-loss'}`}>
+            {ahead
+              ? `Selling on ${fmtDate(d.saleDate)} and buying ${benchmark} would be ${fmtCHF(Math.abs(d.deltaCHF))} ahead today.`
+              : `Keeping the shares beat selling into ${benchmark} by ${fmtCHF(Math.abs(d.deltaCHF))} — the sale would have cost you.`}
+          </p>
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-3 mt-5">
+            <Stat label="Shares held" value={d.quantityHeld.toLocaleString('de-CH', { maximumFractionDigits: 4 })} />
+            <Stat label="Sale price" value={fmtMoney(d.salePrice, currency)} />
+            <Stat label="Proceeds" value={fmtCHF(d.proceedsCHF)} />
+            <Stat label="Reinvested" value={fmtCHF(d.reinvestAmountCHF)} />
+            <Stat label={`${benchmark} value today`} value={fmtCHF(d.etfValueTodayCHF)} valueClass="text-gold" />
+            <Stat label="Kept-holding value today" value={fmtCHF(d.holdValueTodayCHF)} valueClass="text-azure" />
+          </div>
+
+          <div className="mt-6">
+            <div className="flex items-center gap-4 mb-2 text-[11px] text-text-muted">
+              <span className="flex items-center gap-1.5">
+                <span className="w-4 h-0.5 bg-azure inline-block" /> Kept holding
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="w-4 h-0 border-t-2 border-dashed border-gold inline-block" /> {benchmark} (reinvested)
+              </span>
+            </div>
+            <DeltaChart series={d.series} benchmarkName={benchmark} height={240} />
+          </div>
+
+          {d.forward && (
+            <div className="mt-6">
+              <div className="flex items-center justify-between mb-2">
+                <div className="eyebrow">Forward outlook — from today</div>
+                <span className="text-xs text-text-muted">
+                  {benchmark} @ {fmtPct(d.forward.assumedEtfCagr)} · stock @ {fmtPct(d.forward.assumedStockCagr)} p.a.
+                </span>
+              </div>
+              <ProjectionChart points={d.forward.points} crossoverMonth={d.forward.crossoverMonth} />
+              <div className="mt-3">
+                <div className="eyebrow mb-2">Horizon {years}y</div>
+                <input
+                  type="range"
+                  min={1}
+                  max={20}
+                  step={1}
+                  value={years}
+                  onChange={(e) => setYears(Number(e.target.value))}
+                  className="w-full accent-azure"
+                />
+              </div>
+            </div>
+          )}
+        </>
       )}
     </section>
   );

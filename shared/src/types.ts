@@ -142,6 +142,36 @@ export interface ProjectionResult {
   crossoverMonth: number | null;
 }
 
+/** Hypothetical "sell this stock and reinvest the proceeds into an ETF" outcome. */
+export interface WhatIfSaleResult {
+  benchmark: string;
+  benchmarkName: string;
+  /** The hypothetical sale date (may be in the past or today). */
+  saleDate: string;
+  /** Instrument trading currency. */
+  currency: string;
+  /** Shares held on the sale date. */
+  quantityHeld: number;
+  /** Assumed per-share sale price, in the instrument currency. */
+  salePrice: number;
+  /** Net CHF proceeds implied by the sale price. */
+  proceedsCHF: number;
+  /** CHF actually put into the ETF (defaults to proceeds; user-adjustable). */
+  reinvestAmountCHF: number;
+  etfUnits: number;
+  /** Value today of the reinvested-into-ETF path. */
+  etfValueTodayCHF: number;
+  /** Value today had you kept the shares. */
+  holdValueTodayCHF: number;
+  /** etfValueTodayCHF − holdValueTodayCHF (positive = selling would have won). */
+  deltaCHF: number;
+  deltaPct: number;
+  /** Aligned hold-vs-ETF series from the sale date to today. */
+  series: CounterfactualPoint[];
+  /** Forward outlook compounding each path from its value today. */
+  forward: ProjectionResult | null;
+}
+
 export interface BreakEvenResult {
   realizedLossCHF: number;
   etfCagr: number;

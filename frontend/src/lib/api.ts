@@ -204,9 +204,22 @@ export interface PortfolioResponse {
     investedCHF: number;
     currentValueCHF: number;
     realizedCHF: number;
+    unrealizedCHF: number;
     netDividendsCHF: number;
     absolutePLChf: number;
+    /** Gesamtgewinn = realized + unrealized + net dividends. */
+    totalGainCHF: number;
+    depositsCHF: number;
+    feesCHF: number;
   };
+  /** Kontoguthaben — cash by currency and combined CHF headline. */
+  cash: {
+    totalCHF: number;
+    byCurrency: Record<string, { amount: number; chf: number }>;
+  };
+  hasPositions: boolean;
+  hasAccount: boolean;
+  unknownEvents: number;
   /** ISO timestamp of the oldest quote among held positions ("prices as of"). */
   quotesUpdatedAt: string | null;
   /** True while the background pool is refreshing quotes/history. */

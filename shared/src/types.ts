@@ -81,6 +81,25 @@ export interface Position {
   priceAsOf?: string | null;
   stale?: boolean;
   dataStatus?: InstrumentDataStatus;
+  /** Net dividends (CHF) for this holding — from the account statement when available. */
+  netDividendsCHF?: number;
+  /** Per-ISIN dividend detail from the account statement, when present. */
+  accountDividends?: AccountDividend | null;
+  /** Share of portfolio market value (0..1). */
+  weight?: number;
+}
+
+/** Net dividend aggregation for one security, from the DEGIRO account statement. */
+export interface AccountDividend {
+  isin: string;
+  name?: string | null;
+  currency: string;
+  grossOrig: number;
+  taxOrig: number;
+  grossCHF: number;
+  taxCHF: number;
+  netCHF: number;
+  count: number;
 }
 
 export interface DividendSummary {

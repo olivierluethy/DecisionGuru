@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import pandas as pd
 from fastapi import APIRouter, Request
 from fastapi.concurrency import run_in_threadpool
 
 from ..core.db import get_settings
 from ..core.errors import ApiError
+from ..services import account as acct
 from ..services import refresh, repo
 from ..services.analytics import aggregate_counterfactuals
 from ..services.counterfactual import compute_counterfactual
@@ -26,7 +28,19 @@ async def position(instrument_id: int, preTax: str = "false") -> dict:
     built = await run_in_threadpool(
         build_position, inst, repo.get_transactions(inst["id"]), settings["tax"], pre_tax
     )
-    return built["position"]
+    position = built["position"]
+    # Overlay account-statement dividends for this security (source of truth), if any.
+    if inst.get("isin"):
+        today = pd.Timestamp.utcnow().strftime("%Y-%m-%d")
+        div = acct.dividends_by_isin(repo.all_account_events(), today).get(inst["isin"])
+        if div:
+            position["netDividendsCHF"] = div["netCHF"]
+            position["accountDividends"] = div
+        else:
+            position["netDividendsCHF"] = position["dividends"]["netAfterTaxCHF"]
+    else:
+        position["netDividendsCHF"] = position["dividends"]["netAfterTaxCHF"]
+    return position
 
 
 @router.get("/counterfactual/{instrument_id}")
@@ -189,26 +203,52 @@ async def portfolio(preTax: str = "false", benchmark: str | None = None) -> dict
     bench = benchmark or settings["defaultBenchmarkSymbol"]
 
     def _work() -> dict:
+        today = pd.Timestamp.utcnow().strftime("%Y-%m-%d")
+        events = repo.all_account_events()
+        div_by_isin = acct.dividends_by_isin(events, today)
+
         instruments = repo.list_instruments()
         positions = []
         counterfactuals = []
+        total_value = 0.0
         for inst in instruments:
             txs = repo.get_transactions(inst["id"])
             if not txs:
                 continue
             built = build_position(inst, txs, settings["tax"], pre_tax)
-            positions.append(built["position"])
+            p = built["position"]
+            # Account statement is the dividend source of truth; fall back to any
+            # tx-derived dividends only when no account events exist for this ISIN.
+            isin = inst.get("isin")
+            acct_div = div_by_isin.get(isin) if isin else None
+            p["netDividendsCHF"] = acct_div["netCHF"] if acct_div else p["dividends"]["netAfterTaxCHF"]
+            total_value += p["currentValueCHF"] or 0
+            positions.append(p)
             cf = compute_counterfactual(inst, txs, bench, settings, pre_tax)
             counterfactuals.append({"instrumentId": inst["id"], "symbol": inst["symbol"],
                                     "counterfactual": cf})
 
+        # Portfolio weight per holding (share of invested market value).
+        for p in positions:
+            p["weight"] = ((p["currentValueCHF"] or 0) / total_value) if total_value > 0 else 0.0
+
         aggregate = aggregate_counterfactuals([c["counterfactual"] for c in counterfactuals])
+
+        net_dividends = sum(p["netDividendsCHF"] for p in positions)
+        realized = sum(p["realizedCHF"] for p in positions)
+        unrealized = sum((p["unrealizedCHF"] or 0) for p in positions)
+        cash = acct.cash_chf(events, today)
         totals = {
             "investedCHF": sum(p["investedCHF"] for p in positions),
-            "currentValueCHF": sum((p["currentValueCHF"] or 0) for p in positions),
-            "realizedCHF": sum(p["realizedCHF"] for p in positions),
-            "netDividendsCHF": sum(p["dividends"]["netAfterTaxCHF"] for p in positions),
+            "currentValueCHF": total_value,
+            "realizedCHF": realized,
+            "unrealizedCHF": unrealized,
+            "netDividendsCHF": net_dividends,
             "absolutePLChf": sum((p["metrics"]["absolutePLChf"] or 0) for p in positions),
+            # Gesamtgewinn: realized + unrealized + net dividends received.
+            "totalGainCHF": realized + unrealized + net_dividends,
+            "depositsCHF": acct.deposits_total_chf(events, today),
+            "feesCHF": acct.fees_total_chf(events, today),
         }
         # "Prices as of" = oldest quote among held positions; background refresh state
         # lets the frontend poll until pending prices land, instead of blocking.
@@ -217,6 +257,10 @@ async def portfolio(preTax: str = "false", benchmark: str | None = None) -> dict
         quotes_updated_at = min(priced) if priced else None
         return {"benchmark": bench, "preTax": pre_tax, "positions": positions,
                 "counterfactuals": counterfactuals, "aggregate": aggregate, "totals": totals,
+                "cash": cash,
+                "hasPositions": bool(positions),
+                "hasAccount": bool(events),
+                "unknownEvents": acct.events_summary(events)["unknownCount"],
                 "quotesUpdatedAt": quotes_updated_at,
                 "refreshInProgress": refresh.refresh_in_progress()}
 

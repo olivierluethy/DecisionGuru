@@ -65,8 +65,17 @@ request/response envelopes.
 | GET | `/api/analysis/dividend-shock/:id?cut=` | `cut` 0..1 | `{currentAnnualGrossCHF, shockedAnnualGrossCHF, lostGrossCHF, lostNetAfterTaxCHF, cut}` |
 | GET | `/api/analysis/portfolio?preTax=&benchmark=` | | `PortfolioResponse` (see below) |
 | POST | `/api/analysis/compare` | `{instrumentIds:number[], benchmarks:string[], preTax?:boolean}` | `CompareResponse` (see below) |
+| GET | `/api/analysis/portfolio/series?range=` | `range` = `1D..MAX` (default `1Y`) | `RangeSeries` `{range, points:[{date,value}], stats:{high,low,start,end,changeAbs,changePct}\|null}` |
+| GET | `/api/analysis/series/:id?range=` | | `RangeSeries` (404 if instrument missing) |
+| GET | `/api/analysis/advisory?includeHandled=` | | `{insights:AdvisoryInsight[], handled:number[]}` |
+| POST | `/api/analysis/advisory/:id/handled` | `{handled?:boolean=true}` | `{ok:true, handled:number[]}` |
 
-**PortfolioResponse**: `{ benchmark, preTax, positions:Position[], counterfactuals:Array<{instrumentId,symbol,counterfactual}>, aggregate:{actualValueCHF,counterfactualValueCHF,deltaCHF,deltaPct,series}, totals:{investedCHF,currentValueCHF,realizedCHF,netDividendsCHF,absolutePLChf} }`
+**PortfolioResponse**: `{ benchmark, preTax, positions:Position[] (each +netDividendsCHF,+weight), counterfactuals, aggregate:{...}, totals:{investedCHF,currentValueCHF,realizedCHF,unrealizedCHF,netDividendsCHF,absolutePLChf,totalGainCHF,depositsCHF,feesCHF}, cash:{totalCHF, byCurrency:{[ccy]:{amount,chf}}}, accountDividends:AccountDividend[], hasPositions, hasAccount, unknownEvents, quotesUpdatedAt, refreshInProgress }`
+
+Series endpoints use **cached prices only** (never block on Yahoo). Portfolio series =
+forward-filled sum of each holding's `quantity_held × close × FX(→CHF)` on a shared date
+axis. Advisory `netDividendsCHF`/`totalGainCHF`/`cash` come from the ingested account
+statement; `totalGainCHF = realized + unrealized + net dividends`.
 
 **CompareResponse**: `{ preTax, instrumentIds:number[], positions:Position[], comparisons:Array<{benchmark, benchmarkName, aggregate:{...}, perPosition:Array<{instrumentId,symbol,name?,counterfactual}>}> }`
 
@@ -115,14 +124,23 @@ Clears transactions, instruments, price/quote/dividend/fund caches (+ `symbol_ma
 |---|---|---|---|
 | POST | `/api/imports/upload` | multipart `file` | `ParsedFile & {defaultActionMap}` (400 no file, 422 parse error) |
 | GET | `/api/imports/file/:fileId` | — | `ParsedFile` (404) |
-| POST | `/api/imports/preview` | `ImportMapping` | `{rows:ImportPreviewRow[], okCount, total, trades, corporateActions}` (400/404) |
-| POST | `/api/imports/commit` | `ImportMapping` | `{imported, skipped, corporateActions, instruments:number[]}` (400/404) |
+| POST | `/api/imports/preview` | `ImportMapping` | txns: `{rows:ImportPreviewRow[], okCount, total, trades, corporateActions}`; account (`kind:'account'`): `{kind:'account', rows:AccountPreviewRow[], okCount, total, byType, unknownCount, reversedCount}` (400/404) |
+| POST | `/api/imports/commit` | `ImportMapping` | txns: `{imported, skipped, corporateActions, instruments:number[]}`; account: `{kind:'account', importedEvents, skipped, linked, dividends, summary}` (400/404) |
 | GET | `/api/imports/presets` | — | `ImportPreset[]` |
 | POST | `/api/imports/presets` | `{name, mapping}` | `{ok:true}` (400) |
 | DELETE | `/api/imports/presets/:id` | — | `{ok:true}` |
 
-DeGiro is auto-detected (`detectedBroker:'degiro'`) and uses a dedicated transform when
-`mapping.broker === 'degiro'`; otherwise the generic column mapping is applied.
+DeGiro **Transactions** export is auto-detected (`detectedBroker:'degiro'`, `detectedKind:'transactions'`)
+and uses a dedicated transform when `mapping.broker === 'degiro'`; otherwise the generic column
+mapping is applied.
+
+The DeGiro **Account statement (Kontoauszug)** is auto-detected as `detectedKind:'account'` (blank
+amount/balance columns parsed by position). `preview`/`commit` with `mapping.kind === 'account'` run
+the account transform: normalizes each `Beschreibung` to `deposit | cash_sweep | fx_conversion |
+dividend | withholding_tax | corp_action_fee | connectivity_fee | unknown`, nets storno pairs
+(opposite sign, same security/amount within 10 min), and stores rows in `account_events`. Events
+link to instruments **on ISIN** (DB-only lookup, never a Yahoo resolve) after either import order.
+Account cash, dividends-by-ISIN, deposits and fees surface via `PortfolioResponse`.
 
 ## export
 | Method | Path | Body | Response |

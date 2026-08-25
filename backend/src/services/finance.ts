@@ -9,6 +9,7 @@ import type {
 import { toCHF, getFxRate } from './fx.js';
 import { getQuote } from './marketdata.js';
 import { dividendTax, wealthTax } from './tax.js';
+import { instrumentDataStatus } from './datastatus.js';
 import { xirr, cagr, yearsBetween, type CashFlow } from './math.js';
 
 export interface BuiltPosition {
@@ -158,6 +159,7 @@ export async function buildPosition(
     dividends: divSummary,
     priceAsOf: quote?.time ?? null,
     stale,
+    dataStatus: instrumentDataStatus(instrument),
     metrics: {
       absolutePLChf,
       absolutePLChfPreTax,

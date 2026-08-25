@@ -11,6 +11,7 @@ import { scenariosRouter } from './routes/scenarios.js';
 import { settingsRouter } from './routes/settings.js';
 import { notesRouter } from './routes/notes.js';
 import { exportRouter } from './routes/export.js';
+import { dataRouter } from './routes/data.js';
 
 const app = express();
 app.use(cors());
@@ -27,6 +28,7 @@ app.use('/api/scenarios', scenariosRouter);
 app.use('/api/settings', settingsRouter);
 app.use('/api/notes', notesRouter);
 app.use('/api/export', exportRouter);
+app.use('/api/data', dataRouter);
 
 // Central error handler so a thrown async error returns JSON, not an HTML stack.
 app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

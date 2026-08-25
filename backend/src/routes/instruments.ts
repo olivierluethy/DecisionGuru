@@ -8,9 +8,12 @@ import {
   updateInstrument,
   deleteInstrument,
   resolveInstrument,
+  reresolveInstrument,
+  unresolvedInstruments,
   insertTransaction,
 } from '../services/repo.js';
 import { searchSymbol, priceOn } from '../services/marketdata.js';
+import { instrumentDataStatus } from '../services/datastatus.js';
 
 export const instrumentsRouter = Router();
 
@@ -22,6 +25,31 @@ instrumentsRouter.get('/search', async (req, res) => {
   const q = String(req.query.q ?? '').trim();
   if (!q) return res.json([]);
   res.json(await searchSymbol(q));
+});
+
+// Re-resolve every instrument still stuck on its ISIN / flagged unresolved.
+instrumentsRouter.post('/reresolve-all', async (_req, res) => {
+  const pending = unresolvedInstruments();
+  const results = [];
+  for (const inst of pending) {
+    const updated = await reresolveInstrument(inst.id);
+    results.push({ id: inst.id, isin: inst.isin, symbol: updated?.symbol, unresolved: updated?.unresolved });
+  }
+  res.json({ attempted: pending.length, results });
+});
+
+// Re-resolve a single instrument on demand.
+instrumentsRouter.post('/:id/reresolve', async (req, res) => {
+  const updated = await reresolveInstrument(Number(req.params.id));
+  if (!updated) return res.status(404).json({ error: 'Not found' });
+  res.json(updated);
+});
+
+// Per-instrument market-data health for the UI badge.
+instrumentsRouter.get('/:id/status', (req, res) => {
+  const inst = getInstrument(Number(req.params.id));
+  if (!inst) return res.status(404).json({ error: 'Not found' });
+  res.json(instrumentDataStatus(inst));
 });
 
 instrumentsRouter.get('/:id', (req, res) => {

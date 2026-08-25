@@ -8,6 +8,15 @@ db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
 db.exec(SCHEMA);
 
+// Lightweight migrations for DBs created before a column existed.
+function ensureColumn(table: string, column: string, ddl: string) {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+  if (!cols.some((c) => c.name === column)) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${ddl}`);
+  }
+}
+ensureColumn('transactions', 'category', "category TEXT DEFAULT 'trade'");
+
 // Seed settings row if absent.
 const settingsRow = db.prepare('SELECT value FROM settings WHERE key = ?').get('app') as
   | { value: string }

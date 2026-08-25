@@ -159,8 +159,8 @@ export function insertTransaction(
   const dedupeKey = tx.dedupeKey ?? makeDedupeKey(tx);
   const info = db
     .prepare(
-      `INSERT OR IGNORE INTO transactions (instrumentId, action, date, quantity, unitPrice, fees, currency, grossAmount, netAmount, withholding, note, source, dedupeKey)
-       VALUES (@instrumentId, @action, @date, @quantity, @unitPrice, @fees, @currency, @grossAmount, @netAmount, @withholding, @note, @source, @dedupeKey)`,
+      `INSERT OR IGNORE INTO transactions (instrumentId, action, date, quantity, unitPrice, fees, currency, grossAmount, netAmount, withholding, category, note, source, dedupeKey)
+       VALUES (@instrumentId, @action, @date, @quantity, @unitPrice, @fees, @currency, @grossAmount, @netAmount, @withholding, @category, @note, @source, @dedupeKey)`,
     )
     .run({
       instrumentId: tx.instrumentId,
@@ -173,6 +173,7 @@ export function insertTransaction(
       grossAmount: tx.grossAmount ?? null,
       netAmount: tx.netAmount ?? null,
       withholding: tx.withholding ?? null,
+      category: tx.category ?? 'trade',
       note: tx.note ?? null,
       source: tx.source ?? 'manual',
       dedupeKey,

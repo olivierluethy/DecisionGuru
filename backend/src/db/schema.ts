@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS transactions (
   grossAmount REAL,
   netAmount REAL,
   withholding REAL,
+  category TEXT DEFAULT 'trade',
   note TEXT,
   source TEXT,
   dedupeKey TEXT,

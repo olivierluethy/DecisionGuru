@@ -69,3 +69,32 @@ export function countryFromSymbol(symbol: string): string | null {
   }
   return 'US'; // bare symbols are typically US-listed on Yahoo
 }
+
+/**
+ * Issuer country from an ISIN's two-letter prefix. This is the primary, reliable
+ * signal for geographic exposure (CH0038863350 -> CH, US0846707026 -> US, …).
+ * A handful of prefixes are supranational / offshore and get a best-effort mapping.
+ */
+const ISIN_PREFIX_OVERRIDES: Record<string, string> = {
+  // Offshore incorporation prefixes commonly seen for operating companies elsewhere.
+  KY: 'KY', // Cayman Islands (many US/Asia-listed holdcos) — kept distinct
+  BM: 'BM', // Bermuda
+  JE: 'JE', // Jersey
+  GG: 'GG', // Guernsey
+  XS: 'XS', // Eurobond / supranational
+};
+
+const ISO_COUNTRIES = new Set(Object.keys(COUNTRY_COORDS));
+
+export function countryFromIsin(isin: string | null | undefined): string | null {
+  if (!isin) return null;
+  const prefix = isin.slice(0, 2).toUpperCase();
+  if (!/^[A-Z]{2}$/.test(prefix)) return null;
+  if (ISIN_PREFIX_OVERRIDES[prefix]) return ISIN_PREFIX_OVERRIDES[prefix];
+  return prefix;
+}
+
+/** True when we have globe coordinates / a friendly label for a country code. */
+export function knownCountry(code: string | null | undefined): boolean {
+  return !!code && ISO_COUNTRIES.has(code);
+}

@@ -22,7 +22,21 @@ export interface Instrument {
   incomeYieldOverride?: number | null;
   /** Manual JSON allocation override for globe/breakdown when market data is missing */
   allocationOverride?: AllocationBreakdown | null;
+  /** How `symbol` was resolved: 'curated' | 'yahoo' | 'manual' | 'unresolved'. */
+  resolutionSource?: string | null;
+  /** True when we could not resolve a real ticker (symbol still equals the ISIN / a slug). */
+  unresolved?: boolean | null;
   createdAt: string;
+}
+
+/** Per-instrument market-data health, surfaced as a badge in the UI. */
+export interface InstrumentDataStatus {
+  /** 'ok' | 'stale' | 'unresolved' | 'no-data' */
+  state: 'ok' | 'stale' | 'unresolved' | 'no-data';
+  resolutionSource?: string | null;
+  quoteAsOf?: string | null;
+  priceCoverageDays?: number | null;
+  message?: string | null;
 }
 
 /** A single cash-flow event against an instrument. */
@@ -66,6 +80,7 @@ export interface Position {
   metrics: PositionMetrics;
   priceAsOf?: string | null;
   stale?: boolean;
+  dataStatus?: InstrumentDataStatus;
 }
 
 export interface DividendSummary {

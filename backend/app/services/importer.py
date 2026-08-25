@@ -766,8 +766,8 @@ def transform_account(file_id: str, sheet_name: str | None = None) -> list[dict]
         errors: list[str] = []
         if not e["date"]:
             errors.append("Unrecognised date")
-        if e["type"] == "unknown":
-            errors.append(f"Unmapped description: {e['description'] or '(empty)'}")
+        # An unmapped description is NOT an error: the row is still committed and
+        # surfaced in the "unknown" bucket rather than being silently dropped.
         dedupe_key = (
             f"account:{e['date']}:{e['time']}:{e['isin']}:{e['description']}:"
             f"{e['amount']}:{e['balance']}"

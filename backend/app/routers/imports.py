@@ -4,6 +4,7 @@ import json
 import secrets
 from pathlib import Path
 
+import pandas as pd
 from fastapi import APIRouter, Request, UploadFile
 from fastapi.concurrency import run_in_threadpool
 
@@ -11,12 +12,14 @@ from ..core import db
 from ..core.config import UPLOAD_DIR
 from ..core.errors import ApiError
 from ..services import repo
+from ..services import account as acct
 from ..services.importer import (
     DEFAULT_ACTION_MAP,
     apply_mapping,
     get_parsed,
     parse_pdf,
     parse_upload,
+    transform_account,
     transform_degiro,
 )
 
@@ -48,10 +51,34 @@ async def get_file(file_id: str) -> dict:
     return parsed
 
 
+def _resolve_kind(mapping: dict) -> str | None:
+    """'account' | 'transactions' | None — explicit mapping.kind wins, else detected."""
+    if mapping.get("kind"):
+        return mapping["kind"]
+    parsed = get_parsed(mapping.get("fileId"))
+    return (parsed or {}).get("detectedKind")
+
+
 def _build_preview_rows(mapping: dict) -> list[dict]:
     if mapping.get("broker") == "degiro":
         return transform_degiro(mapping["fileId"], mapping.get("sheetName"))
     return apply_mapping(mapping)
+
+
+def _account_preview(mapping: dict) -> dict:
+    rows = transform_account(mapping["fileId"], mapping.get("sheetName"))
+    ok_count = sum(1 for r in rows if r["ok"])
+    by_type: dict[str, int] = {}
+    for r in rows:
+        if r["event"].get("reversed"):
+            continue
+        by_type[r["type"]] = by_type.get(r["type"], 0) + 1
+    reversed_count = sum(1 for r in rows if r["event"].get("reversed"))
+    return {
+        "kind": "account", "rows": rows, "okCount": ok_count, "total": len(rows),
+        "byType": by_type, "unknownCount": by_type.get("unknown", 0),
+        "reversedCount": reversed_count,
+    }
 
 
 @router.post("/preview")
@@ -61,12 +88,39 @@ async def preview(request: Request) -> dict:
         raise ApiError("fileId required", 400)
     if not get_parsed(mapping["fileId"]):
         raise ApiError("File not found (re-upload)", 404)
+    if _resolve_kind(mapping) == "account":
+        return await run_in_threadpool(_account_preview, mapping)
     rows = await run_in_threadpool(_build_preview_rows, mapping)
     ok_count = sum(1 for r in rows if r["ok"])
     corporate_actions = sum(1 for r in rows if r.get("category") == "corporate_action")
     trades = sum(1 for r in rows if r["ok"] and r.get("category") != "corporate_action")
     return {"rows": rows, "okCount": ok_count, "total": len(rows),
             "trades": trades, "corporateActions": corporate_actions}
+
+
+def _commit_account(mapping: dict) -> dict:
+    rows = [r for r in transform_account(mapping["fileId"], mapping.get("sheetName")) if r["ok"]]
+    imported = 0
+    skipped = 0
+    for r in rows:
+        ev = {**r["event"], "type": r["type"], "source": f"account:{mapping['fileId']}"}
+        before = repo.account_events_count()
+        repo.insert_account_event(ev)
+        if repo.account_events_count() > before:
+            imported += 1
+        else:
+            skipped += 1
+    linked = repo.link_account_events_to_instruments()
+    events = repo.all_account_events()
+    today = pd.Timestamp.utcnow().strftime("%Y-%m-%d")
+    return {
+        "kind": "account",
+        "importedEvents": imported,
+        "skipped": skipped,
+        "linked": linked,
+        "dividends": len(acct.dividends_by_isin(events, today)),
+        "summary": acct.events_summary(events),
+    }
 
 
 @router.post("/commit")
@@ -76,6 +130,9 @@ async def commit(request: Request) -> dict:
         raise ApiError("fileId required", 400)
     if not get_parsed(mapping["fileId"]):
         raise ApiError("File not found (re-upload)", 404)
+
+    if _resolve_kind(mapping) == "account":
+        return await run_in_threadpool(_commit_account, mapping)
 
     def _work() -> dict:
         rows = [r for r in _build_preview_rows(mapping) if r["ok"]]
@@ -122,6 +179,9 @@ async def commit(request: Request) -> dict:
             else:
                 skipped += 1
 
+        # Newly-created instruments may match ISINs from a previously-imported
+        # account statement — attach those dividends now (merge-on-ISIN, either order).
+        repo.link_account_events_to_instruments()
         return {"imported": imported, "skipped": skipped,
                 "corporateActions": corporate_actions, "instruments": list(touched)}
 

@@ -89,6 +89,33 @@ export interface Position {
   weight?: number;
 }
 
+/** An advisory ("harmonize") rebalancing insight for one flagged holding. */
+export interface AdvisoryInsight {
+  instrumentId: number;
+  symbol: string;
+  name: string;
+  isin?: string | null;
+  investedCHF: number;
+  sinceDate: string;
+  holdingValueCHF: number;
+  holdingReturnPct: number | null;
+  referenceEtf: string;
+  referenceEtfName: string;
+  referenceValueCHF: number;
+  referenceReturnPct: number | null;
+  /** CHF the best alternative ETF would have produced above the holding. */
+  reallocationGainCHF: number;
+  lagPct: number;
+  series: CounterfactualPoint[];
+  handled: boolean;
+  rationale: string;
+}
+
+export interface AdvisoryResponse {
+  insights: AdvisoryInsight[];
+  handled: number[];
+}
+
 export type RangeKey = '1D' | '30D' | '1M' | '2M' | '5M' | '6M' | '1Y' | '2Y' | '5Y' | 'MAX';
 
 export interface RangeStats {

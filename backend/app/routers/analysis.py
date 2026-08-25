@@ -4,9 +4,10 @@ import pandas as pd
 from fastapi import APIRouter, Request
 from fastapi.concurrency import run_in_threadpool
 
-from ..core.db import get_settings
+from ..core.db import get_settings, save_settings
 from ..core.errors import ApiError
 from ..services import account as acct
+from ..services import advisory as adv
 from ..services import refresh, repo
 from ..services.analytics import aggregate_counterfactuals
 from ..services.counterfactual import compute_counterfactual
@@ -195,6 +196,24 @@ async def compare(request: Request) -> dict:
         }
 
     return await run_in_threadpool(_work)
+
+
+@router.get("/advisory")
+async def advisory(includeHandled: str = "false") -> dict:
+    settings = get_settings()
+    include = bool_param(includeHandled)
+    insights = await run_in_threadpool(adv.build_advisory, settings, include)
+    return {"insights": insights, "handled": settings.get("advisoryHandled") or []}
+
+
+@router.post("/advisory/{instrument_id}/handled")
+async def advisory_set_handled(instrument_id: int, request: Request) -> dict:
+    body = await request.json() or {}
+    handled = bool(body.get("handled", True))
+    settings = get_settings()
+    settings["advisoryHandled"] = adv.set_handled(settings, instrument_id, handled)
+    save_settings(settings)
+    return {"ok": True, "handled": settings["advisoryHandled"]}
 
 
 @router.get("/portfolio/series")

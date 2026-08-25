@@ -22,6 +22,7 @@ import type {
   AccountDividend,
   AccountPreviewResponse,
   AccountCommitResponse,
+  AdvisoryResponse,
 } from '@decisionguru/shared';
 
 const BASE = '/api';
@@ -134,6 +135,13 @@ export const api = {
     req<PortfolioResponse>(
       `/analysis/portfolio?preTax=${preTax}${benchmark ? `&benchmark=${benchmark}` : ''}`,
     ),
+  advisory: (includeHandled = false) =>
+    req<AdvisoryResponse>(`/analysis/advisory?includeHandled=${includeHandled}`),
+  setAdvisoryHandled: (id: number, handled: boolean) =>
+    req<{ ok: true; handled: number[] }>(`/analysis/advisory/${id}/handled`, {
+      method: 'POST',
+      body: JSON.stringify({ handled }),
+    }),
   portfolioSeries: (range: RangeKey = '1Y') =>
     req<RangeSeries>(`/analysis/portfolio/series?range=${range}`),
   instrumentSeries: (id: number, range: RangeKey = '1Y') =>

@@ -237,6 +237,19 @@ async function actualValueSeries(
       .filter((t) => t.date <= date)
       .reduce((s, t) => s + (t.action === 'buy' ? t.quantity : -t.quantity), 0);
 
+  // Cash returned by sells up to `date` (CHF, historical FX). Without this a fully-closed
+  // position would look like it vanished to ~0 instead of the cash the sells realised.
+  const proceedsToDate = async (date: string) => {
+    let sum = 0;
+    for (const t of buysSells) {
+      if (t.action !== 'sell' || t.date > date) continue;
+      const orig = t.quantity * t.unitPrice - (t.fees ?? 0);
+      const fx = await getFxRate(t.currency || instrument.currency, 'CHF', t.date);
+      sum += orig * fx;
+    }
+    return sum;
+  };
+
   const divToDate = async (date: string) => {
     let sum = 0;
     for (const d of divs) {
@@ -269,13 +282,15 @@ async function actualValueSeries(
     const units = unitsAt(date);
     const priceCHF = units > 0 ? await stockLook.priceCHFOn(date) : 0;
     const div = await divToDate(date);
-    return units * priceCHF + div;
+    const proceeds = await proceedsToDate(date);
+    return units * priceCHF + div + proceeds;
   };
 
   const endUnits = unitsAt(endDate);
   const endPriceCHF = endUnits > 0 ? await stockLook.priceCHFOn(endDate) : 0;
   const endValueCHF = await valueAt(endDate);
-  const endValuePreTaxCHF = endUnits * endPriceCHF + (await divToDate(endDate));
+  const endValuePreTaxCHF =
+    endUnits * endPriceCHF + (await divToDate(endDate)) + (await proceedsToDate(endDate));
 
   const terminal: CashFlow[] =
     endUnits > 0 ? [...flows, { date: endDate, amount: endUnits * endPriceCHF }] : flows;

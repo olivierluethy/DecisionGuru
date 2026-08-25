@@ -40,6 +40,7 @@ export async function buildPosition(
   let totalBuyCHF = 0;
   let totalBuyOrig = 0;
   let realizedCHF = 0;
+  let totalProceedsCHF = 0; // gross sell cash returned (CHF), for correct total-return math
 
   const flowsAfterTax: CashFlow[] = [];
   const flowsPreTax: CashFlow[] = [];
@@ -74,6 +75,7 @@ export async function buildPosition(
       const proceedsOrig = tx.quantity * tx.unitPrice - (tx.fees ?? 0);
       const proceedsCHF = await toCHF(proceedsOrig, ccy, tx.date);
       realizedCHF += proceedsCHF - removedCHF; // capital gain (tax-free for private investor)
+      totalProceedsCHF += proceedsCHF;
       openCostCHF -= removedCHF;
       openCostOrig -= openCostOrig * fraction;
       openQty -= q;
@@ -118,15 +120,18 @@ export async function buildPosition(
   const meanValue = ((totalBuyCHF || 0) + (currentValueCHF ?? 0)) / 2;
   const wealthTaxCHF = wealthTax(meanValue, years, tax);
 
-  // Total after-tax P/L = current value + realized + net dividends - invested - wealth tax
+  // Total after-tax P/L = (open value + cash returned from sells + net dividends) - invested - wealth tax.
+  // NB: use gross sell PROCEEDS here, not realized gain — realized already nets out the sold
+  // lots' cost, so subtracting totalBuy on top would double-count that basis (the old bug that
+  // made fully-closed winners like Barry Callebaut read as −invested).
   const netDiv = preTax ? divSummary.grossCHF : divSummary.netAfterTaxCHF;
   const absolutePLChf =
     currentValueCHF != null
-      ? currentValueCHF + realizedCHF + netDiv - totalBuyCHF - (preTax ? 0 : wealthTaxCHF)
+      ? currentValueCHF + totalProceedsCHF + netDiv - totalBuyCHF - (preTax ? 0 : wealthTaxCHF)
       : null;
   const absolutePLChfPreTax =
     currentValueCHF != null
-      ? currentValueCHF + realizedCHF + divSummary.grossCHF - totalBuyCHF
+      ? currentValueCHF + totalProceedsCHF + divSummary.grossCHF - totalBuyCHF
       : null;
   const percentPL = totalBuyCHF > 0 && absolutePLChf != null ? absolutePLChf / totalBuyCHF : null;
 
@@ -138,7 +143,7 @@ export async function buildPosition(
   const xirrValue = xirr(terminalFlows(preTax ? flowsPreTax : flowsAfterTax));
 
   const endValueForCagr =
-    (currentValueCHF ?? 0) + realizedCHF + netDiv - (preTax ? 0 : wealthTaxCHF);
+    (currentValueCHF ?? 0) + totalProceedsCHF + netDiv - (preTax ? 0 : wealthTaxCHF);
   const cagrValue = totalBuyCHF > 0 ? cagr(totalBuyCHF, endValueForCagr, years) : null;
 
   const currentYield =

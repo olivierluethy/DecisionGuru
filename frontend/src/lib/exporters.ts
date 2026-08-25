@@ -1,5 +1,6 @@
 import type { PortfolioResponse } from './api';
-import type { CounterfactualResult, Position } from '@decisionguru/shared';
+import { api } from './api';
+import type { AppSettings, CounterfactualResult, Position, Transaction } from '@decisionguru/shared';
 import { fmtCHF, fmtPct } from './format';
 
 /** Serialise a rendered SVG chart to a PNG data URL for PDF embedding. */
@@ -40,54 +41,108 @@ async function captureChart(containerId: string): Promise<string | undefined> {
   return (await svgToPng(svg)) ?? undefined;
 }
 
+const POSITION_HEADERS = [
+  'Symbol', 'Name', 'Kind', 'Currency', 'Open qty', 'Invested CHF', 'Value CHF',
+  'Unrealized CHF', 'Realized CHF', 'Net dividends CHF', 'Total P/L CHF', '% P/L',
+  'Opp. cost vs ETF CHF', 'XIRR', 'ETF XIRR',
+];
+
+function positionRow(p: Position, cf?: CounterfactualResult) {
+  return [
+    p.instrument.symbol,
+    p.instrument.name,
+    p.instrument.kind,
+    p.instrument.currency,
+    round(p.openQuantity),
+    round(p.investedCHF),
+    round(p.currentValueCHF ?? 0),
+    round(p.unrealizedCHF ?? 0),
+    round(p.realizedCHF),
+    round(p.dividends.netAfterTaxCHF),
+    round(p.metrics.absolutePLChf ?? 0),
+    pct(p.metrics.percentPL),
+    round(cf?.deltaCHF ?? 0),
+    pct(p.metrics.xirr),
+    pct(cf?.benchmarkXirr ?? null),
+  ];
+}
+
+const TX_HEADERS = ['Symbol', 'Date', 'Action', 'Category', 'Qty', 'Unit price', 'Currency', 'Fees', 'Note'];
+
+function txRows(symbol: string, txs: Transaction[]) {
+  return txs.map((t) => [
+    symbol,
+    t.date,
+    t.action,
+    t.category ?? 'trade',
+    round(t.quantity),
+    round(t.unitPrice),
+    t.currency,
+    round(t.fees),
+    t.note ?? '',
+  ]);
+}
+
+function taxRows(s: AppSettings): (string | number)[][] {
+  const t = s.tax;
+  return [
+    ['Basis currency', t.baseCurrency],
+    ['Marginal income rate', pct(t.marginalIncomeRate)],
+    ['Capital gains taxable', t.capitalGainsTaxable ? 'yes' : 'no (private investor)'],
+    ['Swiss withholding', pct(t.swissWithholdingRate)],
+    ['Swiss withholding reclaimed', t.swissWithholdingReclaimed ? 'yes' : 'no'],
+    ['US withholding', pct(t.foreignWithholdingUS)],
+    ['US reclaim fraction', pct(t.foreignReclaimFractionUS)],
+    ['Other foreign withholding', pct(t.foreignWithholdingGeneric)],
+    ['Wealth tax p.a.', pct(t.wealthTaxRate)],
+    ['Default ETF income yield', pct(t.defaultEtfIncomeYield)],
+  ];
+}
+
 export async function buildPortfolioExport(data: PortfolioResponse, kind: 'excel' | 'pdf') {
   const cfById = new Map(data.counterfactuals.map((c) => [c.instrumentId, c.counterfactual]));
-  const headers = ['Symbol', 'Name', 'Kind', 'Invested CHF', 'Value CHF', 'P/L CHF', 'Opp. cost vs ETF', 'XIRR', 'ETF XIRR'];
-  const rows = data.positions.map((p) => {
-    const cf = cfById.get(p.instrument.id);
-    return [
-      p.instrument.symbol,
-      p.instrument.name,
-      p.instrument.kind,
-      round(p.investedCHF),
-      round(p.currentValueCHF ?? 0),
-      round(p.metrics.absolutePLChf ?? 0),
-      round(cf?.deltaCHF ?? 0),
-      pct(p.metrics.xirr),
-      pct(cf?.benchmarkXirr ?? null),
-    ];
-  });
+  const rows = data.positions.map((p) => positionRow(p, cfById.get(p.instrument.id)));
+
+  // Full transaction history + tax assumptions for a complete, auditable export.
+  const [settings, ...txLists] = await Promise.all([
+    api.getSettings().catch(() => null),
+    ...data.positions.map((p) => api.getTransactions(p.instrument.id).catch(() => [] as Transaction[])),
+  ]);
+  const allTxRows = data.positions.flatMap((p, i) => txRows(p.instrument.symbol, txLists[i] ?? []));
+
+  const summaryRows: (string | number)[][] = [
+    ['Benchmark', data.benchmark],
+    ['Basis', data.preTax ? 'Pre-tax' : 'After-tax'],
+    ['Invested CHF', round(data.totals.investedCHF)],
+    ['Current value CHF', round(data.totals.currentValueCHF)],
+    ['Realized P/L CHF', round(data.totals.realizedCHF)],
+    ['Net dividends CHF', round(data.totals.netDividendsCHF)],
+    ['Total P/L CHF', round(data.totals.absolutePLChf)],
+    ['Opportunity cost vs ETF CHF', round(data.aggregate.deltaCHF)],
+    ['Opportunity cost %', pct(data.aggregate.deltaPct)],
+  ];
 
   if (kind === 'excel') {
-    return {
-      title: `DecisionGuru portfolio vs ${data.benchmark}`,
-      sheets: [
-        { name: 'Positions', table: { headers, rows } },
-        {
-          name: 'Summary',
-          table: {
-            headers: ['Metric', 'Value'],
-            rows: [
-              ['Benchmark', data.benchmark],
-              ['Basis', data.preTax ? 'Pre-tax' : 'After-tax'],
-              ['Invested CHF', round(data.totals.investedCHF)],
-              ['Current value CHF', round(data.totals.currentValueCHF)],
-              ['Net dividends CHF', round(data.totals.netDividendsCHF)],
-              ['Total P/L CHF', round(data.totals.absolutePLChf)],
-              ['Opportunity cost vs ETF CHF', round(data.aggregate.deltaCHF)],
-            ],
-          },
-        },
-      ],
-    };
+    const sheets = [
+      { name: 'Summary', table: { headers: ['Metric', 'Value'], rows: summaryRows } },
+      { name: 'Positions', table: { headers: POSITION_HEADERS, rows } },
+      { name: 'Transactions', table: { headers: TX_HEADERS, rows: allTxRows } },
+    ];
+    if (settings) sheets.push({ name: 'Tax assumptions', table: { headers: ['Assumption', 'Value'], rows: taxRows(settings) } });
+    return { title: `DecisionGuru portfolio vs ${data.benchmark}`, sheets };
   }
 
   const chartImage = await captureChart('export-chart');
+  const tables = [
+    { title: 'Summary', headers: ['Metric', 'Value'], rows: summaryRows },
+    { title: 'Positions', headers: POSITION_HEADERS, rows },
+  ];
+  if (settings) tables.push({ title: 'Tax assumptions', headers: ['Assumption', 'Value'], rows: taxRows(settings) });
   return {
     title: `DecisionGuru portfolio vs ${data.benchmark}`,
     subtitle: `${data.preTax ? 'Pre-tax' : 'After-tax'} · opportunity cost ${fmtCHF(data.aggregate.deltaCHF)} · ${fmtPct(data.aggregate.deltaPct)}`,
     chartImage,
-    tables: [{ title: 'Positions', headers, rows }],
+    tables,
   };
 }
 
@@ -101,28 +156,46 @@ export async function buildPositionExport(
   const summaryRows: (string | number)[][] = [
     ['Symbol', p.instrument.symbol],
     ['Name', p.instrument.name],
+    ['ISIN', p.instrument.isin ?? '—'],
+    ['Open quantity', round(p.openQuantity)],
     ['Invested CHF', round(p.investedCHF)],
     ['Current value CHF', round(p.currentValueCHF ?? 0)],
     ['Unrealized P/L CHF', round(p.unrealizedCHF ?? 0)],
+    ['Realized P/L CHF', round(p.realizedCHF)],
     ['Net dividends (after tax) CHF', round(p.dividends.netAfterTaxCHF)],
+    ['Total P/L CHF', round(p.metrics.absolutePLChf ?? 0)],
+    ['% P/L', pct(p.metrics.percentPL)],
     ['XIRR', pct(p.metrics.xirr)],
     [`Counterfactual (${cf.benchmarkSymbol}) value CHF`, round(cf.counterfactualValueCHF)],
     ['Opportunity cost vs ETF CHF', round(cf.deltaCHF)],
     ['ETF XIRR', pct(cf.benchmarkXirr)],
   ];
 
+  const [settings, transactions] = await Promise.all([
+    api.getSettings().catch(() => null),
+    api.getTransactions(p.instrument.id).catch(() => [] as Transaction[]),
+  ]);
+  const txTable = { headers: TX_HEADERS, rows: txRows(p.instrument.symbol, transactions) };
+
   if (kind === 'excel') {
-    return {
-      title: `${p.instrument.symbol} vs ${cf.benchmarkSymbol}`,
-      sheets: [{ name: 'Analysis', table: { headers: ['Metric', 'Value'], rows: summaryRows } }],
-    };
+    const sheets = [
+      { name: 'Analysis', table: { headers: ['Metric', 'Value'], rows: summaryRows } },
+      { name: 'Transactions', table: txTable },
+    ];
+    if (settings) sheets.push({ name: 'Tax assumptions', table: { headers: ['Assumption', 'Value'], rows: taxRows(settings) } });
+    return { title: `${p.instrument.symbol} vs ${cf.benchmarkSymbol}`, sheets };
   }
   const chartImage = await captureChart('position-chart');
+  const tables = [
+    { title: 'Analysis', headers: ['Metric', 'Value'], rows: summaryRows },
+    { title: 'Transactions', headers: TX_HEADERS, rows: txTable.rows },
+  ];
+  if (settings) tables.push({ title: 'Tax assumptions', headers: ['Assumption', 'Value'], rows: taxRows(settings) });
   return {
     title: `${p.instrument.symbol} — ${p.instrument.name}`,
     subtitle: `vs ${cf.benchmarkName} · opportunity cost ${fmtCHF(cf.deltaCHF)}`,
     chartImage,
-    tables: [{ title: 'Analysis', headers: ['Metric', 'Value'], rows: summaryRows }],
+    tables,
     notes,
   };
 }

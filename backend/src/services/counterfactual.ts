@@ -57,16 +57,18 @@ export async function computeCounterfactual(
   benchmarkSymbol: string,
   settings: AppSettings,
   preTax = false,
+  opts: { asOf?: string | null } = {},
 ): Promise<CounterfactualResult> {
   const tax = settings.tax;
   const bench = resolveBenchmark(benchmarkSymbol, settings);
+  // 'asOf' evaluates the basket as of a chosen date instead of today (scenario date control).
+  const today = opts.asOf || dayjs().format('YYYY-MM-DD');
   // Exclude corporate actions (swaps/delistings) from the counterfactual cash-flow mirror.
   const sorted = [...txs]
-    .filter((t) => t.category !== 'corporate_action')
+    .filter((t) => t.category !== 'corporate_action' && t.date <= today)
     .sort((a, b) => a.date.localeCompare(b.date));
   const buys = sorted.filter((t) => t.action === 'buy');
   const sells = sorted.filter((t) => t.action === 'sell');
-  const today = dayjs().format('YYYY-MM-DD');
 
   if (!buys.length) {
     return emptyResult(bench);
@@ -77,7 +79,8 @@ export async function computeCounterfactual(
   const boughtQty = buys.reduce((s, t) => s + t.quantity, 0);
   const soldQty = sells.reduce((s, t) => s + t.quantity, 0);
   const fullyClosed = soldQty >= boughtQty - 1e-9 && sells.length > 0;
-  const endDate = fullyClosed ? sells[sells.length - 1].date : today;
+  let endDate = fullyClosed ? sells[sells.length - 1].date : today;
+  if (dayjs(endDate).isAfter(dayjs(today))) endDate = today;
 
   // Pre-fetch FX series for the currencies involved to keep sampling fast.
   const currencies = new Set<string>(['CHF', instrument.currency, bench.currency]);

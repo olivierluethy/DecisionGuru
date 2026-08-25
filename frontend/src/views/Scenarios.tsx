@@ -119,21 +119,54 @@ export function Scenarios() {
               />
             </div>
 
+            <div className="grid grid-cols-2 gap-3 mb-4">
+              <div>
+                <label className="label">From date</label>
+                <input
+                  type="date"
+                  className="input"
+                  value={config.fromDate ?? ''}
+                  onChange={(e) => setConfig((c) => ({ ...c, fromDate: e.target.value || null }))}
+                />
+                <p className="text-[11px] text-text-faint mt-1">Ignore trades before this.</p>
+              </div>
+              <div>
+                <label className="label">As of</label>
+                <input
+                  type="date"
+                  className="input"
+                  value={config.asOf ?? ''}
+                  onChange={(e) => setConfig((c) => ({ ...c, asOf: e.target.value || null }))}
+                />
+                <p className="text-[11px] text-text-faint mt-1">Value on this date (default today).</p>
+              </div>
+            </div>
+
             {!config.sellAllToEtf && (
               <div className="mb-4">
-                <label className="label">Include positions</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="label !mb-0">Include positions</label>
+                  <div className="flex gap-2 text-[11px]">
+                    <button className="text-azure hover:text-azure-bright" onClick={() => setConfig((c) => ({ ...c, includedInstrumentIds: allIds }))}>
+                      All
+                    </button>
+                    <button className="text-text-faint hover:text-text" onClick={() => setConfig((c) => ({ ...c, includedInstrumentIds: [] }))}>
+                      None
+                    </button>
+                  </div>
+                </div>
                 <div className="max-h-52 overflow-y-auto border border-hairline rounded divide-y divide-hairline">
                   {(instruments.data ?? []).map((i) => (
-                    <label key={i.id} className="flex items-center gap-2 px-3 py-2 hover:bg-surface-2 cursor-pointer text-sm">
+                    <label key={i.id} className="flex items-start gap-2 px-3 py-2 hover:bg-surface-2 cursor-pointer text-sm">
                       <input
                         type="checkbox"
-                        className="accent-azure"
+                        className="accent-azure mt-0.5"
                         checked={config.includedInstrumentIds.includes(i.id)}
                         onChange={() => toggle(i.id)}
                       />
                       <KindBadge kind={i.kind} />
-                      <span className="font-mono">{i.symbol}</span>
-                      <span className="text-text-faint truncate">{i.name}</span>
+                      <span className="font-mono shrink-0">{i.symbol}</span>
+                      <span className="text-text-muted break-words min-w-0">{i.name}</span>
                     </label>
                   ))}
                   {!instruments.data?.length && <div className="px-3 py-3 text-sm text-text-faint">No positions.</div>}

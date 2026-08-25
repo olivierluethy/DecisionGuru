@@ -232,6 +232,10 @@ export interface ScenarioConfig {
   expectedEtfCagr?: number | null;
   projectionYears?: number;
   preTax?: boolean;
+  /** Only count transactions on/after this date (evaluate a chosen holding period). */
+  fromDate?: string | null;
+  /** Evaluate the basket as of this date instead of today. */
+  asOf?: string | null;
 }
 
 export interface ScenarioResult {

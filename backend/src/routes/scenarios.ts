@@ -59,13 +59,17 @@ export async function runScenario(config: ScenarioConfig): Promise<ScenarioResul
     ids = listInstruments().map((i) => i.id);
   }
 
+  const fromDate = config.fromDate || null;
+  const asOf = config.asOf || null;
+
   const perPosition: ScenarioResult['perPosition'] = [];
   for (const id of ids) {
     const inst = getInstrument(id);
     if (!inst) continue;
-    const txs = getTransactions(id);
+    let txs = getTransactions(id);
+    if (fromDate) txs = txs.filter((t) => t.date >= fromDate);
     if (!txs.length) continue;
-    const cf = await computeCounterfactual(inst, txs, benchmark, settings, preTax);
+    const cf = await computeCounterfactual(inst, txs, benchmark, settings, preTax, { asOf });
     perPosition.push({ instrumentId: id, symbol: inst.symbol, counterfactual: cf });
   }
 

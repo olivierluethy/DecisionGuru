@@ -20,6 +20,8 @@ import type {
   RangeKey,
   RangeSeries,
   AccountDividend,
+  AccountPreviewResponse,
+  AccountCommitResponse,
 } from '@decisionguru/shared';
 
 const BASE = '/api';
@@ -190,6 +192,10 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(mapping),
     }),
+  previewAccount: (mapping: ImportMapping) =>
+    req<AccountPreviewResponse>('/imports/preview', { method: 'POST', body: JSON.stringify(mapping) }),
+  commitAccount: (mapping: ImportMapping) =>
+    req<AccountCommitResponse>('/imports/commit', { method: 'POST', body: JSON.stringify(mapping) }),
 
   // export
   exportUrl: (kind: 'excel' | 'pdf') => `${BASE}/export/${kind}`,

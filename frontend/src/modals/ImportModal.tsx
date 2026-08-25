@@ -8,12 +8,16 @@ import {
   BadgeCheck,
   ArrowLeftRight,
   SlidersHorizontal,
+  Landmark,
 } from 'lucide-react';
 import { Modal } from '../components/Modal';
 import { api } from '../lib/api';
 import { useApp } from '../store';
-import { fmtCHF, fmtDate, fmtMoney } from '../lib/format';
+import { fmtCHF, fmtDate, fmtMoney, fmtNum } from '../lib/format';
 import type {
+  AccountCommitResponse,
+  AccountEventType,
+  AccountPreviewRow,
   BrokerMappingRow,
   CanonicalField,
   ImportMapping,
@@ -39,6 +43,8 @@ const FIELDS: { value: CanonicalField; label: string }[] = [
   { value: 'withholding', label: 'Withholding tax' },
 ];
 
+type TxResult = { imported: number; skipped: number; corporateActions: number };
+
 export function ImportModal() {
   const { closeModal } = useApp();
   const qc = useQueryClient();
@@ -46,8 +52,10 @@ export function ImportModal() {
   const [manualOverride, setManualOverride] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<{ imported: number; skipped: number; corporateActions: number } | null>(null);
+  const [result, setResult] = useState<TxResult | null>(null);
+  const [accountResult, setAccountResult] = useState<AccountCommitResponse | null>(null);
 
+  const isAccount = file?.detectedKind === 'account';
   const detected = file?.detectedBroker === 'degiro' && !manualOverride;
 
   const onUpload = async (f: File) => {
@@ -63,13 +71,23 @@ export function ImportModal() {
     }
   };
 
+  const reset = () => {
+    setFile(null);
+    setResult(null);
+    setAccountResult(null);
+    setManualOverride(false);
+    setErr(null);
+  };
+
+  const done = result || accountResult;
+
   return (
     <Modal
-      title="Import trading history"
-      subtitle="DeGiro is auto-detected and mapped for you. Other files fall back to manual column mapping."
+      title="Import DEGIRO data"
+      subtitle="Drop the Account statement (Kontoauszug) for cash & dividends, and the Transactions export for holdings. Each is auto-detected."
       onClose={closeModal}
       size="xl"
-      footer={<Footer file={file} detected={detected} result={result} onDone={closeModal} />}
+      footer={<Footer result={done} onDone={closeModal} onMore={reset} />}
     >
       {err && (
         <div className="mb-4 flex items-center gap-2 text-loss text-sm bg-loss/10 border border-loss/30 rounded p-3">
@@ -79,9 +97,21 @@ export function ImportModal() {
 
       {!file && <UploadStep busy={busy} onUpload={onUpload} />}
 
+      {file && accountResult && <AccountResultScreen result={accountResult} />}
       {file && result && <ResultScreen result={result} />}
 
-      {file && !result && detected && (
+      {file && !done && isAccount && (
+        <AccountPanel
+          file={file}
+          onCommitted={(r) => {
+            setAccountResult(r);
+            qc.invalidateQueries();
+          }}
+          setErr={setErr}
+        />
+      )}
+
+      {file && !done && !isAccount && detected && (
         <DegiroPanel
           file={file}
           onCommitted={(r) => {
@@ -93,7 +123,7 @@ export function ImportModal() {
         />
       )}
 
-      {file && !result && !detected && (
+      {file && !done && !isAccount && !detected && (
         <ManualPanel
           file={file}
           onCommitted={(r) => {
@@ -109,20 +139,17 @@ export function ImportModal() {
 
 // The footer is context-driven; the actual import buttons live in the panels to keep
 // their local state. This just carries the "Done" affordance after a successful import.
-function Footer({
-  result,
-  onDone,
-}: {
-  file: Parsed | null;
-  detected: boolean;
-  result: unknown;
-  onDone: () => void;
-}) {
+function Footer({ result, onDone, onMore }: { result: unknown; onDone: () => void; onMore: () => void }) {
   if (!result) return <div className="text-[11px] text-text-faint">Local-first — your data never leaves this machine.</div>;
   return (
-    <button className="btn-primary ml-auto" onClick={onDone}>
-      Done
-    </button>
+    <div className="ml-auto flex gap-2">
+      <button className="btn-secondary" onClick={onMore}>
+        Import another file
+      </button>
+      <button className="btn-primary" onClick={onDone}>
+        Done
+      </button>
+    </div>
   );
 }
 
@@ -132,12 +159,25 @@ function UploadStep({ busy, onUpload }: { busy: boolean; onUpload: (f: File) => 
   const [drag, setDrag] = useState(false);
   return (
     <div>
-      <div className="flex items-center gap-2 mb-4 text-sm text-text-muted bg-surface-2 border border-hairline rounded p-3">
-        <BadgeCheck size={16} className="text-gain shrink-0" />
-        <span>
-          <b className="text-text">I use DeGiro:</b> drop your <span className="font-mono">Transactions</span> CSV
-          export — it's detected and mapped automatically, no column dragging.
-        </span>
+      <div className="grid sm:grid-cols-2 gap-3 mb-4">
+        <div className="flex items-start gap-2 text-sm text-text-muted bg-surface-2 border border-hairline rounded p-3">
+          <Landmark size={16} className="text-azure shrink-0 mt-0.5" />
+          <span>
+            <b className="text-text">Account statement</b> (Kontoauszug) — DEGIRO → Reports → Account
+            statement → export <span className="font-mono">CSV</span>. Brings cash, dividends by
+            security, taxes, fees & deposits.
+          </span>
+        </div>
+        <div className="flex items-start gap-2 text-sm text-text-muted bg-surface-2 border border-hairline rounded p-3">
+          <BadgeCheck size={16} className="text-gain shrink-0 mt-0.5" />
+          <span>
+            <b className="text-text">Transactions</b> export — brings your holdings, quantities &
+            cost basis. Merged with the account statement on ISIN.
+          </span>
+        </div>
+      </div>
+      <div className="text-[11px] text-text-faint mb-3">
+        Both are auto-detected — drop either file (one at a time). Import both for the full overview.
       </div>
       <label
         className={`flex flex-col items-center justify-center gap-3 border-2 border-dashed rounded-lg py-16 cursor-pointer transition-colors ${
@@ -345,6 +385,176 @@ function DegiroPreviewTable({ rows }: { rows: ImportPreviewRow[] }) {
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+// ---- DEGIRO Account statement panel ------------------------------------
+
+const ACCOUNT_TYPE_META: Record<AccountEventType, { label: string; cls: string }> = {
+  deposit: { label: 'Deposit', cls: 'text-azure border-azure/40' },
+  cash_sweep: { label: 'Cash sweep', cls: 'text-text-muted border-hairline' },
+  fx_conversion: { label: 'FX', cls: 'text-gold border-gold/40' },
+  dividend: { label: 'Dividend', cls: 'text-gain border-gain/40' },
+  withholding_tax: { label: 'Div. tax', cls: 'text-loss border-loss/40' },
+  corp_action_fee: { label: 'CA fee', cls: 'text-warn border-warn/40' },
+  connectivity_fee: { label: 'Connectivity', cls: 'text-warn border-warn/40' },
+  unknown: { label: 'Unknown', cls: 'text-warn border-warn/60 font-medium' },
+};
+
+function AccountTypeBadge({ type }: { type: AccountEventType }) {
+  const m = ACCOUNT_TYPE_META[type];
+  return <span className={`chip !py-0 !px-2 ${m.cls}`}>{m.label}</span>;
+}
+
+function AccountPanel({
+  file,
+  onCommitted,
+  setErr,
+}: {
+  file: Parsed;
+  onCommitted: (r: AccountCommitResponse) => void;
+  setErr: (s: string | null) => void;
+}) {
+  const [preview, setPreview] = useState<Awaited<ReturnType<typeof api.previewAccount>> | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const mapping: ImportMapping = {
+    fileId: file.fileId,
+    sheetName: file.sheets[0]?.name ?? 'CSV',
+    headerRowIndex: 0,
+    mapping: {},
+    actionMap: file.defaultActionMap,
+    kind: 'account',
+  };
+
+  useEffect(() => {
+    api.previewAccount(mapping).then(setPreview).catch((e) => setErr((e as Error).message));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [file.fileId]);
+
+  const commit = async () => {
+    setBusy(true);
+    try {
+      onCommitted(await api.commitAccount(mapping));
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-start gap-2 bg-azure/10 border border-azure/30 rounded p-3">
+        <Landmark size={18} className="text-azure shrink-0 mt-0.5" />
+        <div>
+          <div className="text-sm text-text font-medium">Detected format: {file.brokerName}</div>
+          <div className="text-xs text-text-muted mt-0.5">
+            Parsed by position (blank amount/balance columns) · encoding {file.encoding} ·{' '}
+            {file.sheets[0]?.rows.length ?? 0} rows
+          </div>
+        </div>
+      </div>
+
+      {preview ? <AccountSummary preview={preview} /> : <div className="text-sm text-text-muted py-4">Building preview…</div>}
+      {preview && <AccountPreviewTable rows={preview.rows} />}
+
+      <div className="flex justify-end pt-1">
+        <button className="btn-primary" disabled={busy || !preview?.okCount} onClick={commit}>
+          {busy ? 'Importing…' : `Import ${preview?.okCount ?? 0} events`}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function AccountSummary({ preview }: { preview: Awaited<ReturnType<typeof api.previewAccount>> }) {
+  const t = preview.byType;
+  const chip = (label: string, n: number | undefined, cls: string) =>
+    n ? (
+      <span className={`flex items-center gap-1.5 ${cls}`}>
+        <CheckCircle2 size={15} /> {n} {label}
+      </span>
+    ) : null;
+  return (
+    <div className="flex flex-wrap items-center gap-4 text-sm">
+      {chip('dividends', t.dividend, 'text-gain')}
+      {chip('taxes', t.withholding_tax, 'text-loss')}
+      {chip('deposits', t.deposit, 'text-azure')}
+      {chip('FX', t.fx_conversion, 'text-gold')}
+      {chip('sweeps', t.cash_sweep, 'text-text-muted')}
+      {(t.corp_action_fee || t.connectivity_fee) && (
+        <span className="flex items-center gap-1.5 text-warn">
+          <CheckCircle2 size={15} /> {(t.corp_action_fee ?? 0) + (t.connectivity_fee ?? 0)} fees
+        </span>
+      )}
+      {preview.reversedCount > 0 && (
+        <span className="flex items-center gap-1.5 text-text-faint">
+          <ArrowLeftRight size={15} /> {preview.reversedCount} netted (storno)
+        </span>
+      )}
+      <span className={`flex items-center gap-1.5 ${preview.unknownCount ? 'text-warn' : 'text-text-faint'}`}>
+        {preview.unknownCount ? <AlertCircle size={15} /> : <CheckCircle2 size={15} />} {preview.unknownCount} unknown
+      </span>
+    </div>
+  );
+}
+
+function AccountPreviewTable({ rows }: { rows: AccountPreviewRow[] }) {
+  return (
+    <div className="border border-hairline rounded overflow-hidden max-h-[42vh] overflow-y-auto">
+      <table className="w-full text-sm">
+        <thead className="sticky top-0 z-10">
+          <tr>
+            <th className="th">Date</th>
+            <th className="th">Type</th>
+            <th className="th">Security / description</th>
+            <th className="th text-right">Amount</th>
+            <th className="th text-right">Balance</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r, i) => {
+            const e = r.event;
+            const dim = e.reversed ? 'opacity-40 line-through' : '';
+            return (
+              <tr key={i} className={r.type === 'unknown' ? 'bg-warn/5' : ''}>
+                <td className={`td font-mono tnum text-text-muted whitespace-nowrap ${dim}`}>{fmtDate(e.date)}</td>
+                <td className="td">
+                  <AccountTypeBadge type={r.type} />
+                </td>
+                <td className="td">
+                  <div className={`max-w-[300px] ${dim}`}>
+                    <div className="truncate text-text">{e.name || e.description}</div>
+                    {e.isin && <div className="font-mono text-[11px] text-text-faint">{e.isin}</div>}
+                  </div>
+                </td>
+                <td className={`td text-right font-mono tnum whitespace-nowrap ${dim} ${e.amount < 0 ? 'text-loss' : 'text-text'}`}>
+                  {fmtNum(e.amount)} {e.currency}
+                </td>
+                <td className={`td text-right font-mono tnum text-text-faint whitespace-nowrap ${dim}`}>
+                  {e.balance != null ? `${fmtNum(e.balance)} ${e.balanceCurrency ?? ''}` : '—'}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function AccountResultScreen({ result }: { result: AccountCommitResponse }) {
+  return (
+    <div className="flex flex-col items-center py-10 text-center">
+      <CheckCircle2 size={40} className="text-gain mb-3" />
+      <h3 className="font-display text-lg">Imported {result.importedEvents} account events</h3>
+      <p className="text-sm text-text-muted mt-1 max-w-md">
+        {result.dividends} securities with dividends · {result.linked} events linked to holdings by ISIN.{' '}
+        {result.skipped > 0 ? `${result.skipped} duplicates skipped. ` : 'No duplicates. '}
+        {result.summary.unknownCount > 0 && `${result.summary.unknownCount} unknown events kept for review. `}
+      </p>
     </div>
   );
 }

@@ -350,6 +350,71 @@ export type CanonicalField =
 /** A recognised broker whose layout is auto-mapped. */
 export type DetectedBroker = 'degiro';
 
+/** Which DEGIRO export a parsed file matched. */
+export type DetectedKind = 'transactions' | 'account';
+
+/** Normalized DEGIRO account-statement event type. */
+export type AccountEventType =
+  | 'deposit'
+  | 'cash_sweep'
+  | 'fx_conversion'
+  | 'dividend'
+  | 'withholding_tax'
+  | 'corp_action_fee'
+  | 'connectivity_fee'
+  | 'unknown';
+
+export interface AccountEvent {
+  date: string | null;
+  time?: string;
+  valueDate?: string | null;
+  name?: string | null;
+  isin?: string | null;
+  description?: string;
+  type: AccountEventType;
+  fx?: number | null;
+  currency?: string | null;
+  amount: number;
+  balanceCurrency?: string | null;
+  balance?: number | null;
+  orderId?: string | null;
+  reversed?: boolean;
+  dedupeKey?: string;
+}
+
+export interface AccountPreviewRow {
+  ok: boolean;
+  errors: string[];
+  type: AccountEventType;
+  label: string;
+  event: AccountEvent;
+}
+
+export interface AccountPreviewResponse {
+  kind: 'account';
+  rows: AccountPreviewRow[];
+  okCount: number;
+  total: number;
+  byType: Partial<Record<AccountEventType, number>>;
+  unknownCount: number;
+  reversedCount: number;
+}
+
+export interface AccountCommitResponse {
+  kind: 'account';
+  importedEvents: number;
+  skipped: number;
+  linked: number;
+  dividends: number;
+  summary: {
+    counts: Partial<Record<AccountEventType, number>>;
+    unknown: AccountEvent[];
+    unknownCount: number;
+    reversedCount: number;
+    total: number;
+  };
+}
+
 export interface BrokerMappingRow {
   header: string; // the broker's own column header (may be '(currency)' for the empty ones)
   field: string; // canonical field it binds to
@@ -362,6 +427,8 @@ export interface ParsedFile {
   sheets: ParsedSheet[];
   /** Non-null when the file's header matches a known broker signature. */
   detectedBroker?: DetectedBroker | null;
+  /** Which DEGIRO export this file matched, when recognised. */
+  detectedKind?: DetectedKind | null;
   brokerName?: string; // display label, e.g. "DeGiro — Transactions export"
   brokerMapping?: BrokerMappingRow[]; // read-only mapping to show immediately
   encoding?: string; // 'utf-8' | 'windows-1252'
@@ -390,6 +457,8 @@ export interface ImportMapping {
   defaultCurrency?: Currency;
   /** When set, the backend uses the broker's hardcoded parser instead of `mapping`. */
   broker?: DetectedBroker;
+  /** When 'account', the backend runs the account-statement transform. */
+  kind?: DetectedKind;
 }
 
 /** Extra display/derivation fields carried alongside a preview row's tx. */

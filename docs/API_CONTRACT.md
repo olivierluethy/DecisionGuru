@@ -1,0 +1,148 @@
+# DecisionGuru — API Contract
+
+The single source of truth the FastAPI backend must reproduce **byte-for-byte in shape**.
+It is the contract the existing (unchanged) React frontend consumes today. Extracted from
+the retired Node/Express backend (`backend/src/routes/*`) and cross-checked against every
+call in `frontend/src/lib/api.ts`.
+
+- **Base URL:** all endpoints are served under `/api`. The Vite dev server proxies `/api`
+  → `http://localhost:5178`, so the backend **must listen on port 5178** and mount every
+  route under the `/api` prefix.
+- **Content type:** JSON in, JSON out (except file upload + exports). `express.json` limit
+  was 15 MB; uploads accepted up to 25 MB.
+- **CORS:** open (`cors()` with defaults) — allow the frontend origin.
+- **Error envelope:** every failure returns `{ "error": "<message>" }` with an appropriate
+  status (`400` bad request, `404` not found, `422` unprocessable, `500` internal). The
+  frontend reads `body.error`.
+- **Health:** `GET /api/health` → `{ ok: true, service: "decisionguru", time: <ISO> }`.
+- **Money:** all monetary outputs are CHF unless a field name says otherwise. Field naming
+  is **camelCase** and must be preserved exactly.
+
+Domain object shapes (`Instrument`, `Transaction`, `Position`, `CounterfactualResult`,
+`ScenarioResult`, `AllocationBreakdown`, `ParsedFile`, `ImportPreviewRow`, …) are defined
+in `shared/src/types.ts` and are authoritative; this document lists the endpoints and their
+request/response envelopes.
+
+---
+
+## settings
+| Method | Path | Body | Response |
+|---|---|---|---|
+| GET | `/api/settings` | — | `AppSettings` |
+| PUT | `/api/settings` | `Partial<AppSettings>` | `AppSettings` (merged: shallow spread + `tax` deep-merged + `benchmarks` replaced if present) |
+| POST | `/api/settings/reset` | — | `AppSettings` (defaults) |
+
+## instruments
+| Method | Path | Query/Body | Response |
+|---|---|---|---|
+| GET | `/api/instruments` | — | `Instrument[]` (ordered by name) |
+| GET | `/api/instruments/search?q=` | `q` | `Array<{symbol,name,exchange,kind,type}>` (Yahoo search hits; `[]` if empty q) |
+| POST | `/api/instruments/reresolve-all` | `{offline?:boolean}` | `{attempted:number, offline:boolean, results:Array<{id,isin,symbol,unresolved}>}` |
+| POST | `/api/instruments/:id/reresolve` | `{offline?:boolean}` | `Instrument` (404 if missing) |
+| GET | `/api/instruments/:id/status` | — | `InstrumentDataStatus` (404 if missing) |
+| GET | `/api/instruments/:id` | — | `Instrument` (404 if missing) |
+| GET | `/api/instruments/:id/transactions` | — | `Transaction[]` (ordered date,id) |
+| POST | `/api/instruments` | `Partial<Instrument>` (needs symbol\|isin\|name) | `Instrument` (resolves + patches domicile/kind/incomeYieldOverride) |
+| PATCH | `/api/instruments/:id` | `Partial<Instrument>` | `Instrument` (404 if missing) |
+| DELETE | `/api/instruments/:id` | — | `{ok:true}` |
+| POST | `/api/instruments/manual` | `{symbol?,isin?,name?,date,amount?,units?,currency?,action?}` | `{instrument:Instrument, transaction:Transaction, derivedPrice:number}` (400/422 on validation) |
+
+`InstrumentDataStatus.state`: `'ok' | 'stale' | 'unresolved' | 'no-data'`.
+
+## transactions
+| Method | Path | Body | Response |
+|---|---|---|---|
+| POST | `/api/transactions` | `Partial<Transaction>` (needs instrumentId, action, date) | `Transaction` (400 on validation) |
+| DELETE | `/api/transactions/:id` | — | `{ok:true}` |
+
+## analysis
+| Method | Path | Query/Body | Response |
+|---|---|---|---|
+| GET | `/api/analysis/position/:id?preTax=` | `preTax` | `Position` (404 if missing) |
+| GET | `/api/analysis/counterfactual/:id?preTax=&benchmark=` | | `CounterfactualResult` |
+| GET | `/api/analysis/breakeven/:id?benchmark=` | | `BreakEvenResult & {benchmark:string}` |
+| GET | `/api/analysis/projection/:id?benchmark=&years=&stockCagr=&etfCagr=` | | `ProjectionResult & {benchmark:string}` |
+| GET | `/api/analysis/dividend-shock/:id?cut=` | `cut` 0..1 | `{currentAnnualGrossCHF, shockedAnnualGrossCHF, lostGrossCHF, lostNetAfterTaxCHF, cut}` |
+| GET | `/api/analysis/portfolio?preTax=&benchmark=` | | `PortfolioResponse` (see below) |
+| POST | `/api/analysis/compare` | `{instrumentIds:number[], benchmarks:string[], preTax?:boolean}` | `CompareResponse` (see below) |
+
+**PortfolioResponse**: `{ benchmark, preTax, positions:Position[], counterfactuals:Array<{instrumentId,symbol,counterfactual}>, aggregate:{actualValueCHF,counterfactualValueCHF,deltaCHF,deltaPct,series}, totals:{investedCHF,currentValueCHF,realizedCHF,netDividendsCHF,absolutePLChf} }`
+
+**CompareResponse**: `{ preTax, instrumentIds:number[], positions:Position[], comparisons:Array<{benchmark, benchmarkName, aggregate:{...}, perPosition:Array<{instrumentId,symbol,name?,counterfactual}>}> }`
+
+Only instruments **with transactions** contribute positions/counterfactuals. `compare` with
+empty `instrumentIds` falls back to all instruments; empty `benchmarks` falls back to
+`[defaultBenchmarkSymbol]`.
+
+## data management
+| Method | Path | Body | Response |
+|---|---|---|---|
+| POST | `/api/data/reset` | `{keepResolutions?:boolean=true}` | `{ok:true, cleared:string[], keptResolutions:boolean}` |
+
+Clears transactions, instruments, price/quote/dividend/fund caches (+ `symbol_map` when
+`keepResolutions=false`) and instrument-scoped notes. Keeps settings, benchmarks, presets.
+
+## market
+| Method | Path | Query | Response |
+|---|---|---|---|
+| GET | `/api/market/quote/:symbol` | — | `{symbol,price,currency,name,time,stale}` |
+| GET | `/api/market/history/:symbol?from=&to=` | | `PricePoint[]` (`{date,close}`) |
+| GET | `/api/market/fund/:symbol` | — | fund summary passthrough (or `null`) |
+| GET | `/api/market/search?q=` | | Yahoo search hits |
+| GET | `/api/market/fx?from=&to=&date=` | | `{from,to,date,rate}` |
+| GET | `/api/market/allocation/:instrumentId` | — | `AllocationBreakdown` (404 if missing) |
+
+## scenarios
+| Method | Path | Body | Response |
+|---|---|---|---|
+| GET | `/api/scenarios` | — | `Scenario[]` |
+| GET | `/api/scenarios/:id` | — | `Scenario` (404) |
+| POST | `/api/scenarios` | `{name, config}` | `Scenario` (400) |
+| PUT | `/api/scenarios/:id` | `{name, config}` | `Scenario` (404) |
+| DELETE | `/api/scenarios/:id` | — | `{ok:true}` |
+| POST | `/api/scenarios/run` | `ScenarioConfig` | `ScenarioResult` |
+
+## notes
+| Method | Path | Query/Body | Response |
+|---|---|---|---|
+| GET | `/api/notes?target=&targetId=` | (no target → all notes) | `Note[]` |
+| POST | `/api/notes` | `{target, targetId, body}` | `Note` (400) |
+| PATCH | `/api/notes/:id` | `{body}` | `Note` (404) |
+| DELETE | `/api/notes/:id` | — | `{ok:true}` |
+
+## imports
+| Method | Path | Body | Response |
+|---|---|---|---|
+| POST | `/api/imports/upload` | multipart `file` | `ParsedFile & {defaultActionMap}` (400 no file, 422 parse error) |
+| GET | `/api/imports/file/:fileId` | — | `ParsedFile` (404) |
+| POST | `/api/imports/preview` | `ImportMapping` | `{rows:ImportPreviewRow[], okCount, total, trades, corporateActions}` (400/404) |
+| POST | `/api/imports/commit` | `ImportMapping` | `{imported, skipped, corporateActions, instruments:number[]}` (400/404) |
+| GET | `/api/imports/presets` | — | `ImportPreset[]` |
+| POST | `/api/imports/presets` | `{name, mapping}` | `{ok:true}` (400) |
+| DELETE | `/api/imports/presets/:id` | — | `{ok:true}` |
+
+DeGiro is auto-detected (`detectedBroker:'degiro'`) and uses a dedicated transform when
+`mapping.broker === 'degiro'`; otherwise the generic column mapping is applied.
+
+## export
+| Method | Path | Body | Response |
+|---|---|---|---|
+| POST | `/api/export/excel` | `{title, sheets:[{name, table:{title?,headers,rows}}]}` | `.xlsx` binary (attachment) |
+| POST | `/api/export/pdf` | `{title, subtitle?, tables:[{title?,headers,rows}], notes?, chartImage?, disclaimer?}` | `.pdf` binary (attachment) |
+
+---
+
+## Backend routing: interactive (pandas) vs. heavy (PySpark)
+
+- **Interactive / low-latency (pandas + numpy + scipy):** single-instrument endpoints —
+  `position`, `counterfactual`, `breakeven`, `projection`, `dividend-shock`, `quote`,
+  `history`, `allocation`, `manual`, all CRUD.
+- **Heavy / bulk (PySpark, lazy local SparkSession, offloaded to a threadpool):** the
+  portfolio-wide aggregation across many positions — `analysis/portfolio`,
+  `analysis/compare`, `scenarios/run` — where per-position counterfactual series are summed
+  by date (a natural distributed group-by / reduce). Spark degrades gracefully to the pandas
+  reducer (identical output) when a `SparkSession` cannot be created, so the contract never
+  changes and requests never hang.
+
+All blocking work (yfinance, Spark, pandas-heavy loops) is offloaded via
+`run_in_threadpool` so the event loop never blocks.

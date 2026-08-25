@@ -126,10 +126,13 @@ export async function resolveInstrument(ident: {
  * resolver existed (symbol still equals the ISIN) or that were left unresolved.
  * Preserves any user edits by only overwriting when we get a confident (non-unresolved) hit.
  */
-export async function reresolveInstrument(id: number): Promise<Instrument | null> {
+export async function reresolveInstrument(
+  id: number,
+  opts: { offline?: boolean } = {},
+): Promise<Instrument | null> {
   const inst = getInstrument(id);
   if (!inst) return null;
-  const r = await resolveSymbol({ isin: inst.isin, name: inst.name, symbol: null });
+  const r = await resolveSymbol({ isin: inst.isin, name: inst.name, symbol: null }, opts);
   if (r.unresolved) {
     // Couldn't resolve — just flag it so the UI can show the badge; keep existing fields.
     return updateInstrument(id, { unresolved: true, resolutionSource: 'unresolved' });

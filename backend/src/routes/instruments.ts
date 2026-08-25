@@ -28,19 +28,20 @@ instrumentsRouter.get('/search', async (req, res) => {
 });
 
 // Re-resolve every instrument still stuck on its ISIN / flagged unresolved.
-instrumentsRouter.post('/reresolve-all', async (_req, res) => {
+instrumentsRouter.post('/reresolve-all', async (req, res) => {
+  const offline = req.body?.offline === true;
   const pending = unresolvedInstruments();
   const results = [];
   for (const inst of pending) {
-    const updated = await reresolveInstrument(inst.id);
+    const updated = await reresolveInstrument(inst.id, { offline });
     results.push({ id: inst.id, isin: inst.isin, symbol: updated?.symbol, unresolved: updated?.unresolved });
   }
-  res.json({ attempted: pending.length, results });
+  res.json({ attempted: pending.length, offline, results });
 });
 
 // Re-resolve a single instrument on demand.
 instrumentsRouter.post('/:id/reresolve', async (req, res) => {
-  const updated = await reresolveInstrument(Number(req.params.id));
+  const updated = await reresolveInstrument(Number(req.params.id), { offline: req.body?.offline === true });
   if (!updated) return res.status(404).json({ error: 'Not found' });
   res.json(updated);
 });

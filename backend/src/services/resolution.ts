@@ -92,11 +92,14 @@ function pickBest(hits: SymbolSearchHit[], hint?: { country?: string | null }): 
  * Resolve an instrument identifier to a canonical Yahoo symbol + metadata.
  * Tiers: explicit ticker → symbol_map cache → curated seed → Yahoo search → unresolved.
  */
-export async function resolveSymbol(ident: {
-  isin?: string | null;
-  name?: string | null;
-  symbol?: string | null;
-}): Promise<ResolvedSymbol> {
+export async function resolveSymbol(
+  ident: {
+    isin?: string | null;
+    name?: string | null;
+    symbol?: string | null;
+  },
+  opts: { offline?: boolean } = {},
+): Promise<ResolvedSymbol> {
   const isin = ident.isin?.toUpperCase() || null;
   const isinCountry = countryFromIsin(isin);
 
@@ -147,7 +150,18 @@ export async function resolveSymbol(ident: {
     return r;
   }
 
-  // 3) Yahoo search (rate-limited, cached once resolved).
+  // 3) Yahoo search (rate-limited, cached once resolved). Skipped in offline mode so a
+  //    bulk repair stays instant/deterministic and never blocks on a rate-limit wall.
+  if (opts.offline) {
+    const slug = (isin || ident.name || ident.symbol || 'UNKNOWN')
+      .replace(/\s+/g, '-')
+      .toUpperCase()
+      .slice(0, 24);
+    return {
+      symbol: slug, currency: 'USD', kind: 'stock', country: isinCountry,
+      name: ident.name ?? null, source: 'unresolved', unresolved: true,
+    };
+  }
   const query = isin || ident.name || ident.symbol || '';
   let hits = await searchSymbol(query);
   if (!hits.length && ident.name && ident.name !== query) {

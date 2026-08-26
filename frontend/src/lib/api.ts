@@ -365,6 +365,12 @@ export interface ExchangeStatus {
   isOpen: boolean;
   nextChange: 'opens' | 'closes';
   minutesToNextChange: number;
+  /** Whole seconds until the next open/close, at the moment the server replied. */
+  secondsToNextChange: number;
+  /** Absolute instant of the next state change (UTC ISO) — tick a live countdown against this. */
+  nextChangeAt: string;
+  /** Server clock at reply time (UTC ISO) — lets the client correct for clock skew. */
+  serverNowUtc: string;
 }
 
 // ---- Movements -----------------------------------------------------------

@@ -8,6 +8,7 @@ import { PriceMovementChart } from '../components/PriceMovementChart';
 import { ExposureBars } from '../components/ExposureBars';
 import { NewsFeed } from '../components/NewsFeed';
 import { Globe } from '../components/Globe';
+import { MarketStatusChip } from '../components/MarketStatusChip';
 import { Stat, Spinner, Segmented, EmptyState, KindBadge } from '../components/ui';
 import { fmtCHF, fmtPct, fmtPctSigned, fmtNum, plClass } from '../lib/format';
 
@@ -147,12 +148,7 @@ function AssetView({ symbol, onReset }: { symbol: string; onReset: () => void })
           <div className="flex items-center gap-2">
             <h1 className="font-display text-2xl font-semibold font-mono">{data.symbol}</h1>
             <KindBadge kind={data.kind} />
-            {hours && (
-              <span className={clsx('chip !py-0.5', hours.isOpen ? 'text-gain' : 'text-text-faint')}>
-                <span className={clsx('w-1.5 h-1.5 rounded-full', hours.isOpen ? 'bg-gain' : 'bg-text-faint')} />
-                {hours.name} {hours.isOpen ? 'open' : 'closed'}
-              </span>
-            )}
+            {hours && <MarketStatusChip hours={hours} label="name" />}
           </div>
           <p className="text-sm text-text-muted mt-1">{data.name}</p>
           {data.currentPrice != null && (

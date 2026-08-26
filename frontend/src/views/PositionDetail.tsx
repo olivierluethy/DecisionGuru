@@ -31,6 +31,7 @@ import { Globe } from '../components/Globe';
 import { Segmented, Spinner, Stat, KindBadge, StaleDot, DataStatusBadge } from '../components/ui';
 import { BenchmarkSelect } from '../components/BenchmarkSelect';
 import { NotesPanel } from '../components/NotesPanel';
+import { MarketStatusChip } from '../components/MarketStatusChip';
 import { buildPositionExport } from '../lib/exporters';
 
 export function PositionDetail() {
@@ -127,13 +128,7 @@ export function PositionDetail() {
             </h1>
             <div className="flex items-center gap-2 flex-wrap">
               <p className="text-sm text-text-muted">{inst.name}</p>
-              {hours.data && (
-                <span className={clsx('chip !py-0.5', hours.data.isOpen ? 'text-gain' : 'text-text-faint')}
-                      title={`${hours.data.name} · ${hours.data.localTime} local`}>
-                  <span className={clsx('w-1.5 h-1.5 rounded-full', hours.data.isOpen ? 'bg-gain' : 'bg-text-faint')} />
-                  {hours.data.code} {hours.data.isOpen ? 'open' : 'closed'}
-                </span>
-              )}
+              {hours.data && <MarketStatusChip hours={hours.data} />}
             </div>
           </div>
         </div>

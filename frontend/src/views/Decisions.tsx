@@ -1,9 +1,11 @@
 import { useQuery } from '@tanstack/react-query';
+import { useState } from 'react';
 import clsx from 'clsx';
-import { ArrowRight, Wallet, TrendingDown, ShieldCheck, Scissors, Activity } from 'lucide-react';
+import { ArrowRight, Wallet, TrendingDown, ShieldCheck, Scissors, Activity, ChevronDown } from 'lucide-react';
 import { api, type Recommendation, type RecAction } from '../lib/api';
 import { Stat, Spinner, EmptyState } from '../components/ui';
 import { ExposureBars } from '../components/ExposureBars';
+import { DeltaChart } from '../components/DeltaChart';
 import { fmtCHF, fmtCHFSigned, fmtPct, fmtPctSigned, fmtMonths, plClass } from '../lib/format';
 import { useApp } from '../store';
 
@@ -19,6 +21,13 @@ function RecCard({ rec }: { rec: Recommendation }) {
   const meta = ACTION_META[rec.action];
   const actionable = rec.action === 'sell' || rec.action === 'trim';
   const target = rec.action === 'sell' || rec.action === 'trim';
+  const [showWhy, setShowWhy] = useState(false);
+  const cf = useQuery({
+    queryKey: ['rec-cf', rec.instrumentId, rec.benchmarkSymbol],
+    queryFn: () => api.counterfactual(rec.instrumentId, rec.benchmarkSymbol),
+    enabled: showWhy,
+    staleTime: 5 * 60_000,
+  });
 
   return (
     <div className={clsx('card border-l-2', meta.border)}>
@@ -88,6 +97,44 @@ function RecCard({ rec }: { rec: Recommendation }) {
           </div>
         </div>
       )}
+
+      {/* Why — the graphical counterfactual, lazy-loaded on expand */}
+      <div className="mt-4 pt-3 border-t border-hairline">
+        <button
+          className="flex items-center gap-1.5 text-[13px] text-azure hover:text-azure-bright"
+          onClick={() => setShowWhy((v) => !v)}
+        >
+          <ChevronDown size={14} className={clsx('transition-transform', showWhy && 'rotate-180')} />
+          {showWhy ? 'Hide the why' : `Why — ${rec.symbol} vs ${rec.benchmarkSymbol}, graphically`}
+        </button>
+        {showWhy && (
+          <div className="mt-3">
+            <div className="flex items-center gap-4 mb-2 text-[11px] text-text-muted">
+              <span className="flex items-center gap-1.5">
+                <span className="w-4 h-0.5 bg-azure inline-block" /> {rec.symbol} (your holding)
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="w-4 h-0 border-t-2 border-dashed border-gold inline-block" /> {rec.benchmarkSymbol} (same money in the ETF)
+              </span>
+            </div>
+            {cf.isLoading && <Spinner label="Charting the counterfactual…" />}
+            {cf.data && <DeltaChart series={cf.data.series} benchmarkName={cf.data.benchmarkSymbol} height={200} />}
+            {cf.data && (
+              <p className="text-[12px] text-text-muted mt-2 leading-relaxed max-w-3xl">
+                Both lines start from the same invested CHF. The azure line is what your{' '}
+                <span className="font-mono text-azure">{rec.symbol}</span> position is actually worth over time; the
+                gold line is what that same money would be worth in{' '}
+                <span className="font-mono text-gold">{rec.benchmarkSymbol}</span>. The shaded gap is green where you're
+                ahead, red where the ETF wins —{' '}
+                {rec.action === 'hold'
+                  ? 'here your holding keeps pace or stays ahead, so the model says hold.'
+                  : 'that red gap is the opportunity cost driving this call.'}
+              </p>
+            )}
+            {cf.isError && <p className="text-[12px] text-loss mt-2">Could not load the comparison chart.</p>}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

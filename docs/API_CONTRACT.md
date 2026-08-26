@@ -148,6 +148,51 @@ Account cash, dividends-by-ISIN, deposits and fees surface via `PortfolioRespons
 | POST | `/api/export/excel` | `{title, sheets:[{name, table:{title?,headers,rows}}]}` | `.xlsx` binary (attachment) |
 | POST | `/api/export/pdf` | `{title, subtitle?, tables:[{title?,headers,rows}], notes?, chartImage?, disclaimer?}` | `.pdf` binary (attachment) |
 
+## market (extensions)
+| Method | Path | Query | Response |
+|---|---|---|---|
+| GET | `/api/market/news/:symbol` | `limit=12` | `{symbol, items:NewsItem[], stale, fetchedAt}` — Yahoo RSS, cached (`news_cache`), de-duplicated by link hash |
+| GET | `/api/market/hours` | — | `{exchanges:ExchangeStatus[]}` — live open/closed for SIX/US/LSE/Xetra |
+| GET | `/api/market/hours/:symbol` | — | `ExchangeStatus` for the symbol's exchange |
+| GET | `/api/market/movements/:symbol` | `from?` | `{legs:MovementLeg[], stagnation:StagnationWindow[], coverage}` — zig-zag surge/drop legs + stagnation stretches from cached closes |
+
+`ExchangeStatus`: `{code,name,country,tz,localTime,localDate,open,close,isOpen,nextChange:'opens'|'closes',minutesToNextChange}`.
+Regular cash-session hours only; public holidays are not modelled.
+
+## decisions (decision engine)
+| Method | Path | Query/Body | Response |
+|---|---|---|---|
+| GET | `/api/decisions/recommendations` | — | `{recommendations:Recommendation[], cashSignal, summary}` — explainable Buy/Hold/Sell/Trim, one counterfactual vs the default benchmark per holding, ranked by capital at stake |
+| GET | `/api/decisions/recovery/:id` | `horizon=5&alternatives=SYM,SYM` | `{proceedsCHF,targetCHF,alternatives[],fastest,combinations[],...}` — recovery-time per alternative + single/multi-asset strategies |
+| POST | `/api/decisions/simulate` | `{sellInstrumentIds:number[], targets:[{symbol,allocationPct}], horizonYears?}` | sell-today→reinvest outcome vs holding, with recovery years |
+| GET | `/api/decisions/exposure` | — | `{totalValueCHF,countries[],sectors[],holdings[],concentration}` — value-weighted portfolio geo/sector rollup |
+| GET | `/api/decisions/exposure/compare` | `a=&b=` (instrument ids) | `{a,b,overlap}` — two assets' exposures + country/sector overlap |
+
+Each `Recommendation` carries an explicit `reason`, `impactCHF`, `recoveryMonths`, the exact
+reinvest `benchmarkSymbol`/`benchmarkName`, and the holding's return/CAGR/XIRR.
+
+## plans (decision plans)
+| Method | Path | Body | Response |
+|---|---|---|---|
+| GET | `/api/plans` | — | `DecisionPlan[]` (newest first) |
+| POST | `/api/plans` | `{name, config:PlanConfig}` | `DecisionPlan` — snapshots a baseline at creation |
+| GET | `/api/plans/:id` | — | `DecisionPlan` (404) |
+| PUT | `/api/plans/:id` | `{name?, config?, status?}` | `DecisionPlan` (rebaselines when the sell/target set changes) |
+| DELETE | `/api/plans/:id` | — | `{ok:true}` |
+| GET | `/api/plans/:id/compare` | — | `{plan:{valueNowCHF,...}, hold:{valueNowCHF,...}, deltaCHF, ...}` — reprices the baseline units at today's prices (plan reinvested vs held) |
+
+`PlanConfig`: `{sellInstrumentIds:number[], targets:[{symbol,name?,allocationPct}], horizonYears?, intendedOutcome?}`.
+
+## research (any-asset)
+| Method | Path | Query/Body | Response |
+|---|---|---|---|
+| GET | `/api/research/asset/:symbol` | `window=5` | `{symbol,name,kind,metrics,allocation,movements,news}` — portfolio-independent snapshot |
+| POST | `/api/research/claim` | `{symbol, claim:string\|ClaimSpec}` | `{parsed,actual,supported,explanation,...}` — validate a claim vs history (structured or plain-English) |
+| POST | `/api/research/compare` | `{entities:[{type:'instrument'\|'symbol'\|'portfolio',...}], windowYears?}` | `{windowYears, entities:AssetMetrics[]}` — one consistent risk/return metric set, ranked |
+
+`AssetMetrics` is identical across held instruments, arbitrary symbols and the whole portfolio
+(the portfolio's return is money-weighted XIRR, not the contribution-inflated value series).
+
 ---
 
 ## Backend routing: interactive (pandas) vs. heavy (PySpark)

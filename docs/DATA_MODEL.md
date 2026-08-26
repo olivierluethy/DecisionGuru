@@ -157,3 +157,32 @@ once**, `major_ccy → CHF`.
   realised P/L, dividends and cost history, and is surfaced in a labelled
   "delisted / untracked" group. Quote/history fetches for these are **not retried
   in a loop** — they are skipped.
+
+## 5. Strategy-assistant tables & derivations **[D]**
+
+Two tables back the decision-assistant features; both are additive and created with
+`CREATE TABLE IF NOT EXISTS`, so they self-migrate on next start.
+
+- **`news_cache`** — per-ticker Yahoo RSS headlines. `id` is an MD5 of the article link
+  (upsert-safe de-dupe), plus `symbol, title, publisher, link, publishedAt, summary,
+  fetchedAt`. Served stale-while-revalidate (30-min TTL); a fetch failure never surfaces
+  to the caller — the last cached rows are returned.
+- **`decision_plans`** — persisted plans: `name`, `config` (JSON: sell set + reinvest
+  targets + horizon + intended outcome), a `baseline` (JSON snapshot taken at creation —
+  proceeds and, per target/holding, the CHF unit price and units on the plan date), and a
+  `status`. `plan/:id/compare` reprices those units at today's prices, so plan-vs-actual
+  is measured from the plan date, not re-estimated.
+
+**Derived, not stored:**
+- **Recommendations** (Buy/Hold/Sell/Trim) — one counterfactual vs the default benchmark
+  per holding; SELL on material lag & CHF impact, TRIM on concentration (>25% weight),
+  HOLD when tracking/ahead, plus an idle-cash BUY signal. Reconciles with `/portfolio`.
+- **Recovery time** — years for sale proceeds to reach break-even (invested capital) at an
+  alternative's historical CAGR; mirrors the existing "N yr @ x% p.a." pattern.
+- **Portfolio exposure** — each holding's `build_allocation` breakdown value-weighted by
+  `currentValueCHF`, with a Herfindahl concentration score.
+- **Portfolio return (universal compare)** — money-weighted XIRR from every position's
+  after-tax flows + a terminal flow at total market value; the raw value series is
+  contribution-inflated and is used only for volatility / drawdown.
+- **Movements** — a deterministic percentage zig-zag over cached closes yields major
+  up/down legs; a band-window scan flags long near-zero-growth stagnation stretches.

@@ -5,6 +5,9 @@ import { Dashboard } from './views/Dashboard';
 import { PositionDetail } from './views/PositionDetail';
 import { Scenarios } from './views/Scenarios';
 import { Advisory } from './views/Advisory';
+import { Decisions } from './views/Decisions';
+import { Research } from './views/Research';
+import { Plans } from './views/Plans';
 import { ModalHost } from './modals/ModalHost';
 import { useApp } from './store';
 import { api } from './lib/api';
@@ -28,6 +31,9 @@ export default function App() {
         {view === 'position' && <PositionDetail />}
         {view === 'scenarios' && <Scenarios />}
         {view === 'advisory' && <Advisory />}
+        {view === 'decisions' && <Decisions />}
+        {view === 'research' && <Research />}
+        {view === 'plans' && <Plans />}
       </main>
       <ModalHost />
     </div>

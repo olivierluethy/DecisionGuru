@@ -7,14 +7,21 @@ import {
   Plus,
   Settings,
   TrendingUpDown,
+  Compass,
+  Telescope,
+  ClipboardList,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useApp } from '../store';
+import { MarketHoursStrip } from './MarketHoursStrip';
 
 const NAV = [
   { view: 'dashboard', label: 'Overview', icon: LayoutDashboard },
+  { view: 'decisions', label: 'Decisions', icon: Compass },
   { view: 'advisory', label: 'Advisory', icon: Sparkles },
+  { view: 'research', label: 'Research', icon: Telescope },
   { view: 'scenarios', label: 'Scenarios', icon: GitCompareArrows },
+  { view: 'plans', label: 'Plans', icon: ClipboardList },
 ] as const;
 
 export function Sidebar() {
@@ -70,7 +77,11 @@ export function Sidebar() {
         </button>
       </div>
 
-      <div className="mt-auto p-3 border-t border-hairline">
+      <div className="mt-auto">
+        <MarketHoursStrip />
+      </div>
+
+      <div className="p-3 border-t border-hairline">
         <button className="btn-ghost w-full justify-start" onClick={() => openModal({ kind: 'settings' })}>
           <Settings size={15} /> Tax & settings
         </button>

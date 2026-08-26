@@ -1,5 +1,5 @@
 import { useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { ArrowDownToLine, Coins, Receipt, TrendingUp, TrendingDown, ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
+import { ArrowDownToLine, Coins, Receipt, TrendingUp, TrendingDown, ZoomIn, ZoomOut, Maximize2, Expand } from 'lucide-react';
 import clsx from 'clsx';
 import type { TimelineEvent, TimelineKind } from '../lib/api';
 import { fmtCHFSigned, fmtDate, plClass } from '../lib/format';
@@ -74,7 +74,17 @@ function niceTicks(minMs: number, maxMs: number, trackW: number): Tick[] {
   return ticks;
 }
 
-export function AccountTimeline({ events }: { events: TimelineEvent[] }) {
+export function AccountTimeline({
+  events,
+  height: heightProp,
+  onExpand,
+}: {
+  events: TimelineEvent[];
+  /** Override the track height (e.g. taller inside a modal). */
+  height?: number;
+  /** When provided, show an expand button that opens the timeline larger. */
+  onExpand?: () => void;
+}) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [viewW, setViewW] = useState(0);
@@ -114,7 +124,7 @@ export function AccountTimeline({ events }: { events: TimelineEvent[] }) {
 
   const { pts, min, max, maxMag } = model;
   const trackW = Math.max(viewW, viewW * zoom);
-  const height = TOP + STEM_MAX + BOTTOM_PAD;
+  const height = heightProp ?? TOP + STEM_MAX + BOTTOM_PAD;
   const xOf = (ms: number) => ((ms - min) / (max - min)) * trackW;
   const stemLen = (amt: number) =>
     Math.abs(amt) < 1 ? STEM_MIN : STEM_MIN + (STEM_MAX - STEM_MIN) * Math.sqrt(Math.abs(amt) / maxMag);
@@ -238,16 +248,31 @@ export function AccountTimeline({ events }: { events: TimelineEvent[] }) {
       </div>
 
       {/* controls */}
-      <div className="absolute top-2 right-2 flex items-center gap-1">
-        <button className="tl-btn" title="Zoom out" onClick={() => zoomButton(-1)} disabled={zoom <= MIN_ZOOM + 1e-6}>
+      <div className="absolute top-2 right-2 z-20 flex items-center gap-1">
+        <button type="button" className="tl-btn" title="Zoom out" onClick={() => zoomButton(-1)} disabled={zoom <= MIN_ZOOM + 1e-6}>
           <ZoomOut size={14} />
         </button>
-        <button className="tl-btn" title="Zoom in" onClick={() => zoomButton(1)} disabled={zoom >= MAX_ZOOM - 1e-6}>
+        <button type="button" className="tl-btn" title="Zoom in" onClick={() => zoomButton(1)} disabled={zoom >= MAX_ZOOM - 1e-6}>
           <ZoomIn size={14} />
         </button>
-        <button className="tl-btn" title="Fit all" onClick={() => { setZoom(1); if (scrollRef.current) scrollRef.current.scrollLeft = 0; }}>
+        <button
+          type="button"
+          className="tl-btn"
+          title="Fit all events"
+          disabled={Math.abs(zoom - MIN_ZOOM) < 1e-6}
+          onClick={() => {
+            setZoom(MIN_ZOOM);
+            setHover(null);
+            if (scrollRef.current) scrollRef.current.scrollLeft = 0;
+          }}
+        >
           <Maximize2 size={14} />
         </button>
+        {onExpand && (
+          <button type="button" className="tl-btn" title="Open larger" onClick={onExpand}>
+            <Expand size={14} />
+          </button>
+        )}
       </div>
 
       {/* legend */}

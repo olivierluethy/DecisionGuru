@@ -8,6 +8,7 @@ import { CompareModal } from './CompareModal';
 import { CashDetailModal } from './CashDetailModal';
 import { RecoveryModal } from './RecoveryModal';
 import { CreatePlanModal } from './CreatePlanModal';
+import { TimelineModal } from './TimelineModal';
 
 export function ModalHost() {
   const modal = useApp((s) => s.modal);
@@ -17,6 +18,8 @@ export function ModalHost() {
       return <CompareModal instrumentIds={modal.instrumentIds} />;
     case 'cash-detail':
       return <CashDetailModal />;
+    case 'timeline':
+      return <TimelineModal />;
     case 'import':
       return <ImportModal />;
     case 'manual-add':

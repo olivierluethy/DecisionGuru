@@ -357,7 +357,7 @@ export function Dashboard() {
             </div>
           </div>
           {tlView === 'chart' ? (
-            <AccountTimeline events={timeline.events} />
+            <AccountTimeline events={timeline.events} onExpand={() => openModal({ kind: 'timeline' })} />
           ) : (
             <Timeline events={timeline.events} />
           )}

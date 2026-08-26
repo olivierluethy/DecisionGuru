@@ -12,6 +12,7 @@ export type ModalKind =
   | { kind: 'export'; context: 'portfolio' | 'position'; instrumentId?: number }
   | { kind: 'compare'; instrumentIds: number[] }
   | { kind: 'cash-detail' }
+  | { kind: 'timeline' }
   | { kind: 'recovery'; instrumentId: number }
   | { kind: 'create-plan'; sellInstrumentIds?: number[]; targets?: Array<{ symbol: string; name?: string; allocationPct: number }> }
   | { kind: 'plan-compare'; planId: number }

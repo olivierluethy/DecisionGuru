@@ -6,7 +6,7 @@ import type { ScenarioConfig, ScenarioResult } from '@decisionguru/shared';
 import { useApp } from '../store';
 import { fmtCHF, fmtCHFSigned, fmtPct, plClass } from '../lib/format';
 import { DeltaChart } from '../components/DeltaChart';
-import { Segmented, Spinner, EmptyState, KindBadge } from '../components/ui';
+import { Segmented, Spinner, KindBadge } from '../components/ui';
 
 export function Scenarios() {
   const qc = useQueryClient();
@@ -208,12 +208,9 @@ export function Scenarios() {
           {run.isPending ? (
             <Spinner label="Running scenario…" />
           ) : result ? (
-            <ScenarioResultView result={result} />
+            <ScenarioResultView result={result} includedCount={included.length} />
           ) : (
-            <EmptyState
-              title="No scenario run yet"
-              hint="Pick positions (or toggle sell-everything), choose a benchmark, and run to see the after-tax delta."
-            />
+            <ScenarioEmpty count={included.length} />
           )}
         </div>
       </div>
@@ -221,9 +218,34 @@ export function Scenarios() {
   );
 }
 
-function ScenarioResultView({ result }: { result: ScenarioResult }) {
+function ScenarioEmpty({ count }: { count: number }) {
+  return (
+    <section className="card h-full flex flex-col items-center justify-center text-center py-16 px-6 border-dashed">
+      <div className="mb-5 flex items-center gap-4">
+        <span className="flex items-center gap-2 text-sm text-azure">
+          <span className="w-8 h-0.5 bg-azure" /> your basket
+        </span>
+        <span className="flex items-center gap-2 text-sm text-gold">
+          <span className="w-8 h-0.5 border-t-2 border-dashed border-gold" /> the ETF
+        </span>
+      </div>
+      <h3 className="font-display text-lg text-text mb-1">The road not taken</h3>
+      <p className="text-sm text-text-muted max-w-sm mb-4">
+        Run a scenario to see, after Swiss tax, how your basket compares against the ETF you
+        didn't buy. The shaded gap between the two lines is the opportunity cost.
+      </p>
+      <div className="text-xs text-text-faint">
+        {count > 0 ? `${count} position${count > 1 ? 's' : ''} selected — press Run.` : 'Select positions or toggle "sell everything → ETF".'}
+      </div>
+    </section>
+  );
+}
+
+function ScenarioResultView({ result, includedCount }: { result: ScenarioResult; includedCount: number }) {
   const agg = result.aggregate;
   const ahead = agg.deltaCHF >= 0;
+  const winners = result.perPosition.filter((p) => p.counterfactual.deltaCHF > 0).length;
+  const losers = result.perPosition.filter((p) => p.counterfactual.deltaCHF < 0).length;
   return (
     <div className="space-y-6">
       <section className={`card border-l-2 ${ahead ? 'border-l-gain' : 'border-l-loss'}`}>
@@ -238,10 +260,18 @@ function ScenarioResultView({ result }: { result: ScenarioResult }) {
             ? `Your basket beat the ETF by ${fmtPct(Math.abs(agg.deltaPct))}.`
             : `The ETF would have won by ${fmtPct(Math.abs(agg.deltaPct))}.`}
         </p>
-        <div className="grid grid-cols-2 gap-4 mt-4 max-w-md">
+        {/* Summary band — included count + the two valuations side by side */}
+        <div className="grid grid-cols-3 gap-4 mt-4 pt-4 border-t border-hairline">
+          <div>
+            <div className="eyebrow mb-1">Positions</div>
+            <div className="font-mono tnum text-lg">{includedCount}</div>
+            <div className="text-[11px] text-text-faint mt-0.5">
+              <span className="text-gain">{winners}▲</span> · <span className="text-loss">{losers}▼</span> vs ETF
+            </div>
+          </div>
           <div>
             <div className="eyebrow mb-1">Actual value</div>
-            <div className="font-mono tnum text-lg">{fmtCHF(agg.actualValueCHF)}</div>
+            <div className="font-mono tnum text-lg text-azure">{fmtCHF(agg.actualValueCHF)}</div>
           </div>
           <div>
             <div className="eyebrow mb-1">ETF counterfactual</div>

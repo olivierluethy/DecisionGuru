@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Download, ArrowUpRight, ArrowDownRight, Wallet, PieChart, AlertTriangle } from 'lucide-react';
+import { Download, ArrowUpRight, ArrowDownRight, Wallet, PieChart, AlertTriangle, Search, X } from 'lucide-react';
 import type { RangeKey, AllocationBreakdown } from '@decisionguru/shared';
 import { api } from '../lib/api';
 import { useApp } from '../store';
@@ -16,6 +16,7 @@ import { DecisionsBanner } from '../components/DecisionsBanner';
 import { Segmented, Spinner, EmptyState, KindBadge, DataStatusBadge } from '../components/ui';
 import { buildPortfolioExport } from '../lib/exporters';
 import { downloadExport } from '../lib/api';
+import { fuzzyScore } from '../lib/fuzzy';
 
 function timeAgo(iso: string | null): string | null {
   if (!iso) return null;
@@ -35,6 +36,7 @@ export function Dashboard() {
   const [range, setRange] = useState<RangeKey>('1Y');
   const [holdFilter, setHoldFilter] = useState<'all' | 'active' | 'sold' | 'stock' | 'etf' | 'delisted'>('all');
   const [tlView, setTlView] = useState<'chart' | 'list'>('chart');
+  const [search, setSearch] = useState('');
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['portfolio', benchmark, preTax],
@@ -134,6 +136,20 @@ export function Dashboard() {
             : !p.delisted && p.instrument.kind === f;
   const groupCount = (f: typeof holdFilter) => allPositions.filter((p) => matches(p, f)).length;
   const visiblePositions = allPositions.filter((p) => matches(p, holdFilter));
+  // Fuzzy search overrides the category filter — "find Corsair regardless of where it
+  // sits". Rank ALL holdings by approximate-substring distance (name or ticker); keep
+  // the reasonable matches, but always surface at least the single closest one.
+  const query = search.trim();
+  let searchRows: (typeof allPositions) | null = null;
+  if (query) {
+    const scored = allPositions
+      .map((p) => ({ p, s: fuzzyScore(query, [p.instrument.name, p.instrument.symbol]) }))
+      .sort((a, b) => a.s - b.s || a.p.instrument.name.localeCompare(b.p.instrument.name));
+    const threshold = Math.max(1, Math.floor(query.length * 0.34)); // ~1 typo per 3 chars
+    const good = scored.filter((x) => x.s <= threshold);
+    searchRows = (good.length ? good : scored.slice(0, 1)).map((x) => x.p);
+  }
+  const rows = searchRows ?? visiblePositions;
   const soldView = holdFilter === 'sold';
   // Sold positions are judged on realized P/L; everything else on unrealized.
   const plOf = (p: (typeof allPositions)[number]) => (isSold(p) ? p.realizedCHF : p.unrealizedCHF);
@@ -353,9 +369,34 @@ export function Dashboard() {
         <section className="card !p-0 overflow-hidden">
           {/* Filter by Stock / ETF / delisted + profit-loss counts for the group */}
           <div className="px-4 py-3 border-b border-hairline flex flex-wrap items-center justify-between gap-3">
-            <Segmented value={holdFilter} onChange={setHoldFilter} options={holdFilters} />
+            <div className="flex items-center gap-3 flex-wrap">
+              <Segmented value={holdFilter} onChange={setHoldFilter} options={holdFilters} />
+              <div className="relative">
+                <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-faint pointer-events-none" />
+                <input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search any holding…"
+                  className="input h-8 !pl-8 pr-8 w-56 text-sm"
+                  aria-label="Search holdings"
+                />
+                {search && (
+                  <button
+                    onClick={() => setSearch('')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-text-faint hover:text-text"
+                    aria-label="Clear search"
+                  >
+                    <X size={14} />
+                  </button>
+                )}
+              </div>
+            </div>
             <div className="flex items-center gap-3 text-xs">
-              {holdFilter === 'delisted' ? (
+              {query ? (
+                <span className="text-text-faint">
+                  {rows.length} match{rows.length === 1 ? '' : 'es'} for “{query}” · closest first
+                </span>
+              ) : holdFilter === 'delisted' ? (
                 <span className="text-text-faint">Untracked — excluded from live valuation</span>
               ) : (
                 <>
@@ -383,7 +424,7 @@ export function Dashboard() {
                 </tr>
               </thead>
               <tbody>
-                {visiblePositions.map((p) => {
+                {rows.map((p) => {
                   const sold = isSold(p);
                   const costBasis =
                     p.currentValueCHF != null && p.unrealizedCHF != null

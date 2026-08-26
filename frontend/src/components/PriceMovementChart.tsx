@@ -31,6 +31,8 @@ interface Props {
    * you compare shapes (their % paths) — independent of price scale or currency.
    */
   overlays?: PriceOverlay[];
+  /** Headlines to pin onto the price line at their publish date. */
+  news?: Array<{ date: string; title: string; link?: string | null }>;
 }
 
 const MAX_POINTS = 520;
@@ -52,7 +54,7 @@ function closeAtOrBefore(sorted: { t: number; c: number }[], ts: number): number
  * major up-legs marked gain and down-legs marked loss, plus optional rebased overlays of
  * other instruments. Time axis is numeric so uneven sampling and marker placement stay truthful.
  */
-export function PriceMovementChart({ series, movements, currency, height = 300, overlays }: Props) {
+export function PriceMovementChart({ series, movements, currency, height = 300, overlays, news }: Props) {
   if (!series || series.length < 2) {
     return (
       <div className="flex items-center justify-center text-text-faint text-sm" style={{ height }}>
@@ -62,6 +64,13 @@ export function PriceMovementChart({ series, movements, currency, height = 300, 
   }
   const t = (d: string) => new Date(d).getTime();
   const ovs = (overlays ?? []).filter((o) => o.series.length >= 2);
+
+  // News markers pinned onto the price line at each publish date.
+  const stockSorted = series.map((p) => ({ t: t(p.date), c: p.close })).sort((a, b) => a.t - b.t);
+  const newsMarks = (news ?? [])
+    .filter((n) => n.date)
+    .map((n) => ({ x: t(n.date), y: closeAtOrBefore(stockSorted, t(n.date)), title: n.title }))
+    .filter((m) => Number.isFinite(m.x));
 
   // Downsample for render, always keeping the marker anchor dates.
   const anchors = new Set<string>();
@@ -179,6 +188,10 @@ export function PriceMovementChart({ series, movements, currency, height = 300, 
             stroke="#0A0E15"
             strokeWidth={1.5}
           />
+        ))}
+        {/* News headlines pinned to the price line at their publish date. */}
+        {newsMarks.map((m, i) => (
+          <ReferenceDot key={`news-${i}`} x={m.x} y={m.y} r={2.6} fill="#6FC3FF" stroke="#0A0E15" strokeWidth={1} />
         ))}
       </ComposedChart>
     </ResponsiveContainer>

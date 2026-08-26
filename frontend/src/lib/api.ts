@@ -206,6 +206,15 @@ export const api = {
   // research
   researchAsset: (symbol: string, window = 5) =>
     req<ResearchAsset>(`/research/asset/${encodeURIComponent(symbol)}?window=${window}`),
+  fundamentals: (symbol: string, domicile?: string | null, name?: string | null) => {
+    const q = new URLSearchParams();
+    if (domicile) q.set('domicile', domicile);
+    if (name) q.set('name', name);
+    const qs = q.toString();
+    return req<FundamentalsBundle>(
+      `/research/fundamentals/${encodeURIComponent(symbol)}${qs ? `?${qs}` : ''}`,
+    );
+  },
   validateClaim: (symbol: string, claim: string | ClaimSpec) =>
     req<ClaimResult>('/research/claim', { method: 'POST', body: JSON.stringify({ symbol, claim }) }),
   universalCompare: (entities: CompareEntity[], windowYears = 5) =>
@@ -354,6 +363,70 @@ export interface NewsResponse {
   items: NewsItem[];
   stale: boolean;
   fetchedAt: number | null;
+}
+
+export interface FundamentalsSnapshot {
+  name: string | null;
+  currency: string | null;
+  sector: string | null;
+  industry: string | null;
+  country: string | null;
+  exchange: string | null;
+  marketCap: number | null;
+  enterpriseValue: number | null;
+  trailingPE: number | null;
+  forwardPE: number | null;
+  pegRatio: number | null;
+  priceToBook: number | null;
+  priceToSales: number | null;
+  trailingEps: number | null;
+  forwardEps: number | null;
+  dividendYield: number | null;
+  payoutRatio: number | null;
+  grossMargins: number | null;
+  operatingMargins: number | null;
+  profitMargins: number | null;
+  ebitdaMargins: number | null;
+  returnOnEquity: number | null;
+  returnOnAssets: number | null;
+  revenueGrowth: number | null;
+  earningsGrowth: number | null;
+  totalRevenue: number | null;
+  ebitda: number | null;
+  netIncome: number | null;
+  totalCash: number | null;
+  totalDebt: number | null;
+  beta: number | null;
+  fiftyTwoWeekHigh: number | null;
+  fiftyTwoWeekLow: number | null;
+  sharesOutstanding: number | null;
+  recommendationKey: string | null;
+  targetMeanPrice: number | null;
+  numberOfAnalystOpinions: number | null;
+  longBusinessSummary: string | null;
+}
+export interface FundamentalsYear {
+  year: number;
+  revenue: number | null;
+  netIncome: number | null;
+  grossProfit: number | null;
+  operatingIncome: number | null;
+  netMargin: number | null;
+  grossMargin: number | null;
+  operatingMargin: number | null;
+}
+export interface IndexWeight {
+  index: string;
+  etf: string;
+  weightPct: number | null;
+  holdingName: string | null;
+}
+export interface FundamentalsBundle {
+  symbol: string;
+  snapshot: FundamentalsSnapshot | null;
+  history: FundamentalsYear[];
+  financialCurrency: string | null;
+  indexWeight: IndexWeight | null;
 }
 
 // ---- Market hours --------------------------------------------------------

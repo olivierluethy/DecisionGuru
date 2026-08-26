@@ -29,6 +29,7 @@ import { DeltaChart } from '../components/DeltaChart';
 import { ProjectionChart } from '../components/ProjectionChart';
 import { PriceMovementChart } from '../components/PriceMovementChart';
 import { SymbolSearch } from '../components/SymbolSearch';
+import { Fundamentals } from '../components/Fundamentals';
 import { PeriodReturns } from '../components/PeriodReturns';
 import { NewsFeed } from '../components/NewsFeed';
 import { Globe } from '../components/Globe';
@@ -92,6 +93,11 @@ export function PositionDetail() {
   });
   const toggleOverlay = (sym: string) =>
     setOverlaySymbols((prev) => (prev.includes(sym) ? prev.filter((s) => s !== sym) : [...prev, sym]));
+  const news = useQuery({
+    queryKey: ['news', symbol, 20],
+    queryFn: () => api.news(symbol!, 20),
+    enabled: !!symbol && !delisted,
+  });
   const hours = useQuery({
     queryKey: ['pos-hours', symbol],
     queryFn: () => api.marketHoursSymbol(symbol!),
@@ -337,6 +343,9 @@ export function PositionDetail() {
               <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-gain" /> surge</span>
               <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-loss" /> drop</span>
               <span className="flex items-center gap-1"><span className="w-3 h-2 bg-warn/20 border border-warn/30" /> stagnation</span>
+              {(news.data?.items?.length ?? 0) > 0 && (
+                <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-azure-bright" /> news</span>
+              )}
             </div>
           </div>
 
@@ -390,11 +399,23 @@ export function PositionDetail() {
             currency={inst.currency}
             height={300}
             overlays={priceOverlays}
+            news={(news.data?.items ?? [])
+              .map((n) => ({ date: (n.publishedAt ?? '').slice(0, 10), title: n.title, link: n.link }))
+              .filter((n) => n.date)}
           />
           <p className="text-[11px] text-text-faint mt-2">
             Comparison lines are rebased to {inst.symbol}’s price where each series begins — so you compare
-            growth shape (which climbs faster, which stalls), independent of price level or currency.
+            growth shape (which climbs faster, which stalls), independent of price level or currency. News dots
+            mark recent headlines on the price line (the provider serves recent news only).
           </p>
+        </section>
+      )}
+
+      {/* Company fundamentals — valuation, profitability, multi-year figures, index weight */}
+      {!delisted && inst.kind === 'stock' && (
+        <section className="card mb-6">
+          <div className="eyebrow mb-3">Company fundamentals · {inst.symbol}</div>
+          <Fundamentals symbol={inst.symbol} domicile={inst.domicile} name={inst.name} currency={inst.currency} />
         </section>
       )}
 

@@ -214,6 +214,72 @@ def repair_minor_units() -> int:
     return touched
 
 
+def repair_misresolved_instruments() -> int:
+    """Reconcile persisted resolution against the curated ISIN seed.
+
+    The curated map (``reference/isin_map.py``) is authoritative for the ISINs it
+    lists. But the resolved symbol is also persisted in ``symbol_map`` and
+    ``instruments``, and the historical caches are keyed by that symbol — so
+    correcting the seed alone leaves the wrong series in place. This walks every
+    curated ISIN and, wherever a *non-manual* persisted row still points at a
+    different symbol, rewrites it to the curated one and purges the orphaned
+    symbol's cache rows so the corrected symbol backfills clean on next poll.
+
+    Idempotent: once every row agrees with the seed there is nothing to do.
+    Manual overrides (``source``/``resolutionSource`` == 'manual') are never
+    touched. Returns the number of ISINs repaired."""
+    from ..reference.isin_map import CURATED_ISIN_MAP
+
+    repaired = 0
+    replaced_symbols: set[str] = set()
+    for isin, seed in CURATED_ISIN_MAP.items():
+        want = seed["symbol"]
+        changed = False
+
+        sm = db.q("SELECT symbol, source FROM symbol_map WHERE isin = ?").get((isin,))
+        if sm and sm["symbol"] != want and (sm["source"] or "") != "manual":
+            replaced_symbols.add(sm["symbol"])
+            db.execute(
+                "UPDATE symbol_map SET symbol = ?, currency = ?, kind = ? WHERE isin = ?",
+                (want, seed["currency"], seed["kind"], isin),
+            )
+            changed = True
+
+        insts = db.q(
+            "SELECT id, symbol, resolutionSource FROM instruments WHERE isin = ?"
+        ).all((isin,))
+        for inst in insts:
+            if inst["symbol"] != want and (inst["resolutionSource"] or "") != "manual":
+                replaced_symbols.add(inst["symbol"])
+                db.execute(
+                    "UPDATE instruments SET symbol = ?, currency = ?, kind = ? WHERE id = ?",
+                    (want, seed["currency"], seed["kind"], inst["id"]),
+                )
+                changed = True
+
+        if changed:
+            repaired += 1
+
+    # Purge cache rows for symbols that were replaced and are no longer referenced
+    # by any instrument or symbol_map row (leaves shared/still-used symbols intact).
+    for old in replaced_symbols:
+        still_used = (
+            db.q("SELECT 1 FROM instruments WHERE symbol = ? LIMIT 1").get((old,))
+            or db.q("SELECT 1 FROM symbol_map WHERE symbol = ? LIMIT 1").get((old,))
+        )
+        if still_used:
+            continue
+        for tbl in ("price_cache", "dividend_cache", "quote_cache", "fund_cache"):
+            db.execute(f"DELETE FROM {tbl} WHERE symbol = ?", (old,))
+
+    if repaired:
+        log.info(
+            "repair_misresolved_instruments: corrected %d ISIN(s); purged cache for %s",
+            repaired, sorted(replaced_symbols) or "none",
+        )
+    return repaired
+
+
 # ---- fund / instrument profile ----------------------------------------------
 
 def get_fund_summary(symbol: str) -> dict | None:

@@ -25,6 +25,16 @@ def create_app() -> FastAPI:
     except Exception:  # noqa: BLE001 — never block startup on a cache repair
         pass
 
+    # Reconcile persisted resolution (symbol_map/instruments) with the curated
+    # ISIN seed and purge the orphaned symbols' caches, so a corrected share-class
+    # mapping takes effect without a manual DB edit (e.g. Swatch UHR.SW->UHRN.SW).
+    try:
+        from .services.marketdata import repair_misresolved_instruments
+
+        repair_misresolved_instruments()
+    except Exception:  # noqa: BLE001 — never block startup on a cache repair
+        pass
+
     app = FastAPI(
         title="DecisionGuru API",
         version="0.1.0",

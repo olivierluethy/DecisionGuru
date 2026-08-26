@@ -77,7 +77,8 @@ export function fmtDate(d: string | null | undefined): string {
   if (!d) return '—';
   const date = new Date(d);
   if (Number.isNaN(date.getTime())) return d;
-  return new Intl.DateTimeFormat('de-CH', { day: '2-digit', month: 'short', year: 'numeric' }).format(date);
+  // One consistent human-readable format across the app: `DD MMM YYYY` (e.g. 26 Aug 2026).
+  return new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).format(date);
 }
 
 /** Tailwind text-colour class for a signed value. */

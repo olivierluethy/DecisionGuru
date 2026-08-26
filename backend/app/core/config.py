@@ -47,6 +47,10 @@ class Settings(BaseSettings):
     yf_retries: int = 4            # attempts on rate-limit
     yf_timeout_s: float = 20.0
     history_cooldown_ms: int = 60 * 1000
+    # Per-symbol quote-refresh cooldown. Stops a symbol that never returns a price
+    # (delisted / illiquid, e.g. a Canadian penny line) from re-enqueuing a Yahoo
+    # fetch on every portfolio poll — the old "no-ticker retry" loop.
+    quote_cooldown_ms: int = 10 * 60 * 1000  # 10 min
     # Background refresh: how many upstream fetches may run concurrently. Also the
     # provider's concurrency gate. Kept modest to respect Yahoo rate-limiting.
     yf_concurrency: int = 4

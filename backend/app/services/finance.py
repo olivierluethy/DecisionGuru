@@ -79,9 +79,16 @@ def build_position(instrument: dict, txs: list[dict], tax: dict, pre_tax: bool =
             flows_after_tax.append({"date": tx["date"], "amount": bd.netAfterTaxCHF})
             flows_pre_tax.append({"date": tx["date"], "amount": gross_chf})
 
+    # Delisted / untracked: no resolvable ticker (symbol never resolved past the
+    # ISIN, or explicitly flagged unresolved). Never fetch a live quote for these —
+    # they no longer trade — so they can't be valued at a stale price and don't spin
+    # the refresh pool. Their realised P/L, dividends and cost history are preserved.
+    delisted = bool(instrument.get("unresolved")) or (
+        instrument.get("isin") and instrument.get("symbol") == instrument.get("isin")
+    )
     # Current valuation. A "pending" quote (no cached price yet, refresh in flight)
     # leaves value unknown (None) rather than 0, so the row renders a pending state.
-    quote = get_quote(instrument["symbol"]) if open_qty > 0 else None
+    quote = get_quote(instrument["symbol"]) if (open_qty > 0 and not delisted) else None
     pending = bool(quote and quote.get("pending"))
     current_price = None
     current_value_chf = None
@@ -157,6 +164,7 @@ def build_position(instrument: dict, txs: list[dict], tax: dict, pre_tax: bool =
         "dividends": div_summary,
         "priceAsOf": quote["time"] if (quote and not pending) else None,
         "stale": stale,
+        "delisted": bool(delisted),
         "dataStatus": instrument_data_status(instrument, open_qty),
         "metrics": {
             "absolutePLChf": absolute_pl_chf,

@@ -25,6 +25,23 @@ HISTORY_COOLDOWN_MS = settings.history_cooldown_ms
 _last_history_attempt: dict[str, float] = {}
 _history_lock = threading.Lock()
 
+QUOTE_COOLDOWN_MS = settings.quote_cooldown_ms
+_last_quote_attempt: dict[str, float] = {}
+_quote_lock = threading.Lock()
+
+
+def _quote_cooldown_ok(symbol: str) -> bool:
+    """True if enough time has passed to attempt another quote fetch for `symbol`.
+
+    Prevents a symbol that never returns a price (delisted / illiquid) from
+    re-enqueuing a Yahoo call on every portfolio poll."""
+    with _quote_lock:
+        last = _last_quote_attempt.get(symbol, 0.0)
+        if _now_ms() - last < QUOTE_COOLDOWN_MS:
+            return False
+        _last_quote_attempt[symbol] = _now_ms()
+        return True
+
 
 def _now_ms() -> int:
     return int(time.time() * 1000)
@@ -143,7 +160,10 @@ def get_quote(symbol: str) -> dict:
             "pending": False,
         }
 
-    refresh.enqueue_quote(symbol, lambda: _refresh_quote(symbol))
+    # Only enqueue a background refresh past the per-symbol cooldown, so a
+    # never-priced symbol doesn't spin the pool on every poll.
+    if _quote_cooldown_ok(symbol):
+        refresh.enqueue_quote(symbol, lambda: _refresh_quote(symbol))
 
     if cached:
         price, currency = normalize_minor_currency(cached["price"], cached["currency"])

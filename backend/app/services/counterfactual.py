@@ -9,6 +9,8 @@ import math
 import pandas as pd
 
 from ..reference.geo import country_from_symbol
+from . import account as acct
+from . import repo
 from .finance_math import cagr, xirr, years_between
 from .fx import ensure_fx_range, get_fx_rate
 from .marketdata import ensure_history, get_dividends, get_quote, price_on
@@ -62,10 +64,20 @@ def _empty_result(bench: dict) -> dict:
 
 
 def compute_counterfactual(instrument: dict, txs: list[dict], benchmark_symbol: str,
-                          settings: dict, pre_tax: bool = False, as_of: str | None = None) -> dict:
+                          settings: dict, pre_tax: bool = False, as_of: str | None = None,
+                          account_dividends: list[dict] | None = None) -> dict:
     tax = settings["tax"]
     bench = _resolve_benchmark(benchmark_symbol, settings)
     today = as_of or pd.Timestamp.utcnow().strftime("%Y-%m-%d")
+    # Real cash dividends from the account statement (the dividend source of truth).
+    # Callers in hot loops pass these in; standalone callers get them fetched here so
+    # every page's actual-value counts them — mirroring the ETF's own distributions.
+    if account_dividends is None:
+        try:
+            account_dividends = acct.dividend_events_chf(
+                repo.all_account_events(), instrument.get("isin"), today)
+        except Exception:  # noqa: BLE001
+            account_dividends = []
     sorted_txs = sorted(
         [t for t in txs if t.get("category") != "corporate_action" and t["date"] <= today],
         key=lambda t: t["date"],
@@ -145,7 +157,8 @@ def compute_counterfactual(instrument: dict, txs: list[dict], benchmark_symbol: 
     benchmark_xirr = xirr(etf_terminal_flows)
 
     # --- Actual holding value at endDate (after tax) ---
-    actual = _actual_value_series(instrument, sorted_txs, stock_look, tax, pre_tax, end_date)
+    actual = _actual_value_series(instrument, sorted_txs, stock_look, tax, pre_tax, end_date,
+                                  account_dividends or [])
     actual_value_chf = actual["endValueCHF"]
 
     delta_chf = actual_value_chf - counterfactual_value_chf
@@ -198,7 +211,9 @@ def _etf_dist_to_date(etf_divs, etf_events, bench, tax, pre_tax, from_date, to) 
     return total
 
 
-def _actual_value_series(instrument, sorted_txs, stock_look, tax, pre_tax, end_date) -> dict:
+def _actual_value_series(instrument, sorted_txs, stock_look, tax, pre_tax, end_date,
+                         account_divs: list[dict] | None = None) -> dict:
+    account_divs = account_divs or []
     buys_sells = [t for t in sorted_txs if t["action"] != "dividend"]
     divs = [t for t in sorted_txs if t["action"] == "dividend"]
     flows: list[dict] = []
@@ -228,6 +243,13 @@ def _actual_value_series(instrument, sorted_txs, stock_look, tax, pre_tax, end_d
             fx = get_fx_rate(d.get("currency") or instrument["currency"], "CHF", d["date"])
             gross_chf = gross * fx
             total += gross_chf if pre_tax else dividend_tax(gross_chf, instrument.get("domicile"), tax).netAfterTaxCHF
+        # Real account-statement dividends (already netted per event: + gross, − tax).
+        for ad in account_divs:
+            if not ad.get("date") or ad["date"] > date:
+                continue
+            if pre_tax and ad["type"] == "withholding_tax":
+                continue
+            total += ad["chf"]
         return total
 
     for t in buys_sells:
@@ -240,6 +262,10 @@ def _actual_value_series(instrument, sorted_txs, stock_look, tax, pre_tax, end_d
         gross_chf = gross * fx
         flows.append({"date": d["date"],
                       "amount": gross_chf if pre_tax else dividend_tax(gross_chf, instrument.get("domicile"), tax).netAfterTaxCHF})
+    for ad in account_divs:
+        if pre_tax and ad["type"] == "withholding_tax":
+            continue
+        flows.append({"date": ad["date"], "amount": ad["chf"]})
 
     def value_at(date: str) -> float:
         units = units_at(date)

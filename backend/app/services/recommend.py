@@ -64,6 +64,8 @@ def build_recommendations(settings: dict) -> dict:
     recs: list[dict] = []
     total_value = 0.0
     priced_positions: list[dict] = []
+    # Fetch the account ledger once; reused for per-holding dividends and the cash signal.
+    events = repo.all_account_events()
 
     for inst in repo.list_instruments():
         txs = repo.get_transactions(inst["id"])
@@ -82,18 +84,24 @@ def build_recommendations(settings: dict) -> dict:
         since = min(t["date"] for t in txs)
         horizon_ok = years_between(since, today) >= MIN_YEARS
 
+        # Real account-statement dividends for this holding (net = gross − withholding).
+        acc_divs = acct.dividend_events_chf(events, inst.get("isin"), today)
+        net_div_chf = sum(ad["chf"] for ad in acc_divs)
+
         # Decision baseline = the canonical default benchmark (the whole app is framed
         # "vs VWRL"). One counterfactual per holding — same cost as /portfolio. The
         # decision-analysis view explores alternative reinvest targets in depth.
         best = None
         if horizon_ok:
-            cf = compute_counterfactual(inst, txs, default_bench, settings, False)
+            cf = compute_counterfactual(inst, txs, default_bench, settings, False,
+                                        account_dividends=acc_divs)
             if cf["counterfactualValueCHF"] > 0:
                 best = cf
         # opportunity cost: + means the ETF would be ahead (you are behind).
         opp_cost = (best["counterfactualValueCHF"] - best["actualValueCHF"]) if best else 0.0
         lag_pct = -(best["deltaPct"] or 0.0) if best else 0.0  # + when behind
-        hold_ret = ((value + pos["realizedCHF"] - invested) / invested) if invested > 0 else None
+        # Your return counts every gain: market move + realised P/L + net dividends received.
+        hold_ret = ((value + pos["realizedCHF"] + net_div_chf - invested) / invested) if invested > 0 else None
         cagr = pos["metrics"]["cagr"]
         xirr = pos["metrics"]["xirr"]
 
@@ -182,8 +190,7 @@ def build_recommendations(settings: dict) -> dict:
     order = {"sell": 0, "trim": 1, "hold": 2, "buy": 3}
     recs.sort(key=lambda r: (order.get(r["action"], 9), -abs(r["impactCHF"])))
 
-    # Idle-cash BUY signal.
-    events = repo.all_account_events()
+    # Idle-cash BUY signal (reuses the ledger fetched above).
     cash = acct.cash_chf(events, today)["totalCHF"] if events else 0.0
     cash_signal = None
     if cash >= CASH_DEPLOY_MIN_CHF:

@@ -83,6 +83,27 @@ def dividends_by_isin(events: list[dict], as_of: str) -> dict[str, dict]:
     return agg
 
 
+def dividend_events_chf(events: list[dict], isin: str | None, as_of: str) -> list[dict]:
+    """Dated dividend / withholding-tax cash for one security, each in CHF.
+
+    Returns one entry per account event: ``{date, type, chf}`` where a ``dividend``
+    carries the positive gross amount and a ``withholding_tax`` the negative tax.
+    Feeds the counterfactual actual-value curve so account dividends (the real
+    dividend source of truth) count toward the holding's return — matching the
+    ETF side, which already includes its distributions."""
+    if not isin:
+        return []
+    out: list[dict] = []
+    for e in _active(events):
+        if e.get("type") not in INCOME_TYPES or e.get("isin") != isin:
+            continue
+        ccy = e.get("currency") or "CHF"
+        amt = e.get("amount") or 0.0
+        chf = to_chf(amt, ccy, as_of) if ccy != "CHF" else amt
+        out.append({"date": e.get("date"), "type": e.get("type"), "chf": chf})
+    return out
+
+
 def _sum_types(events: list[dict], types: set[str], as_of: str) -> float:
     total = 0.0
     for e in _active(events):

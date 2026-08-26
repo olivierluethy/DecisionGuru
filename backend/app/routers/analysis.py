@@ -13,6 +13,7 @@ from ..services.analytics import aggregate_counterfactuals
 from ..services.counterfactual import compute_counterfactual
 from ..services.finance import build_position
 from ..services.history import instrument_series, portfolio_series
+from ..services.timeline import build_timeline
 from ..services.projection import benchmark_cagr, compute_break_even, project_hold_vs_etf
 from ..services.whatif import compute_whatif_sale
 from ._util import bool_param
@@ -219,6 +220,12 @@ async def advisory_set_handled(instrument_id: int, request: Request) -> dict:
 @router.get("/portfolio/series")
 async def portfolio_value_series(range: str = "1Y") -> dict:
     return await run_in_threadpool(portfolio_series, range)
+
+
+@router.get("/timeline")
+async def timeline() -> dict:
+    """Merged chronological feed of cash events + trades from both source files."""
+    return await run_in_threadpool(build_timeline)
 
 
 @router.get("/series/{instrument_id}")

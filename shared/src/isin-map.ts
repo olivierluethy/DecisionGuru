@@ -22,7 +22,7 @@ export const CURATED_ISIN_MAP: Record<string, CuratedInstrument> = {
   CH0012005267: { symbol: 'NOVN.SW', currency: 'CHF', kind: 'stock' }, // Novartis
   CH0012032048: { symbol: 'ROG.SW', currency: 'CHF', kind: 'stock' }, // Roche
   CH0002178181: { symbol: 'SRAIL.SW', currency: 'CHF', kind: 'stock' }, // Stadler Rail
-  CH0012255144: { symbol: 'UHR.SW', currency: 'CHF', kind: 'stock' }, // Swatch
+  CH0012255144: { symbol: 'UHRN.SW', currency: 'CHF', kind: 'stock' }, // Swatch REGISTERED share (~CHF 40); bearer UHR.SW is CH0012255151
   CH0009002962: { symbol: 'BARN.SW', currency: 'CHF', kind: 'stock' }, // Barry Callebaut
 
   // --- US large caps (bare Yahoo symbols, USD) ---
@@ -60,7 +60,7 @@ export const CURATED_ISIN_MAP: Record<string, CuratedInstrument> = {
   IE00BK5BQT80: { symbol: 'VWRA.L', currency: 'USD', kind: 'etf' }, // Vanguard FTSE All-World acc
   IE00B53SZB19: { symbol: 'CNDX.L', currency: 'USD', kind: 'etf' }, // iShares Nasdaq 100 acc
   IE00B6R52259: { symbol: 'SSAC.L', currency: 'USD', kind: 'etf' }, // iShares MSCI ACWI acc
-  CH0017142719: { symbol: 'SMMCHA.SW', currency: 'CHF', kind: 'etf' }, // UBS ETF SMI (best-effort)
+  CH0017142719: { symbol: 'SMICHA.SW', currency: 'CHF', kind: 'etf' }, // UBS ETF (CH) SMI CHF A-dis (~CHF 123); SMMCHA is the SMIM mid-cap ETF
 
   // Delisted / liquidated instruments are intentionally omitted so they surface as
   // "no live data" rather than resolving to a wrong ticker:

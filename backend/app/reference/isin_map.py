@@ -7,7 +7,9 @@ CURATED_ISIN_MAP: dict[str, dict] = {
     "CH0012005267": {"symbol": "NOVN.SW", "currency": "CHF", "kind": "stock"},
     "CH0012032048": {"symbol": "ROG.SW", "currency": "CHF", "kind": "stock"},
     "CH0002178181": {"symbol": "SRAIL.SW", "currency": "CHF", "kind": "stock"},
-    "CH0012255144": {"symbol": "UHR.SW", "currency": "CHF", "kind": "stock"},
+    # Swatch REGISTERED share (Namenaktie, ~CHF 40) — NOT the bearer UHR.SW (~CHF 190).
+    # The ...144 ISIN is the registered line; the bearer is CH0012255151.
+    "CH0012255144": {"symbol": "UHRN.SW", "currency": "CHF", "kind": "stock"},
     "CH0009002962": {"symbol": "BARN.SW", "currency": "CHF", "kind": "stock"},
     # US large caps
     "US0846707026": {"symbol": "BRK-B", "currency": "USD", "kind": "stock"},
@@ -41,7 +43,8 @@ CURATED_ISIN_MAP: dict[str, dict] = {
     "IE00BK5BQT80": {"symbol": "VWRA.L", "currency": "USD", "kind": "etf"},
     "IE00B53SZB19": {"symbol": "CNDX.L", "currency": "USD", "kind": "etf"},
     "IE00B6R52259": {"symbol": "SSAC.L", "currency": "USD", "kind": "etf"},
-    "CH0017142719": {"symbol": "SMMCHA.SW", "currency": "CHF", "kind": "etf"},
+    # UBS ETF (CH) SMI CHF A-dis (~CHF 123) — SMICHA, NOT SMMCHA (that is the SMIM mid-cap ETF, ~CHF 340).
+    "CH0017142719": {"symbol": "SMICHA.SW", "currency": "CHF", "kind": "etf"},
 }
 
 

@@ -33,7 +33,7 @@ def _series_metrics(rows: list[dict], value_key: str) -> dict:
     df = df.sort_values("date").drop_duplicates("date")
     vals = df[value_key].to_numpy(dtype=float)
     dates = df["date"]
-    start, end = vals[0], vals[-1]
+    start, end = float(vals[0]), float(vals[-1])
     years = max((dates.iloc[-1] - dates.iloc[0]).days / 365.25, 1e-9)
     total = (end - start) / start if start > 0 else None
     cagr = ((end / start) ** (1 / years) - 1) if (start > 0 and end > 0) else None
@@ -57,12 +57,12 @@ def _series_metrics(rows: list[dict], value_key: str) -> dict:
     prior = df[df["date"] <= one_y_ago]
     last1y = None
     if not prior.empty:
-        base = prior[value_key].iloc[-1]
+        base = float(prior[value_key].iloc[-1])
         last1y = (end - base) / base if base > 0 else None
 
     return {
         "cagr": cagr, "totalReturnPct": total, "annualizedVol": vol,
-        "maxDrawdownPct": max_dd, "last1yPct": last1y, "sharpe": sharpe,
+        "maxDrawdownPct": float(max_dd), "last1yPct": last1y, "sharpe": sharpe,
         "from": dates.iloc[0].strftime("%Y-%m-%d"), "to": dates.iloc[-1].strftime("%Y-%m-%d"),
         "points": int(len(df)),
     }

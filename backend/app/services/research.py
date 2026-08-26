@@ -126,9 +126,10 @@ def validate_claim(symbol: str, claim, settings: dict) -> dict:
                 "explanation": f"No historical data to test {_METRIC_LABELS.get(metric, metric)} for {symbol}."}
 
     # Drawdown/volatility comparisons use magnitude ("drops more than 30%").
+    actual = float(actual)
     a = abs(actual) if metric in ("maxDrawdownPct", "annualizedVol") else actual
     thr = abs(threshold) if metric in ("maxDrawdownPct", "annualizedVol") else threshold
-    supported = a >= thr if op == ">=" else a <= thr
+    supported = bool(a >= thr) if op == ">=" else bool(a <= thr)
 
     def _p(v):
         return f"{v * 100:.1f}%"

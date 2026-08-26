@@ -456,6 +456,10 @@ export interface ValuationResult {
   supportableReturn: number;
   quality: { score: number; max: number; checks: ValuationCheck[] };
   assumptions: { discountRate: number; terminalGrowth: number; years: number };
+  confidence: 'high' | 'medium' | 'low';
+  flags: string[];
+  sector: string | null;
+  priceToBook: number | null;
   eps: number | null;
   forwardEps: number | null;
   bookValuePerShare: number | null;

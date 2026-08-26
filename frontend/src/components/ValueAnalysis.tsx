@@ -1,8 +1,14 @@
 import { useQuery } from '@tanstack/react-query';
-import { Check, X, TrendingDown, TrendingUp } from 'lucide-react';
+import { Check, X, TrendingDown, TrendingUp, AlertTriangle } from 'lucide-react';
 import { api } from '../lib/api';
 import { Spinner } from './ui';
 import { fmtPct, fmtMoney } from '../lib/format';
+
+const CONF_META: Record<string, { label: string; cls: string }> = {
+  high: { label: 'High confidence', cls: 'text-gain' },
+  medium: { label: 'Medium confidence', cls: 'text-warn' },
+  low: { label: 'Low confidence', cls: 'text-loss' },
+};
 
 const MODEL_LABELS: Record<string, string> = {
   grahamNumber: 'Graham number',
@@ -54,9 +60,31 @@ export function ValueAnalysis({
 
   const impliedDemanding =
     data.impliedGrowth != null && data.growthRaw != null && data.impliedGrowth > data.growthRaw + 0.02;
+  const lowConf = data.confidence !== 'high';
+  const conf = CONF_META[data.confidence] ?? CONF_META.low;
 
   return (
     <div className="space-y-5">
+      {/* Confidence + why the estimate may not be trustworthy */}
+      <div className="flex items-center gap-2 text-[11px]">
+        <span className="eyebrow">Estimate reliability</span>
+        <span className={`font-medium ${conf.cls}`}>{conf.label}</span>
+      </div>
+      {data.flags.length > 0 && (
+        <div className="card !p-3 border-l-2 border-l-warn bg-warn/5">
+          <div className="flex items-start gap-2">
+            <AlertTriangle size={15} className="text-warn shrink-0 mt-0.5" />
+            <div className="text-[13px] text-text-muted space-y-1">
+              <div className="font-medium text-text">Treat these numbers with caution</div>
+              <ul className="list-disc pl-4 space-y-0.5">
+                {data.flags.map((f, i) => (
+                  <li key={i}>{f}</li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
       {/* Verdict headline: intrinsic value vs price */}
       <div className="grid sm:grid-cols-[minmax(200px,1fr)_2fr] gap-5">
         <div className={`card !p-4 border-l-2 ${overvalued ? 'border-l-loss' : 'border-l-gain'}`}>
@@ -76,6 +104,7 @@ export function ValueAnalysis({
               ) : (
                 <><TrendingUp size={14} className="inline mr-1" />Margin of safety {fmtPct(mos, 1)}</>
               )}
+              {lowConf && <span className="text-text-faint font-normal"> · indicative only</span>}
             </div>
           )}
           <div className="text-[11px] text-text-faint mt-1">at {px != null ? fmtMoney(px, ccy) : '—'} today</div>
@@ -116,8 +145,14 @@ export function ValueAnalysis({
             <span className={canCompete ? 'text-gain' : 'text-loss'}>
               {canCompete
                 ? 'That is within reach — catching up is plausible.'
-                : `That is far beyond what the business is doing — a rational read is that catching up is unrealistic.`}
+                : 'That is far beyond what the business is doing — on these numbers, catching up looks unrealistic.'}
             </span>
+            {lowConf && (
+              <span className="text-text-faint">
+                {' '}Caveat: the fundamentals above are flagged low-confidence, so weigh this against a normalised
+                earnings view before acting.
+              </span>
+            )}
           </p>
         </div>
       )}

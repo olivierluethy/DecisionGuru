@@ -51,6 +51,63 @@ def _dcf(eps0: float | None, g: float, r: float = DISCOUNT_RATE, years: int = DC
     return pv + terminal / ((1 + r) ** years)
 
 
+def _pick_growth(snap: dict, hist: list[dict]) -> tuple[float, float | None]:
+    """A stable growth estimate. Prefers the multi-year income CAGR; falls back to revenue
+    growth; treats single-period figures beyond ±50% as anomalies (low-base / one-offs) and
+    ignores them. Returns (growth_used_before_clamp, raw_reported_earnings_growth)."""
+    raw_eg = snap.get("earningsGrowth")
+    candidates: list[float] = []
+    hist_cagr = _hist_income_cagr(hist)
+    if hist_cagr is not None:
+        candidates.append(hist_cagr)
+    rg = snap.get("revenueGrowth")
+    if rg is not None and abs(rg) <= 0.5:
+        candidates.append(rg)
+    if raw_eg is not None and abs(raw_eg) <= 0.5:
+        candidates.append(raw_eg)
+    if not candidates:
+        return 0.0, raw_eg
+    candidates.sort()
+    return candidates[len(candidates) // 2], raw_eg
+
+
+def _confidence(snap: dict, models: dict, price: float | None) -> tuple[str, list[str]]:
+    """Rate how much to trust the earnings-based value, and say why not."""
+    eps, fwd = snap.get("trailingEps"), snap.get("forwardEps")
+    sector = snap.get("sector") or ""
+    flags: list[str] = []
+    conf = "high"
+
+    def demote(to: str) -> str:
+        order = {"high": 2, "medium": 1, "low": 0}
+        return to if order[to] < order[conf] else conf
+
+    if eps is None or eps <= 0:
+        flags.append("No positive trailing earnings — an earnings-based value is unreliable here.")
+        conf = demote("low")
+    elif eps <= 0.15 or (fwd and eps and fwd > eps * 1.8):
+        flags.append(
+            "Trailing earnings look depressed versus the forward estimate — earnings models "
+            "understate a company whose profits are at a cyclical low or expected to recover."
+        )
+        conf = demote("low")
+
+    vals = [v for v in models.values() if v and v > 0]
+    if len(vals) >= 2 and min(vals) > 0 and max(vals) / min(vals) > 3:
+        flags.append("The valuation models disagree widely — read the midpoint as a rough guide, not a target.")
+        conf = demote("low")
+
+    if sector in ("Real Estate", "Financial Services", "Financials", "Banks"):
+        p2b = snap.get("priceToBook")
+        book_note = f" It trades at {p2b:.2f}× book." if isinstance(p2b, (int, float)) else ""
+        flags.append(
+            f"{sector} is better judged on net asset value / book than on an earnings DCF.{book_note}"
+        )
+        conf = demote("medium")
+
+    return conf, flags
+
+
 def _implied_growth(eps0: float | None, price: float | None) -> float | None:
     """Reverse DCF: the constant growth rate that makes the DCF equal today's price."""
     if not eps0 or eps0 <= 0 or not price or price <= 0:
@@ -80,9 +137,8 @@ def value_analysis(symbol: str, price: float | None, currency: str | None = None
     dy = (dy / 100) if (dy and dy > 1) else dy
     payout, debt, ebitda = snap.get("payoutRatio"), snap.get("totalDebt"), snap.get("ebitda")
 
-    g_raw = next((x for x in (snap.get("earningsGrowth"), snap.get("revenueGrowth"),
-                              _hist_income_cagr(hist)) if x is not None), 0.0)
-    g = _clamp(g_raw, -0.05, GROWTH_CAP)
+    g_used_raw, g_reported = _pick_growth(snap, hist)
+    g = _clamp(g_used_raw, -0.05, GROWTH_CAP)
     bvps = (price / p2b) if (p2b and price and p2b > 0) else None
     base_eps = eps if (eps and eps > 0) else fwd_eps
 
@@ -112,18 +168,20 @@ def value_analysis(symbol: str, price: float | None, currency: str | None = None
     checks = [
         chk("Return on equity ≥ 15%", roe is not None and roe >= 0.15, _pct(roe)),
         chk("Net margin ≥ 10%", margins is not None and margins >= 0.10, _pct(margins)),
-        chk("Earnings growing", g_raw is not None and g_raw > 0, _pct(g_raw)),
+        chk("Earnings growing", g_used_raw > 0, _pct(g_used_raw)),
         chk("Debt / EBITDA ≤ 3", de is not None and de <= 3, f"{de:.1f}x" if de is not None else "n/a"),
         chk("Payout sustainable ≤ 70%", payout is not None and 0 <= payout <= 0.7, _pct(payout)),
         chk("Positive long-run earnings trend", hist_cagr is not None and hist_cagr > 0, _pct(hist_cagr)),
     ]
+
+    confidence, flags = _confidence(snap, models, price)
 
     return {
         "symbol": symbol,
         "currency": ccy,
         "price": price,
         "growthUsed": round(g, 4),
-        "growthRaw": round(g_raw, 4) if g_raw is not None else None,
+        "growthRaw": round(g_reported, 4) if g_reported is not None else None,
         "models": models,
         "intrinsic": intrinsic,
         "marginOfSafety": mos,
@@ -131,6 +189,10 @@ def value_analysis(symbol: str, price: float | None, currency: str | None = None
         "supportableReturn": round((g or 0) + (dy or 0), 4),
         "quality": {"score": sum(1 for c in checks if c["pass"]), "max": len(checks), "checks": checks},
         "assumptions": {"discountRate": DISCOUNT_RATE, "terminalGrowth": TERMINAL_GROWTH, "years": DCF_YEARS},
+        "confidence": confidence,
+        "flags": flags,
+        "sector": snap.get("sector"),
+        "priceToBook": p2b,
         "eps": eps,
         "forwardEps": fwd_eps,
         "bookValuePerShare": round(bvps, 2) if bvps else None,

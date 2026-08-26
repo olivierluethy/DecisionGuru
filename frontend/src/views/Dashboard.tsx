@@ -9,6 +9,7 @@ import { ValueChart } from '../components/ValueChart';
 import { TimeRangeSelector } from '../components/TimeRangeSelector';
 import { RangeStats } from '../components/RangeStats';
 import { Timeline } from '../components/Timeline';
+import { AccountTimeline } from '../components/AccountTimeline';
 import { DecisionsBanner } from '../components/DecisionsBanner';
 import { Segmented, Spinner, EmptyState, KindBadge, DataStatusBadge } from '../components/ui';
 import { buildPortfolioExport } from '../lib/exporters';
@@ -31,6 +32,7 @@ export function Dashboard() {
   const queryClient = useQueryClient();
   const [range, setRange] = useState<RangeKey>('1Y');
   const [holdFilter, setHoldFilter] = useState<'all' | 'stock' | 'etf' | 'delisted'>('all');
+  const [tlView, setTlView] = useState<'chart' | 'list'>('chart');
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['portfolio', benchmark, preTax],
@@ -276,9 +278,23 @@ export function Dashboard() {
         <section className="card mb-6">
           <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
             <div className="eyebrow">Timeline · account history</div>
-            <div className="text-xs text-text-faint">{timeline.count} events · drag to scroll</div>
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-text-faint">{timeline.count} events</span>
+              <Segmented
+                value={tlView}
+                onChange={setTlView}
+                options={[
+                  { value: 'chart', label: 'Timeline' },
+                  { value: 'list', label: 'Feed' },
+                ]}
+              />
+            </div>
           </div>
-          <Timeline events={timeline.events} />
+          {tlView === 'chart' ? (
+            <AccountTimeline events={timeline.events} />
+          ) : (
+            <Timeline events={timeline.events} />
+          )}
         </section>
       )}
 

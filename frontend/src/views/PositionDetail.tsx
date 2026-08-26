@@ -132,6 +132,14 @@ export function PositionDetail() {
               <p className="text-sm text-text-muted">{inst.name}</p>
               {hours.data && <MarketStatusChip hours={hours.data} />}
             </div>
+            <div className="mt-2 flex items-baseline gap-2">
+              <span className="font-mono text-3xl font-semibold tnum leading-none">
+                {fmtCHF(p.openQuantity > 0 && p.currentValueCHF != null ? p.currentValueCHF / p.openQuantity : p.currentPrice)}
+              </span>
+              <span className="text-xs text-text-faint">
+                per share{p.priceAsOf ? ` · as of ${fmtDate(p.priceAsOf)}` : ''}{p.stale ? ' · stale' : ''}
+              </span>
+            </div>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -207,8 +215,17 @@ export function PositionDetail() {
             )}
 
             <div className="grid grid-cols-2 gap-x-4 gap-y-3 mt-6">
-              <Stat label="Invested" value={fmtCHF(p.investedCHF)} />
-              <Stat label="Current value" value={fmtCHF(p.currentValueCHF)} />
+              <Stat
+                label="Current price"
+                value={p.openQuantity > 0 && p.currentValueCHF != null ? fmtCHF(p.currentValueCHF / p.openQuantity) : fmtCHF(p.currentPrice)}
+                sub={p.openQuantity > 0 ? `× ${p.openQuantity} shares` : undefined}
+              />
+              <Stat label="Current value" value={fmtCHF(p.currentValueCHF)} sub="price × shares" />
+              <Stat
+                label="Invested"
+                value={fmtCHF(p.investedCHF)}
+                sub={p.openQuantity > 0 ? `@ ${fmtCHF(p.investedCHF / p.openQuantity)} avg` : undefined}
+              />
               <Stat
                 label="Unrealized P/L"
                 value={fmtCHFSigned(p.unrealizedCHF)}
@@ -234,11 +251,20 @@ export function PositionDetail() {
                 <span className="w-4 h-0 border-t-2 border-dashed border-gold inline-block" /> {c.benchmarkSymbol} (counterfactual)
               </span>
             </div>
+            <p className="text-[11px] text-text-faint mb-2">
+              Holding value in CHF (shares × price) — not the share price. For the per-share
+              chart see “Full price history” below.
+            </p>
             <DeltaChart
               series={c.series}
               benchmarkName={c.benchmarkSymbol}
               height={320}
-              entryDate={txs.data?.reduce<string | undefined>((m, t) => (!m || t.date < m ? t.date : m), undefined)}
+              entries={(txs.data ?? [])
+                .filter((t) => t.action === 'buy')
+                .map((t) => ({
+                  date: t.date,
+                  label: fmtMoney(t.quantity * t.unitPrice, t.currency || inst.currency),
+                }))}
             />
           </div>
         </div>
@@ -589,6 +615,7 @@ function TransactionsCard({
               <th className="th">Action</th>
               <th className="th text-right">Qty</th>
               <th className="th text-right">Price</th>
+              <th className="th text-right">Amount</th>
               <th className="th text-right">Fees</th>
               <th className="th"></th>
             </tr>
@@ -612,6 +639,13 @@ function TransactionsCard({
                 </td>
                 <td className="td text-right font-mono tnum">{t.quantity || '—'}</td>
                 <td className="td text-right font-mono tnum">{fmtMoney(t.unitPrice, t.currency || currency)}</td>
+                <td className="td text-right font-mono tnum">
+                  {t.quantity && t.unitPrice
+                    ? fmtMoney(t.quantity * t.unitPrice, t.currency || currency)
+                    : t.grossAmount
+                    ? fmtMoney(t.grossAmount, t.currency || currency)
+                    : '—'}
+                </td>
                 <td className="td text-right font-mono tnum text-text-faint">{t.fees || '—'}</td>
                 <td className="td text-right">
                   <button
@@ -626,7 +660,7 @@ function TransactionsCard({
             ))}
             {!txs.length && (
               <tr>
-                <td className="td text-text-faint" colSpan={6}>
+                <td className="td text-text-faint" colSpan={7}>
                   No transactions.
                 </td>
               </tr>

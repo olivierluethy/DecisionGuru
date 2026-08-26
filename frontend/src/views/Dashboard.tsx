@@ -4,7 +4,7 @@ import { Download, ArrowUpRight, ArrowDownRight, Wallet, PieChart, AlertTriangle
 import type { RangeKey } from '@decisionguru/shared';
 import { api } from '../lib/api';
 import { useApp } from '../store';
-import { fmtCHF, fmtCHFSigned, fmtPct, fmtPctSigned, fmtNum, plClass } from '../lib/format';
+import { fmtCHF, fmtCHFSigned, fmtDate, fmtPct, fmtPctSigned, fmtNum, plClass } from '../lib/format';
 import { ValueChart } from '../components/ValueChart';
 import { TimeRangeSelector } from '../components/TimeRangeSelector';
 import { RangeStats } from '../components/RangeStats';
@@ -31,7 +31,7 @@ export function Dashboard() {
     useApp();
   const queryClient = useQueryClient();
   const [range, setRange] = useState<RangeKey>('1Y');
-  const [holdFilter, setHoldFilter] = useState<'all' | 'stock' | 'etf' | 'delisted'>('all');
+  const [holdFilter, setHoldFilter] = useState<'all' | 'active' | 'sold' | 'stock' | 'etf' | 'delisted'>('all');
   const [tlView, setTlView] = useState<'chart' | 'list'>('chart');
 
   const { data, isLoading, error } = useQuery({
@@ -95,32 +95,38 @@ export function Dashboard() {
   const todayPct = todayDelta != null && todayPrev ? todayDelta / todayPrev : null;
   const totalGainPct = totals.investedCHF > 0 ? totals.totalGainCHF / totals.investedCHF : null;
 
-  // Holdings classification groups (Stock / ETF / delisted) + profit/loss counts.
+  // Holdings classification (active / sold / stock / etf / delisted) + P/L counts.
   const allPositions = data.positions;
-  const groupCount = (f: typeof holdFilter) =>
-    allPositions.filter((p) =>
-      f === 'all'
-        ? true
-        : f === 'delisted'
-          ? p.delisted
-          : !p.delisted && p.instrument.kind === f,
-    ).length;
-  const visiblePositions = allPositions.filter((p) =>
-    holdFilter === 'all'
+  const isSold = (p: (typeof allPositions)[number]) => p.openQuantity <= 0 && !!p.closedDate;
+  const matches = (p: (typeof allPositions)[number], f: typeof holdFilter) =>
+    f === 'all'
       ? true
-      : holdFilter === 'delisted'
-        ? p.delisted
-        : !p.delisted && p.instrument.kind === holdFilter,
-  );
-  const tracked = visiblePositions.filter((p) => !p.delisted && p.unrealizedCHF != null);
-  const winners = tracked.filter((p) => (p.unrealizedCHF ?? 0) > 0).length;
-  const losers = tracked.filter((p) => (p.unrealizedCHF ?? 0) < 0).length;
-  const groupPL = tracked.reduce((s, p) => s + (p.unrealizedCHF ?? 0), 0);
+      : f === 'active'
+        ? p.openQuantity > 0
+        : f === 'sold'
+          ? isSold(p)
+          : f === 'delisted'
+            ? !!p.delisted
+            : !p.delisted && p.instrument.kind === f;
+  const groupCount = (f: typeof holdFilter) => allPositions.filter((p) => matches(p, f)).length;
+  const visiblePositions = allPositions.filter((p) => matches(p, holdFilter));
+  const soldView = holdFilter === 'sold';
+  // Sold positions are judged on realized P/L; everything else on unrealized.
+  const plOf = (p: (typeof allPositions)[number]) => (isSold(p) ? p.realizedCHF : p.unrealizedCHF);
+  const tracked = visiblePositions.filter((p) => !p.delisted && plOf(p) != null);
+  const winners = tracked.filter((p) => (plOf(p) ?? 0) > 0).length;
+  const losers = tracked.filter((p) => (plOf(p) ?? 0) < 0).length;
+  const groupPL = tracked.reduce((s, p) => s + (plOf(p) ?? 0), 0);
+  const soldCount = groupCount('sold');
   const holdFilters: { value: typeof holdFilter; label: string }[] = [
     { value: 'all', label: `All ${groupCount('all')}` },
-    { value: 'stock', label: `Stocks ${groupCount('stock')}` },
-    { value: 'etf', label: `ETFs ${groupCount('etf')}` },
   ];
+  if (soldCount > 0) {
+    holdFilters.push({ value: 'active', label: `Active ${groupCount('active')}` });
+    holdFilters.push({ value: 'sold', label: `Sold ${soldCount}` });
+  }
+  holdFilters.push({ value: 'stock', label: `Stocks ${groupCount('stock')}` });
+  holdFilters.push({ value: 'etf', label: `ETFs ${groupCount('etf')}` });
   if (groupCount('delisted') > 0) holdFilters.push({ value: 'delisted', label: `Delisted ${groupCount('delisted')}` });
 
   const doExport = async (kind: 'excel' | 'pdf') => {
@@ -309,6 +315,7 @@ export function Dashboard() {
                 <span className="text-text-faint">Untracked — excluded from live valuation</span>
               ) : (
                 <>
+                  {soldView && <span className="text-text-faint">Closed positions · realized</span>}
                   <span className="text-gain">▲ {winners} in profit</span>
                   <span className="text-loss">▼ {losers} in loss</span>
                   <span className="text-text-faint">·</span>
@@ -326,23 +333,25 @@ export function Dashboard() {
                   <th className="th text-right">Qty</th>
                   <th className="th text-right">Cost basis</th>
                   <th className="th text-right">Value</th>
-                  <th className="th text-right">Unrealized P/L</th>
+                  <th className="th text-right">{soldView ? 'Realized P/L' : 'P/L'}</th>
                   <th className="th text-right">Net div.</th>
                   <th className="th text-right">Weight</th>
                 </tr>
               </thead>
               <tbody>
                 {visiblePositions.map((p) => {
+                  const sold = isSold(p);
                   const costBasis =
                     p.currentValueCHF != null && p.unrealizedCHF != null
                       ? p.currentValueCHF - p.unrealizedCHF
                       : p.investedCHF;
+                  const plValue = sold ? p.realizedCHF : p.unrealizedCHF;
                   return (
                     <tr
                       key={p.instrument.id}
                       className={`hover:bg-surface-2 cursor-pointer transition-colors ${
                         compareSelection.includes(p.instrument.id) ? 'bg-surface-2/60' : ''
-                      }`}
+                      } ${sold ? 'opacity-70' : ''}`}
                       onClick={() => selectInstrument(p.instrument.id)}
                     >
                       <td className="td text-center" onClick={(e) => e.stopPropagation()}>
@@ -360,20 +369,31 @@ export function Dashboard() {
                           <div className="min-w-0">
                             <div className="flex items-center gap-2">
                               <span className="font-mono text-text">{p.instrument.symbol}</span>
+                              {sold && (
+                                <span className="chip !py-0 !px-1.5 text-gold border-gold/40">sold</span>
+                              )}
                               <DataStatusBadge status={p.dataStatus} onRetry={() => retryResolve(p.instrument.id)} />
                             </div>
                             <div className="text-xs text-text-faint truncate max-w-[240px]">
                               {p.instrument.name}
                               {p.instrument.isin && <span className="ml-1.5 font-mono">· {p.instrument.isin}</span>}
                             </div>
+                            {(p.firstBuyDate || p.closedDate) && (
+                              <div className="text-[11px] text-text-faint font-mono tnum mt-0.5">
+                                {sold
+                                  ? `${fmtDate(p.firstBuyDate)} → ${fmtDate(p.closedDate)}`
+                                  : `held since ${fmtDate(p.firstBuyDate)}`}
+                              </div>
+                            )}
                           </div>
                         </div>
                       </td>
-                      <td className="td text-right font-mono tnum text-text-muted">{fmtNum(p.openQuantity)}</td>
+                      <td className="td text-right font-mono tnum text-text-muted">{sold ? '—' : fmtNum(p.openQuantity)}</td>
                       <td className="td text-right font-mono tnum text-text-muted">{fmtCHF(costBasis)}</td>
-                      <td className="td text-right font-mono tnum">{fmtCHF(p.currentValueCHF)}</td>
-                      <td className={`td text-right font-mono tnum ${plClass(p.unrealizedCHF)}`}>
-                        {fmtCHFSigned(p.unrealizedCHF)}
+                      <td className="td text-right font-mono tnum">{sold ? '—' : fmtCHF(p.currentValueCHF)}</td>
+                      <td className={`td text-right font-mono tnum ${plClass(plValue)}`}
+                          title={sold ? 'realized P/L' : 'unrealized P/L'}>
+                        {fmtCHFSigned(plValue)}
                       </td>
                       <td className="td text-right font-mono tnum text-gain">
                         {p.netDividendsCHF ? fmtCHF(p.netDividendsCHF) : '—'}

@@ -68,6 +68,12 @@ export type TxCategory = 'trade' | 'corporate_action';
 export interface Position {
   instrument: Instrument;
   openQuantity: number;
+  /** Date of the first buy (actual entry date). */
+  firstBuyDate?: string;
+  /** Date of the most recent sell, if any. */
+  lastSellDate?: string | null;
+  /** Set when the position is fully closed (sold out): the date it was closed. */
+  closedDate?: string | null;
   /** Weighted average cost per share (tx currency) of the open lot. */
   avgCost: number;
   investedOriginal: number; // sum of buy cost (tx ccy) for still-open + closed basis

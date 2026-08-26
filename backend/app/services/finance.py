@@ -151,9 +151,20 @@ def build_position(instrument: dict, txs: list[dict], tax: dict, pre_tax: bool =
     else:
         current_yield = instrument.get("incomeYieldOverride")
 
+    # Entry / exit dates (tx dates sort lexicographically == chronologically).
+    buy_dates = [t["date"] for t in sorted_txs if t["action"] == "buy"]
+    sell_dates = [t["date"] for t in sorted_txs if t["action"] == "sell"]
+    first_buy_date = buy_dates[0] if buy_dates else first_date
+    last_sell_date = sell_dates[-1] if sell_dates else None
+    # A fully-closed (sold) position carries the date its last lot was sold.
+    closed_date = last_sell_date if (open_qty <= 1e-9 and sell_dates) else None
+
     position = {
         "instrument": instrument,
         "openQuantity": open_qty,
+        "firstBuyDate": first_buy_date,
+        "lastSellDate": last_sell_date,
+        "closedDate": closed_date,
         "avgCost": open_cost_orig / open_qty if open_qty > 0 else 0,
         "investedOriginal": total_buy_orig,
         "investedCHF": total_buy_chf,

@@ -6,6 +6,8 @@ import { EditInstrumentModal } from './EditInstrumentModal';
 import { SettingsModal } from './SettingsModal';
 import { CompareModal } from './CompareModal';
 import { CashDetailModal } from './CashDetailModal';
+import { RecoveryModal } from './RecoveryModal';
+import { CreatePlanModal } from './CreatePlanModal';
 
 export function ModalHost() {
   const modal = useApp((s) => s.modal);
@@ -25,6 +27,10 @@ export function ModalHost() {
       return <EditInstrumentModal instrumentId={modal.instrumentId} />;
     case 'settings':
       return <SettingsModal />;
+    case 'recovery':
+      return <RecoveryModal instrumentId={modal.instrumentId} />;
+    case 'create-plan':
+      return <CreatePlanModal sellInstrumentIds={modal.sellInstrumentIds} targets={modal.targets} />;
     default:
       return null;
   }

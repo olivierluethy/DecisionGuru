@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Download, ArrowUpRight, ArrowDownRight, Wallet, PieChart, AlertTriangle } from 'lucide-react';
-import type { RangeKey } from '@decisionguru/shared';
+import type { RangeKey, AllocationBreakdown } from '@decisionguru/shared';
 import { api } from '../lib/api';
 import { useApp } from '../store';
 import { fmtCHF, fmtCHFSigned, fmtDate, fmtPct, fmtPctSigned, fmtNum, plClass } from '../lib/format';
 import { ValueChart } from '../components/ValueChart';
+import { Globe } from '../components/Globe';
+import { ExposureBars } from '../components/ExposureBars';
 import { TimeRangeSelector } from '../components/TimeRangeSelector';
 import { RangeStats } from '../components/RangeStats';
 import { Timeline } from '../components/Timeline';
@@ -56,6 +58,12 @@ export function Dashboard() {
     enabled: !!(data?.hasPositions || data?.hasAccount),
   });
 
+  const { data: exposure } = useQuery({
+    queryKey: ['exposure'],
+    queryFn: api.exposure,
+    enabled: !!data?.hasPositions,
+  });
+
   const retryResolve = async (id: number) => {
     await api.reresolveInstrument(id).catch(() => undefined);
     queryClient.invalidateQueries({ queryKey: ['portfolio'] });
@@ -94,6 +102,22 @@ export function Dashboard() {
   const todayPrev = pts.length >= 2 ? pts[pts.length - 2].value : null;
   const todayPct = todayDelta != null && todayPrev ? todayDelta / todayPrev : null;
   const totalGainPct = totals.investedCHF > 0 ? totals.totalGainCHF / totals.investedCHF : null;
+
+  // Value-weighted geographic/sector exposure → feeds the globe (countries carry lat/lng).
+  const exposureAllocation: AllocationBreakdown | null = exposure
+    ? {
+        countries: exposure.countries.map((c) => ({
+          key: c.key,
+          label: c.label,
+          weight: c.weight,
+          lat: c.lat,
+          lng: c.lng,
+        })),
+        sectors: exposure.sectors.map((s) => ({ key: s.key, label: s.label, weight: s.weight })),
+        topHoldings: exposure.holdings.map((h) => ({ symbol: h.symbol, name: h.name, weight: h.weight })),
+        source: 'stock',
+      }
+    : null;
 
   // Holdings classification (active / sold / stock / etf / delisted) + P/L counts.
   const allPositions = data.positions;
@@ -275,6 +299,26 @@ export function Dashboard() {
           <ValueChart series={series} height={280} />
           <div className="mt-4 pt-3 border-t border-hairline">
             <RangeStats stats={series?.stats ?? null} />
+          </div>
+        </section>
+      )}
+
+      {/* Global exposure — where in the world the portfolio is invested */}
+      {hasPositions && exposureAllocation && (exposure!.countries.length > 0 || exposure!.sectors.length > 0) && (
+        <section className="card mb-6">
+          <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+            <div className="eyebrow">Where you’re invested · global exposure</div>
+            <div className="text-[11px] text-text-faint">
+              {exposure!.countries.length} countr{exposure!.countries.length === 1 ? 'y' : 'ies'} · top holding{' '}
+              {fmtPct(exposure!.concentration.topHoldingWeight)} · country concentration{' '}
+              {(exposure!.concentration.country * 100).toFixed(0)}%
+            </div>
+          </div>
+          <div className="grid lg:grid-cols-[320px_1fr] gap-6 items-center">
+            <div className="flex justify-center">
+              <Globe allocation={exposureAllocation} size={300} />
+            </div>
+            <ExposureBars countries={exposure!.countries} sectors={exposure!.sectors} />
           </div>
         </section>
       )}

@@ -8,7 +8,9 @@ import {
   Trash2,
   Clock,
   TrendingDown,
+  Activity,
 } from 'lucide-react';
+import clsx from 'clsx';
 import { api, downloadExport } from '../lib/api';
 import { useApp } from '../store';
 import {
@@ -23,6 +25,8 @@ import {
 } from '../lib/format';
 import { DeltaChart } from '../components/DeltaChart';
 import { ProjectionChart } from '../components/ProjectionChart';
+import { PriceMovementChart } from '../components/PriceMovementChart';
+import { NewsFeed } from '../components/NewsFeed';
 import { Globe } from '../components/Globe';
 import { Segmented, Spinner, Stat, KindBadge, StaleDot, DataStatusBadge } from '../components/ui';
 import { BenchmarkSelect } from '../components/BenchmarkSelect';
@@ -52,6 +56,24 @@ export function PositionDetail() {
     queryKey: ['txs', id],
     queryFn: () => api.getTransactions(id!),
     enabled: id != null,
+  });
+
+  const symbol = position.data?.instrument.symbol;
+  const delisted = position.data?.delisted || position.data?.instrument.unresolved;
+  const history = useQuery({
+    queryKey: ['pos-history', symbol],
+    queryFn: () => api.marketHistory(symbol!),
+    enabled: !!symbol && !delisted,
+  });
+  const movements = useQuery({
+    queryKey: ['pos-movements', symbol],
+    queryFn: () => api.movements(symbol!),
+    enabled: !!symbol && !delisted,
+  });
+  const hours = useQuery({
+    queryKey: ['pos-hours', symbol],
+    queryFn: () => api.marketHoursSymbol(symbol!),
+    enabled: !!symbol && !delisted,
   });
 
   const removeTx = useMutation({
@@ -103,7 +125,16 @@ export function PositionDetail() {
                 <StaleDot stale={p.stale} />
               )}
             </h1>
-            <p className="text-sm text-text-muted">{inst.name}</p>
+            <div className="flex items-center gap-2 flex-wrap">
+              <p className="text-sm text-text-muted">{inst.name}</p>
+              {hours.data && (
+                <span className={clsx('chip !py-0.5', hours.data.isOpen ? 'text-gain' : 'text-text-faint')}
+                      title={`${hours.data.name} · ${hours.data.localTime} local`}>
+                  <span className={clsx('w-1.5 h-1.5 rounded-full', hours.data.isOpen ? 'bg-gain' : 'bg-text-faint')} />
+                  {hours.data.code} {hours.data.isOpen ? 'open' : 'closed'}
+                </span>
+              )}
+            </div>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -116,6 +147,9 @@ export function PositionDetail() {
               { value: 'pre', label: 'Pre-tax' },
             ]}
           />
+          <button className="btn-secondary" onClick={() => openModal({ kind: 'recovery', instrumentId: id })}>
+            <Activity size={15} /> Recovery
+          </button>
           <button className="btn-secondary" onClick={() => openModal({ kind: 'add-transaction', instrumentId: id })}>
             <Plus size={15} /> Transaction
           </button>
@@ -190,6 +224,21 @@ export function PositionDetail() {
         </div>
       </section>
 
+      {/* Full-history price with major-move & stagnation markers */}
+      {!delisted && (history.data?.length ?? 0) > 1 && (
+        <section className="card mb-6">
+          <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+            <div className="eyebrow">Full price history · {inst.symbol}</div>
+            <div className="flex items-center gap-3 text-[11px] text-text-faint">
+              <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-gain" /> surge</span>
+              <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-loss" /> drop</span>
+              <span className="flex items-center gap-1"><span className="w-3 h-2 bg-warn/20 border border-warn/30" /> stagnation</span>
+            </div>
+          </div>
+          <PriceMovementChart series={history.data ?? []} movements={movements.data} currency={inst.currency} height={300} />
+        </section>
+      )}
+
       <div className="grid lg:grid-cols-2 gap-6">
         <ProjectionSection id={id} benchmark={benchmark} />
         <DividendShockSection id={id} />
@@ -203,6 +252,13 @@ export function PositionDetail() {
         <TransactionsCard txs={txs.data ?? []} onDelete={(txId) => removeTx.mutate(txId)} currency={inst.currency} />
         <AllocationCard instrumentId={id} />
       </div>
+
+      {!delisted && (
+        <section className="card mt-6">
+          <h3 className="font-display text-base font-semibold mb-3">Latest headlines</h3>
+          <NewsFeed symbol={inst.symbol} limit={6} />
+        </section>
+      )}
 
       <section className="card mt-6">
         <h3 className="font-display text-base font-semibold mb-3">Notes</h3>

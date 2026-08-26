@@ -132,14 +132,26 @@ export function PositionDetail() {
               <p className="text-sm text-text-muted">{inst.name}</p>
               {hours.data && <MarketStatusChip hours={hours.data} />}
             </div>
-            <div className="mt-2 flex items-baseline gap-2">
-              <span className="font-mono text-3xl font-semibold tnum leading-none">
-                {fmtCHF(p.openQuantity > 0 && p.currentValueCHF != null ? p.currentValueCHF / p.openQuantity : p.currentPrice)}
-              </span>
-              <span className="text-xs text-text-faint">
-                per share{p.priceAsOf ? ` · as of ${fmtDate(p.priceAsOf)}` : ''}{p.stale ? ' · stale' : ''}
-              </span>
-            </div>
+            {p.openQuantity > 0 && p.currentValueCHF != null ? (
+              <div className="mt-2 flex items-baseline gap-2">
+                <span className="font-mono text-3xl font-semibold tnum leading-none">
+                  {fmtCHF(p.currentValueCHF / p.openQuantity)}
+                </span>
+                <span className="text-xs text-text-faint">
+                  per share{p.priceAsOf ? ` · as of ${fmtDate(p.priceAsOf)}` : ''}{p.stale ? ' · stale' : ''}
+                </span>
+              </div>
+            ) : p.currentPrice != null ? (
+              <div className="mt-2 flex items-baseline gap-2">
+                <span className="font-mono text-3xl font-semibold tnum leading-none">{fmtCHF(p.currentPrice)}</span>
+                <span className="text-xs text-text-faint">per share{p.stale ? ' · stale' : ''}</span>
+              </div>
+            ) : (
+              <div className="mt-2 text-sm text-text-muted">
+                Closed position{p.closedDate ? ` · sold ${fmtDate(p.closedDate)}` : ''} · realized{' '}
+                <span className={`font-mono ${plClass(p.realizedCHF)}`}>{fmtCHFSigned(p.realizedCHF)}</span>
+              </div>
+            )}
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">

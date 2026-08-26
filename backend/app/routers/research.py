@@ -7,6 +7,7 @@ from ..core.db import get_settings
 from ..core.errors import ApiError
 from ..services.research import research_asset, validate_claim
 from ..services.fundamentals import fundamentals_bundle
+from ..services.valuation import value_analysis
 from ..services.universal import universal_compare
 
 router = APIRouter()
@@ -23,6 +24,13 @@ async def fundamentals(symbol: str, domicile: str | None = None, name: str | Non
     """Valuation + profitability snapshot, multi-year income statement, and (for Swiss
     blue chips) the SMI index weight. First call per symbol is slow (Yahoo scrape); cached after."""
     return await run_in_threadpool(fundamentals_bundle, symbol, name, domicile)
+
+
+@router.get("/valuation/{symbol:path}")
+async def valuation(symbol: str, price: float | None = None, currency: str | None = None) -> dict:
+    """Intrinsic-value estimates, a Buffett-style quality scorecard, and the growth the
+    market is pricing in — from cached fundamentals. Estimates only, not advice."""
+    return await run_in_threadpool(value_analysis, symbol, price, currency)
 
 
 @router.post("/claim")

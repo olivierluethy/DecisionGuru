@@ -9,8 +9,32 @@ from ..services import repo
 from ..services.allocation import build_allocation
 from ..services.fx import get_fx_rate
 from ..services.marketdata import get_fund_summary, get_history, get_quote, search_symbol
+from ..services.markethours import all_statuses, status_for_symbol
+from ..services.movements import movements_for_symbol
+from ..services.news import get_news
 
 router = APIRouter()
+
+
+@router.get("/news/{symbol:path}")
+async def news(symbol: str, limit: int = 12) -> dict:
+    return await run_in_threadpool(get_news, symbol, limit)
+
+
+@router.get("/hours")
+async def market_hours() -> dict:
+    statuses = await run_in_threadpool(all_statuses, None, None)
+    return {"exchanges": statuses}
+
+
+@router.get("/hours/{symbol:path}")
+async def market_hours_symbol(symbol: str) -> dict:
+    return await run_in_threadpool(status_for_symbol, symbol, None)
+
+
+@router.get("/movements/{symbol:path}")
+async def movements(symbol: str, from_: str | None = Query(default=None, alias="from")) -> dict:
+    return await run_in_threadpool(movements_for_symbol, symbol, from_)
 
 
 @router.get("/quote/{symbol:path}")

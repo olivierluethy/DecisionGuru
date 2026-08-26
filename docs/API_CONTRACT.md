@@ -156,7 +156,9 @@ Account cash, dividends-by-ISIN, deposits and fees surface via `PortfolioRespons
 | GET | `/api/market/hours/:symbol` | — | `ExchangeStatus` for the symbol's exchange |
 | GET | `/api/market/movements/:symbol` | `from?` | `{legs:MovementLeg[], stagnation:StagnationWindow[], coverage}` — zig-zag surge/drop legs + stagnation stretches from cached closes |
 
-`ExchangeStatus`: `{code,name,country,tz,localTime,localDate,open,close,isOpen,nextChange:'opens'|'closes',minutesToNextChange}`.
+`ExchangeStatus`: `{code,name,country,tz,localTime,localDate,open,close,isOpen,nextChange:'opens'|'closes',minutesToNextChange, secondsToNextChange, nextChangeAt (UTC ISO), serverNowUtc (UTC ISO)}`. `nextChangeAt`/`serverNowUtc` let the client tick a live HH:MM:SS countdown against its own clock (skew-corrected) without polling every second.
+
+`Position` additionally carries `firstBuyDate` (actual entry date), `lastSellDate` (most recent sell or null), and `closedDate` (set when fully sold out — the closing date; null while open). Fully-closed positions are still returned by `/api/analysis/portfolio` with `openQuantity 0`.
 Regular cash-session hours only; public holidays are not modelled.
 
 ## decisions (decision engine)

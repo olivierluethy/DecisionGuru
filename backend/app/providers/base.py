@@ -68,5 +68,10 @@ class MarketDataProvider(ABC):
     @abstractmethod
     def fund_summary(self, symbol: str) -> dict | None: ...
 
+    def fundamentals(self, symbol: str) -> dict | None:
+        """Company fundamentals (valuation, margins, multi-year income statement).
+        Optional — providers that cannot supply it return None."""
+        return None
+
     @abstractmethod
     def search(self, query: str) -> list[SearchHit]: ...

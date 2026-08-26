@@ -86,6 +86,12 @@ CREATE TABLE IF NOT EXISTS fund_cache (
   fetchedAt INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS fundamentals_cache (
+  symbol TEXT PRIMARY KEY,
+  payload TEXT NOT NULL,
+  fetchedAt INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS fx_cache (
   base TEXT NOT NULL,
   quote TEXT NOT NULL,

@@ -202,6 +202,116 @@ class YFinanceProvider(MarketDataProvider):
             log.warning("quoteSummary failed for %s: %s", symbol, exc)
             return None
 
+    # ---- fundamentals ----
+    def fundamentals(self, symbol: str) -> dict | None:
+        """Valuation, profitability and a multi-year income statement for a company.
+        Uses the heavy get_info() scrape + income_stmt — expensive, so callers cache it."""
+        def _fetch() -> dict:
+            import math as _m
+
+            t = yf.Ticker(symbol)
+            info = {}
+            try:
+                info = t.get_info() or {}
+            except Exception:  # noqa: BLE001
+                info = {}
+
+            def num(*keys):
+                for k in keys:
+                    v = info.get(k)
+                    if isinstance(v, (int, float)) and not (isinstance(v, float) and _m.isnan(v)):
+                        return float(v)
+                return None
+
+            snapshot = {
+                "name": info.get("longName") or info.get("shortName") or symbol,
+                "currency": info.get("currency") or info.get("financialCurrency"),
+                "sector": info.get("sector"),
+                "industry": info.get("industry"),
+                "country": info.get("country"),
+                "exchange": info.get("exchange"),
+                "marketCap": num("marketCap"),
+                "enterpriseValue": num("enterpriseValue"),
+                "trailingPE": num("trailingPE"),
+                "forwardPE": num("forwardPE"),
+                "pegRatio": num("pegRatio", "trailingPegRatio"),
+                "priceToBook": num("priceToBook"),
+                "priceToSales": num("priceToSalesTrailing12Months"),
+                "trailingEps": num("trailingEps"),
+                "forwardEps": num("forwardEps"),
+                "dividendYield": num("dividendYield"),
+                "payoutRatio": num("payoutRatio"),
+                "grossMargins": num("grossMargins"),
+                "operatingMargins": num("operatingMargins"),
+                "profitMargins": num("profitMargins"),
+                "ebitdaMargins": num("ebitdaMargins"),
+                "returnOnEquity": num("returnOnEquity"),
+                "returnOnAssets": num("returnOnAssets"),
+                "revenueGrowth": num("revenueGrowth"),
+                "earningsGrowth": num("earningsGrowth", "earningsQuarterlyGrowth"),
+                "totalRevenue": num("totalRevenue"),
+                "ebitda": num("ebitda"),
+                "netIncome": num("netIncomeToCommon"),
+                "totalCash": num("totalCash"),
+                "totalDebt": num("totalDebt"),
+                "beta": num("beta"),
+                "fiftyTwoWeekHigh": num("fiftyTwoWeekHigh"),
+                "fiftyTwoWeekLow": num("fiftyTwoWeekLow"),
+                "sharesOutstanding": num("sharesOutstanding"),
+                "recommendationKey": info.get("recommendationKey"),
+                "targetMeanPrice": num("targetMeanPrice"),
+                "numberOfAnalystOpinions": num("numberOfAnalystOpinions"),
+                "longBusinessSummary": info.get("longBusinessSummary"),
+            }
+
+            history: list[dict] = []
+            try:
+                fin = t.income_stmt
+                if fin is not None and not fin.empty:
+                    def row(label):
+                        return fin.loc[label] if label in fin.index else None
+                    rev_r, ni_r = row("Total Revenue"), row("Net Income")
+                    gp_r, oi_r = row("Gross Profit"), row("Operating Income")
+
+                    def cell(r, col):
+                        try:
+                            v = r[col] if r is not None else None
+                            if v is None or (isinstance(v, float) and _m.isnan(v)):
+                                return None
+                            return float(v)
+                        except Exception:  # noqa: BLE001
+                            return None
+
+                    for col in fin.columns:
+                        yr = getattr(col, "year", None)
+                        if yr is None:
+                            continue
+                        rev, ni = cell(rev_r, col), cell(ni_r, col)
+                        gp, oi = cell(gp_r, col), cell(oi_r, col)
+                        ok = lambda a: rev not in (None, 0) and a is not None  # noqa: E731
+                        history.append({
+                            "year": int(yr),
+                            "revenue": rev, "netIncome": ni, "grossProfit": gp, "operatingIncome": oi,
+                            "netMargin": (ni / rev) if ok(ni) else None,
+                            "grossMargin": (gp / rev) if ok(gp) else None,
+                            "operatingMargin": (oi / rev) if ok(oi) else None,
+                        })
+                    history.sort(key=lambda h: h["year"])
+            except Exception:  # noqa: BLE001
+                history = []
+
+            return {
+                "snapshot": snapshot,
+                "history": history,
+                "financialCurrency": info.get("financialCurrency") or info.get("currency"),
+            }
+
+        try:
+            return self._call(f"fundamentals {symbol}", _fetch)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("fundamentals failed for %s: %s", symbol, exc)
+            return None
+
     # ---- search ----
     def search(self, query: str) -> list[SearchHit]:
         if not query or not query.strip():

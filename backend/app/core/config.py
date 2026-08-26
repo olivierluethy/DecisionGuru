@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     cache_ttl_quote: int = 60 * 60           # 1 h
     cache_ttl_history: int = 12 * 60 * 60    # 12 h
     cache_ttl_fund: int = 7 * 24 * 60 * 60   # 7 d
+    cache_ttl_fundamentals: int = 7 * 24 * 60 * 60   # 7 d (financials change quarterly)
     cache_ttl_fx: int = 12 * 60 * 60         # 12 h
     cache_ttl_news: int = 30 * 60            # 30 min
 

@@ -4,9 +4,8 @@ import clsx from 'clsx';
 import { ArrowRight, Wallet, TrendingDown, ShieldCheck, Scissors, Activity, ChevronDown } from 'lucide-react';
 import { api, type Recommendation, type RecAction } from '../lib/api';
 import { Stat, Spinner, EmptyState } from '../components/ui';
-import { ExposureBars } from '../components/ExposureBars';
 import { DeltaChart } from '../components/DeltaChart';
-import { fmtCHF, fmtCHFSigned, fmtPct, fmtPctSigned, fmtMonths, plClass } from '../lib/format';
+import { fmtCHF, fmtCHFSigned, fmtPct, fmtPctSigned, fmtDurationMonths, plClass } from '../lib/format';
 import { useApp } from '../store';
 
 const ACTION_META: Record<RecAction, { label: string; cls: string; border: string; Icon: typeof Scissors }> = {
@@ -54,7 +53,7 @@ function RecCard({ rec }: { rec: Recommendation }) {
             {actionable ? fmtCHF(rec.impactCHF) : fmtCHFSigned(-rec.opportunityCostCHF)}
           </div>
           {rec.recoveryMonths != null && (
-            <div className="text-[11px] text-text-faint mt-0.5">recover in {fmtMonths(rec.recoveryMonths)}</div>
+            <div className="text-[11px] text-text-faint mt-0.5">recover in {fmtDurationMonths(rec.recoveryMonths)}</div>
           )}
         </div>
       </div>
@@ -139,9 +138,11 @@ function RecCard({ rec }: { rec: Recommendation }) {
   );
 }
 
+const scrollToId = (id: string) =>
+  document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
 export function Decisions() {
   const { data, isLoading } = useQuery({ queryKey: ['recommendations'], queryFn: api.recommendations });
-  const { data: exposure } = useQuery({ queryKey: ['exposure'], queryFn: api.exposure });
   const { openModal } = useApp();
 
   if (isLoading) return <div className="p-6"><Spinner label="Analyzing your portfolio…" /></div>;
@@ -174,6 +175,26 @@ export function Decisions() {
         </p>
       </header>
 
+      {/* Sticky section nav — jump between groups without scrolling */}
+      <nav className="sticky top-0 z-20 -mx-6 mb-6 px-6 py-2.5 bg-bg/90 backdrop-blur border-b border-hairline flex items-center gap-2 flex-wrap">
+        <span className="eyebrow mr-1">Jump to</span>
+        {cashSignal && (
+          <button onClick={() => scrollToId('dec-cash')} className="chip cursor-pointer !border-gain/40 !text-gain">
+            <Wallet size={12} /> Deploy cash
+          </button>
+        )}
+        {actionable.length > 0 && (
+          <button onClick={() => scrollToId('dec-act')} className="chip cursor-pointer !border-warn/40 !text-warn">
+            Act on these <span className="ml-1 text-text-faint">{actionable.length}</span>
+          </button>
+        )}
+        {holds.length > 0 && (
+          <button onClick={() => scrollToId('dec-holds')} className="chip cursor-pointer">
+            <ShieldCheck size={12} /> Holding <span className="ml-1 text-text-faint">{holds.length}</span>
+          </button>
+        )}
+      </nav>
+
       {/* Summary band */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <div className="card">
@@ -200,7 +221,7 @@ export function Decisions() {
 
       {/* Cash deploy signal */}
       {cashSignal && (
-        <div className="card border-l-2 border-l-gain mb-6">
+        <div id="dec-cash" className="card border-l-2 border-l-gain mb-6 scroll-mt-20">
           <div className="flex items-start justify-between gap-4 flex-wrap">
             <div>
               <div className="flex items-center gap-2">
@@ -228,7 +249,7 @@ export function Decisions() {
 
       {/* Actionable recommendations */}
       {actionable.length > 0 && (
-        <section className="mb-8">
+        <section id="dec-act" className="mb-8 scroll-mt-20">
           <div className="eyebrow mb-3">Act on these · ranked by money at stake</div>
           <div className="flex flex-col gap-4">
             {actionable.map((r) => <RecCard key={r.instrumentId} rec={r} />)}
@@ -236,24 +257,9 @@ export function Decisions() {
         </section>
       )}
 
-      {/* Portfolio exposure / concentration */}
-      {exposure && (exposure.countries.length > 0 || exposure.sectors.length > 0) && (
-        <section className="mb-8">
-          <div className="card">
-            <div className="flex items-center justify-between mb-4">
-              <div className="eyebrow">Portfolio exposure</div>
-              <div className="text-[11px] text-text-faint">
-                top holding {fmtPct(exposure.concentration.topHoldingWeight)} · concentration {(exposure.concentration.country * 100).toFixed(0)}
-              </div>
-            </div>
-            <ExposureBars countries={exposure.countries} sectors={exposure.sectors} />
-          </div>
-        </section>
-      )}
-
       {/* Holds (secondary) */}
       {holds.length > 0 && (
-        <section>
+        <section id="dec-holds" className="scroll-mt-20">
           <div className="eyebrow mb-3">Holding · {holds.length}</div>
           <div className="flex flex-col gap-4">
             {holds.map((r) => <RecCard key={r.instrumentId} rec={r} />)}

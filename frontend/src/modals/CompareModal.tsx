@@ -10,8 +10,9 @@ import { useApp } from '../store';
 import { sliceByRange } from '../lib/range';
 import { fmtCHF, fmtCHFSigned, fmtPct, fmtPctSigned, plClass } from '../lib/format';
 
-type MetricKey = 'actual' | 'etf' | 'delta' | 'deltaPct' | 'xirr' | 'etfXirr' | 'yield';
+type MetricKey = 'price' | 'actual' | 'etf' | 'delta' | 'deltaPct' | 'xirr' | 'etfXirr' | 'yield';
 const METRICS: { key: MetricKey; label: string }[] = [
+  { key: 'price', label: 'Price/share' },
   { key: 'actual', label: 'Actual value' },
   { key: 'etf', label: 'ETF value' },
   { key: 'delta', label: 'Δ CHF' },
@@ -200,6 +201,7 @@ export function CompareModal({ instrumentIds }: { instrumentIds: number[] }) {
                         <thead className="sticky top-0 z-10">
                           <tr>
                             <th className="th">Holding</th>
+                            {visible.has('price') && <th className="th text-right">Price/share</th>}
                             {visible.has('actual') && <th className="th text-right">Actual value</th>}
                             {visible.has('etf') && <th className="th text-right">ETF value</th>}
                             {visible.has('delta') && <th className="th text-right">Δ CHF</th>}
@@ -222,6 +224,15 @@ export function CompareModal({ instrumentIds }: { instrumentIds: number[] }) {
                                     <span className="font-mono text-text">{pp.symbol}</span>
                                   </div>
                                 </td>
+                                {visible.has('price') && (
+                                  <td className="td text-right font-mono tnum">
+                                    {fmtCHF(
+                                      pos && pos.openQuantity > 0 && pos.currentValueCHF != null
+                                        ? pos.currentValueCHF / pos.openQuantity
+                                        : pos?.currentPrice,
+                                    )}
+                                  </td>
+                                )}
                                 {visible.has('actual') && (
                                   <td className="td text-right font-mono tnum">{fmtCHF(cf.actualValueCHF)}</td>
                                 )}

@@ -1,6 +1,7 @@
 import {
   ComposedChart,
   Area,
+  Line,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -17,6 +18,12 @@ interface Props {
   movements?: MovementsResponse;
   currency?: string | null;
   height?: number;
+  /**
+   * Optional ETF overlay. Its price curve is rebased to the stock's first close, so both
+   * lines start from the same level and you see the ETF's shape (its % path) against the
+   * stock's — currency- and price-scale-independent.
+   */
+  benchmark?: { symbol: string; series: Array<{ date: string; close: number }> };
 }
 
 const MAX_POINTS = 520;
@@ -26,7 +33,7 @@ const MAX_POINTS = 520;
  * major up-legs marked gain and down-legs marked loss. Time axis is numeric so uneven
  * sampling and marker placement stay truthful.
  */
-export function PriceMovementChart({ series, movements, currency, height = 300 }: Props) {
+export function PriceMovementChart({ series, movements, currency, height = 300, benchmark }: Props) {
   if (!series || series.length < 2) {
     return (
       <div className="flex items-center justify-center text-text-faint text-sm" style={{ height }}>
@@ -46,7 +53,35 @@ export function PriceMovementChart({ series, movements, currency, height = 300 }
   const stride = Math.max(1, Math.ceil(series.length / MAX_POINTS));
   const data = series
     .filter((p, i) => i % stride === 0 || i === series.length - 1 || anchors.has(p.date))
-    .map((p) => ({ t: t(p.date), close: p.close }));
+    .map((p) => ({ t: t(p.date), close: p.close, bench: null as number | null }));
+
+  // ETF overlay rebased to the stock's first close (same starting level → comparable shape).
+  const benchSorted =
+    benchmark && benchmark.series.length >= 2
+      ? benchmark.series.map((p) => ({ t: t(p.date), c: p.close })).sort((a, b) => a.t - b.t)
+      : null;
+  if (benchSorted && data.length) {
+    const closeAtOrBefore = (ts: number): number => {
+      let lo = 0, hi = benchSorted.length - 1, res = benchSorted[0].c;
+      while (lo <= hi) {
+        const mid = (lo + hi) >> 1;
+        if (benchSorted[mid].t <= ts) { res = benchSorted[mid].c; lo = mid + 1; } else hi = mid - 1;
+      }
+      return res;
+    };
+    // Anchor at the first date BOTH series cover (the ETF may be younger than the stock,
+    // e.g. VWRL from 2016 vs Nestlé from 1990) — before that, draw no ETF line.
+    const etfFirstT = benchSorted[0].t;
+    const anchor = data.find((d) => d.t >= etfFirstT);
+    if (anchor) {
+      const etfAtAnchor = closeAtOrBefore(anchor.t);
+      const scale = etfAtAnchor > 0 ? anchor.close / etfAtAnchor : 0;
+      if (scale > 0) {
+        data.forEach((d) => { d.bench = d.t >= etfFirstT ? closeAtOrBefore(d.t) * scale : null; });
+      }
+    }
+  }
+  const showBench = !!benchSorted && data.some((d) => d.bench != null);
 
   const ccy = currency || '';
 
@@ -80,7 +115,10 @@ export function PriceMovementChart({ series, movements, currency, height = 300 }
           contentStyle={{ background: '#1A2331', border: '1px solid #243040', borderRadius: 6, fontSize: 12 }}
           labelStyle={{ color: '#93A1B5' }}
           labelFormatter={(v) => fmtDate(new Date(v as number).toISOString().slice(0, 10))}
-          formatter={(value: number) => [`${ccy} ${fmtNum(value)}`, 'Close']}
+          formatter={(value: number, name: string) => [
+            `${ccy} ${fmtNum(value)}`,
+            name === 'bench' ? `${benchmark?.symbol} (rebased)` : 'Close',
+          ]}
         />
         {/* Stagnation stretches — long near-zero-growth "dead money" periods. */}
         {movements?.stagnation.map((s, i) => (
@@ -104,6 +142,19 @@ export function PriceMovementChart({ series, movements, currency, height = 300 }
           isAnimationActive={false}
           dot={false}
         />
+        {/* ETF counterfactual — its price path rebased to the stock's start (gold, dashed). */}
+        {showBench && (
+          <Line
+            type="monotone"
+            dataKey="bench"
+            stroke="#D9A94E"
+            strokeWidth={2}
+            strokeDasharray="4 3"
+            dot={false}
+            isAnimationActive={false}
+            connectNulls
+          />
+        )}
         {/* Major moves — surge (gain) / drop (loss) end markers. */}
         {movements?.legs.map((l, i) => (
           <ReferenceDot

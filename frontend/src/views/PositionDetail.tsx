@@ -73,6 +73,11 @@ export function PositionDetail() {
     queryFn: () => api.movements(symbol!),
     enabled: !!symbol && !delisted,
   });
+  const benchHistory = useQuery({
+    queryKey: ['pos-bench-history', benchmark],
+    queryFn: () => api.marketHistory(benchmark),
+    enabled: !!benchmark && !delisted,
+  });
   const hours = useQuery({
     queryKey: ['pos-hours', symbol],
     queryFn: () => api.marketHoursSymbol(symbol!),
@@ -295,12 +300,26 @@ export function PositionDetail() {
           <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
             <div className="eyebrow">Full price history · {inst.symbol}</div>
             <div className="flex items-center gap-3 text-[11px] text-text-faint">
+              <span className="flex items-center gap-1"><span className="w-4 h-0.5 bg-azure inline-block" /> {inst.symbol}</span>
+              {(benchHistory.data?.length ?? 0) > 1 && (
+                <span className="flex items-center gap-1"><span className="w-4 h-0 border-t-2 border-dashed border-gold inline-block" /> {benchmark} (rebased)</span>
+              )}
               <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-gain" /> surge</span>
               <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-loss" /> drop</span>
               <span className="flex items-center gap-1"><span className="w-3 h-2 bg-warn/20 border border-warn/30" /> stagnation</span>
             </div>
           </div>
-          <PriceMovementChart series={history.data ?? []} movements={movements.data} currency={inst.currency} height={300} />
+          <PriceMovementChart
+            series={history.data ?? []}
+            movements={movements.data}
+            currency={inst.currency}
+            height={300}
+            benchmark={
+              (benchHistory.data?.length ?? 0) > 1
+                ? { symbol: benchmark, series: benchHistory.data ?? [] }
+                : undefined
+            }
+          />
         </section>
       )}
 

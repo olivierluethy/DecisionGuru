@@ -85,7 +85,8 @@ def _status_for(meta: dict, now_utc: datetime) -> dict:
                 hour=meta["open"].hour, minute=meta["open"].minute, second=0, microsecond=0)
         next_change = cand
 
-    mins = int((next_change - local).total_seconds() // 60)
+    secs = int((next_change - local).total_seconds())
+    utc = ZoneInfo("UTC")
     return {
         "code": meta["code"],
         "name": meta["name"],
@@ -97,7 +98,12 @@ def _status_for(meta: dict, now_utc: datetime) -> dict:
         "close": meta["close"].strftime("%H:%M"),
         "isOpen": is_open,
         "nextChange": next_label,
-        "minutesToNextChange": max(mins, 0),
+        "minutesToNextChange": max(secs // 60, 0),
+        # Absolute instants so the client can tick a live HH:MM:SS countdown
+        # against its own clock without polling every second.
+        "secondsToNextChange": max(secs, 0),
+        "nextChangeAt": next_change.astimezone(utc).isoformat(),
+        "serverNowUtc": now_utc.astimezone(utc).isoformat(),
     }
 
 

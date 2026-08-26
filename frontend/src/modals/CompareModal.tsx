@@ -253,7 +253,7 @@ export function CompareModal({ instrumentIds }: { instrumentIds: number[] }) {
                                   <td className="td text-right font-mono tnum text-gold">{fmtPctSigned(cf.benchmarkXirr)}</td>
                                 )}
                                 {visible.has('yield') && (
-                                  <td className="td text-right font-mono tnum text-text-muted">{fmtPct(pos?.metrics.currentYield)}</td>
+                                  <td className="td text-right font-mono tnum text-text-muted">{fmtPct(pos?.metrics.currentYield, 2)}</td>
                                 )}
                               </tr>
                             );

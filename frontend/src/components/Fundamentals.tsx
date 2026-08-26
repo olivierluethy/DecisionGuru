@@ -16,7 +16,7 @@ function ratio(v: number | null | undefined): string {
 /** yfinance is inconsistent about dividendYield (fraction vs already-%) — normalise. */
 function yieldPct(v: number | null | undefined): string {
   if (v == null || !Number.isFinite(v)) return '—';
-  return fmtPct(v > 1 ? v / 100 : v);
+  return fmtPct(v > 1 ? v / 100 : v, 2);
 }
 
 export function Fundamentals({
@@ -66,7 +66,7 @@ export function Fundamentals({
         {iw && iw.weightPct != null && (
           <div className="text-right">
             <div className="eyebrow mb-0.5">Weight in {iw.index}</div>
-            <div className="font-mono text-2xl font-semibold tnum text-gold">{fmtPct(iw.weightPct)}</div>
+            <div className="font-mono text-2xl font-semibold tnum text-gold">{fmtPct(iw.weightPct, 2)}</div>
             <div className="text-[10px] text-text-faint">via {iw.etf}</div>
           </div>
         )}
@@ -78,13 +78,13 @@ export function Fundamentals({
         <Stat label="P/E (trailing)" value={ratio(snap.trailingPE)} sub={snap.forwardPE != null ? `fwd ${ratio(snap.forwardPE)}` : undefined} />
         <Stat label="Price / book" value={ratio(snap.priceToBook)} />
         <Stat label="Price / sales" value={ratio(snap.priceToSales)} />
-        <Stat label="Dividend yield" value={yieldPct(snap.dividendYield)} sub={snap.payoutRatio != null ? `payout ${fmtPct(snap.payoutRatio)}` : undefined} />
+        <Stat label="Dividend yield" value={yieldPct(snap.dividendYield)} sub={snap.payoutRatio != null ? `payout ${fmtPct(snap.payoutRatio, 2)}` : undefined} />
         <Stat label="EPS (trailing)" value={snap.trailingEps != null ? `${ccy} ${fmtNum(snap.trailingEps)}` : '—'} />
-        <Stat label="Net margin" value={fmtPct(snap.profitMargins)} />
-        <Stat label="Gross margin" value={fmtPct(snap.grossMargins)} />
-        <Stat label="Operating margin" value={fmtPct(snap.operatingMargins)} />
-        <Stat label="Return on equity" value={fmtPct(snap.returnOnEquity)} />
-        <Stat label="Revenue (ttm)" value={big(snap.totalRevenue, ccy)} sub={snap.revenueGrowth != null ? `${fmtPct(snap.revenueGrowth)} YoY` : undefined} />
+        <Stat label="Net margin" value={fmtPct(snap.profitMargins, 2)} />
+        <Stat label="Gross margin" value={fmtPct(snap.grossMargins, 2)} />
+        <Stat label="Operating margin" value={fmtPct(snap.operatingMargins, 2)} />
+        <Stat label="Return on equity" value={fmtPct(snap.returnOnEquity, 2)} />
+        <Stat label="Revenue (ttm)" value={big(snap.totalRevenue, ccy)} sub={snap.revenueGrowth != null ? `${fmtPct(snap.revenueGrowth, 2)} YoY` : undefined} />
         <Stat label="Beta" value={ratio(snap.beta)} />
       </div>
 
@@ -95,7 +95,7 @@ export function Fundamentals({
           <div className="flex items-end gap-3">
             {hist.map((h) => (
               <div key={h.year} className="flex-1 flex flex-col items-center gap-1 min-w-0">
-                <div className="text-[10px] text-text-faint tnum">{h.netMargin != null ? fmtPct(h.netMargin) : '—'}</div>
+                <div className="text-[10px] text-text-faint tnum">{h.netMargin != null ? fmtPct(h.netMargin, 2) : '—'}</div>
                 <div className="w-full h-24 flex items-end">
                   <div
                     className="w-full rounded-t bg-azure/70"

@@ -11,7 +11,7 @@ import pandas as pd
 
 from . import repo
 from .fx import get_fx_rate
-from .marketdata import get_history
+from .marketdata import get_history, listing_currency
 
 # Calendar-day lookback per preset. MAX → since the first transaction.
 RANGE_DAYS: dict[str, int | None] = {
@@ -61,7 +61,10 @@ def _qty_on(bp: list[tuple[str, float]], date: str) -> float:
 
 def _instrument_value_map(inst: dict, txs: list[dict], start: str, end: str) -> dict[str, float]:
     bp = _qty_breakpoints(txs)
-    ccy = inst.get("currency") or "USD"
+    # Cached closes are stored in the instrument's LISTING currency (e.g. GBP for a
+    # UK line), which can differ from the instrument's reference currency. Use the
+    # listing currency for FX so a GBp→GBP-normalised series isn't converted as USD.
+    ccy = listing_currency(inst["symbol"], inst.get("currency")) or "USD"
     out: dict[str, float] = {}
     for row in get_history(inst["symbol"], start, end):
         d = row["date"]

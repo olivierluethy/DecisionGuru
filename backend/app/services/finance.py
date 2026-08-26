@@ -8,6 +8,7 @@ from .finance_math import cagr, xirr, years_between
 from .fx import get_fx_rate, to_chf
 from .marketdata import get_quote
 from .tax import dividend_tax, wealth_tax
+from ..providers.base import normalize_minor_currency
 
 
 def build_position(instrument: dict, txs: list[dict], tax: dict, pre_tax: bool = False) -> dict:
@@ -86,9 +87,13 @@ def build_position(instrument: dict, txs: list[dict], tax: dict, pre_tax: bool =
     current_value_chf = None
     stale = False
     if open_qty > 0 and quote and not pending:
-        current_price = quote["price"]
+        # Minor-unit guard (e.g. GBp→GBP): normalise price + currency so FX is
+        # applied exactly once against a real ECB rate, never degraded to 1.0.
+        current_price, quote_ccy = normalize_minor_currency(
+            quote["price"], quote["currency"] or instrument["currency"]
+        )
         stale = quote["stale"]
-        fx = get_fx_rate(quote["currency"] or instrument["currency"], "CHF", today)
+        fx = get_fx_rate(quote_ccy or instrument["currency"], "CHF", today)
         current_value_chf = open_qty * current_price * fx
     elif open_qty <= 0:
         current_value_chf = 0.0

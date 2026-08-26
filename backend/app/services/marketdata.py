@@ -16,6 +16,7 @@ from ..core import db
 from ..core.config import settings
 from ..core.logging import get_logger
 from ..core.timefmt import iso_from_ms
+from ..providers.base import normalize_minor_currency
 from ..providers.yfinance_provider import provider
 
 log = get_logger("marketdata")
@@ -130,10 +131,12 @@ def get_quote(symbol: str) -> dict:
     cached = db.q("SELECT * FROM quote_cache WHERE symbol = ?").get((symbol,))
     fresh = cached and (_now_ms() - cached["fetchedAt"] < settings.cache_ttl_quote * 1000)
     if cached and fresh:
+        # Defensive minor-unit normalisation (e.g. a legacy GBp row) — idempotent.
+        price, currency = normalize_minor_currency(cached["price"], cached["currency"])
         return {
             "symbol": symbol,
-            "price": cached["price"],
-            "currency": cached["currency"],
+            "price": price,
+            "currency": currency,
             "name": cached["name"],
             "time": iso_from_ms(cached["fetchedAt"]),
             "stale": False,
@@ -143,11 +146,52 @@ def get_quote(symbol: str) -> dict:
     refresh.enqueue_quote(symbol, lambda: _refresh_quote(symbol))
 
     if cached:
-        return {"symbol": symbol, "price": cached["price"], "currency": cached["currency"],
+        price, currency = normalize_minor_currency(cached["price"], cached["currency"])
+        return {"symbol": symbol, "price": price, "currency": currency,
                 "name": cached["name"], "time": iso_from_ms(cached["fetchedAt"]),
                 "stale": True, "pending": False}
     return {"symbol": symbol, "price": 0, "currency": "USD", "name": symbol,
             "time": None, "stale": True, "pending": True}
+
+
+def listing_currency(symbol: str, fallback: str | None = None) -> str | None:
+    """The symbol's quote (listing) currency, normalised to its major unit.
+
+    Used by the value-series builder to apply the correct FX to cached closes,
+    which the price_cache stores without a currency of their own."""
+    row = db.q("SELECT currency FROM quote_cache WHERE symbol = ?").get((symbol,))
+    if row and row["currency"]:
+        _, major = normalize_minor_currency(1.0, row["currency"])
+        return major or row["currency"]
+    return fallback
+
+
+def repair_minor_units() -> int:
+    """One-time repair of legacy minor-unit (GBp) rows written before normalisation.
+
+    Divides quote_cache prices and the affected symbols' price_cache/dividend_cache
+    closes by 100 and rewrites the currency to the major unit. Idempotent — after a
+    row is fixed its currency is GBP and it is skipped. Returns rows touched."""
+    touched = 0
+    minor_rows = db.q(
+        "SELECT symbol, price, currency FROM quote_cache "
+        "WHERE currency IN ('GBp', 'GBX', 'ZAc', 'ILA')"
+    ).all()
+    for r in minor_rows:
+        symbol = r["symbol"]
+        new_price, new_ccy = normalize_minor_currency(r["price"], r["currency"])
+        # factor = raw / normalised (e.g. 9120 / 91.20 = 100)
+        factor = (r["price"] / new_price) if new_price else 100.0
+        db.execute(
+            "UPDATE quote_cache SET price = ?, currency = ? WHERE symbol = ?",
+            (new_price, new_ccy, symbol),
+        )
+        db.execute("UPDATE price_cache SET close = close / ? WHERE symbol = ?", (factor, symbol))
+        db.execute("UPDATE dividend_cache SET amount = amount / ? WHERE symbol = ?", (factor, symbol))
+        touched += 1
+    if touched:
+        log.info("repair_minor_units: normalised %d symbol(s) from minor units", touched)
+    return touched
 
 
 # ---- fund / instrument profile ----------------------------------------------

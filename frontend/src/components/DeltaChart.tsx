@@ -12,12 +12,20 @@ import {
 import type { CounterfactualPoint } from '@decisionguru/shared';
 import { fmtCHF, fmtDate } from '../lib/format';
 
+export interface EntryMarker {
+  date: string;
+  /** Short label drawn at the marker, e.g. the buy amount. */
+  label?: string;
+}
+
 interface Props {
   series: CounterfactualPoint[];
   benchmarkName: string;
   height?: number;
-  /** Purchase date — drawn as a labelled entry marker on the chart if within range. */
+  /** Single purchase date — drawn as a labelled entry marker on the chart if within range. */
   entryDate?: string | null;
+  /** Multiple purchases — each drawn as its own entry marker (takes precedence over entryDate). */
+  entries?: EntryMarker[];
 }
 
 /** Snap a date to the first series tick on/after it, so the ReferenceLine lands on a category. */
@@ -27,12 +35,27 @@ function entryTick(series: CounterfactualPoint[], entryDate?: string | null): st
   return hit ? hit.date : undefined;
 }
 
+/** Snap every entry to a series tick, drop off-range ones, and de-dupe onto the same tick. */
+function entryTicks(series: CounterfactualPoint[], entries: EntryMarker[]): Array<{ x: string; label?: string }> {
+  const byTick = new Map<string, string | undefined>();
+  for (const e of entries) {
+    const x = entryTick(series, e.date);
+    if (x && !byTick.has(x)) byTick.set(x, e.label);
+  }
+  return [...byTick.entries()].map(([x, label]) => ({ x, label }));
+}
+
 /**
  * The signature chart: actual holding (azure, solid) vs the ETF counterfactual
  * (gold, dashed), with the gap between them shaded green (you won) or red (ETF won).
  */
-export function DeltaChart({ series, benchmarkName, height = 260, entryDate }: Props) {
-  const entryX = entryTick(series, entryDate);
+export function DeltaChart({ series, benchmarkName, height = 260, entryDate, entries }: Props) {
+  const markers =
+    entries && entries.length
+      ? entryTicks(series, entries)
+      : entryTick(series, entryDate)
+      ? [{ x: entryTick(series, entryDate)!, label: 'Entry' }]
+      : [];
   if (!series.length) {
     return (
       <div className="flex items-center justify-center text-text-faint text-sm" style={{ height }}>
@@ -112,15 +135,21 @@ export function DeltaChart({ series, benchmarkName, height = 260, entryDate }: P
           dot={false}
           isAnimationActive={false}
         />
-        {entryX && (
+        {markers.map((m, i) => (
           <ReferenceLine
-            x={entryX}
+            key={m.x}
+            x={m.x}
             stroke="#6FC3FF"
             strokeDasharray="3 3"
             strokeOpacity={0.7}
-            label={{ value: 'Entry', position: 'insideTopLeft', fill: '#6FC3FF', fontSize: 10 }}
+            label={{
+              value: m.label ?? `Buy ${i + 1}`,
+              position: i % 2 === 0 ? 'insideTopLeft' : 'insideBottomLeft',
+              fill: '#6FC3FF',
+              fontSize: 10,
+            }}
           />
-        )}
+        ))}
       </ComposedChart>
     </ResponsiveContainer>
   );

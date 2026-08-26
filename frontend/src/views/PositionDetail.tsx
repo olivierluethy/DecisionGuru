@@ -214,7 +214,12 @@ export function PositionDetail() {
                 <span className="w-4 h-0 border-t-2 border-dashed border-gold inline-block" /> {c.benchmarkSymbol} (counterfactual)
               </span>
             </div>
-            <DeltaChart series={c.series} benchmarkName={c.benchmarkSymbol} height={320} />
+            <DeltaChart
+              series={c.series}
+              benchmarkName={c.benchmarkSymbol}
+              height={320}
+              entryDate={txs.data?.reduce<string | undefined>((m, t) => (!m || t.date < m ? t.date : m), undefined)}
+            />
           </div>
         </div>
       </section>

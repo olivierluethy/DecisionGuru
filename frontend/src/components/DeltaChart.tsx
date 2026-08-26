@@ -6,6 +6,7 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
+  ReferenceLine,
   ResponsiveContainer,
 } from 'recharts';
 import type { CounterfactualPoint } from '@decisionguru/shared';
@@ -15,13 +16,23 @@ interface Props {
   series: CounterfactualPoint[];
   benchmarkName: string;
   height?: number;
+  /** Purchase date — drawn as a labelled entry marker on the chart if within range. */
+  entryDate?: string | null;
+}
+
+/** Snap a date to the first series tick on/after it, so the ReferenceLine lands on a category. */
+function entryTick(series: CounterfactualPoint[], entryDate?: string | null): string | undefined {
+  if (!entryDate || !series.length) return undefined;
+  const hit = series.find((p) => p.date >= entryDate);
+  return hit ? hit.date : undefined;
 }
 
 /**
  * The signature chart: actual holding (azure, solid) vs the ETF counterfactual
  * (gold, dashed), with the gap between them shaded green (you won) or red (ETF won).
  */
-export function DeltaChart({ series, benchmarkName, height = 260 }: Props) {
+export function DeltaChart({ series, benchmarkName, height = 260, entryDate }: Props) {
+  const entryX = entryTick(series, entryDate);
   if (!series.length) {
     return (
       <div className="flex items-center justify-center text-text-faint text-sm" style={{ height }}>
@@ -101,6 +112,15 @@ export function DeltaChart({ series, benchmarkName, height = 260 }: Props) {
           dot={false}
           isAnimationActive={false}
         />
+        {entryX && (
+          <ReferenceLine
+            x={entryX}
+            stroke="#6FC3FF"
+            strokeDasharray="3 3"
+            strokeOpacity={0.7}
+            label={{ value: 'Entry', position: 'insideTopLeft', fill: '#6FC3FF', fontSize: 10 }}
+          />
+        )}
       </ComposedChart>
     </ResponsiveContainer>
   );

@@ -8,7 +8,7 @@ import { DeltaChart } from '../components/DeltaChart';
 import { TimeRangeSelector } from '../components/TimeRangeSelector';
 import { Spinner, EmptyState } from '../components/ui';
 import { sliceByRange } from '../lib/range';
-import { fmtCHF, fmtCHFSigned, fmtPctSigned, plClass } from '../lib/format';
+import { fmtCHF, fmtCHFSigned, fmtDate, fmtPctSigned, plClass } from '../lib/format';
 
 export function Advisory() {
   const qc = useQueryClient();
@@ -115,7 +115,9 @@ function InsightCard({
         <span className="text-xs text-text-muted">{ins.referenceEtfName} — best alternative over your holding period</span>
       </div>
 
-      <div className="grid sm:grid-cols-3 gap-4 mb-4">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 mb-4">
+        <Metric label="Purchased" value={fmtDate(ins.sinceDate)} />
+        <Metric label="Invested" value={fmtCHF(ins.investedCHF)} />
         <Metric label="Your return" value={fmtPctSigned(ins.holdingReturnPct)} cls={plClass(ins.holdingReturnPct)} />
         <Metric label={`${ins.referenceEtf} return`} value={fmtPctSigned(ins.referenceReturnPct)} cls="text-gold" />
         <Metric label="Holding value now" value={fmtCHF(ins.holdingValueCHF)} />
@@ -132,7 +134,7 @@ function InsightCard({
         </div>
         <TimeRangeSelector value={range} onChange={setRange} />
       </div>
-      <DeltaChart series={sliced} benchmarkName={ins.referenceEtf} height={220} />
+      <DeltaChart series={sliced} benchmarkName={ins.referenceEtf} height={220} entryDate={ins.sinceDate} />
 
       <div className="flex justify-end gap-2 mt-4 pt-3 border-t border-hairline">
         <button className="btn-ghost" onClick={onOpen}>

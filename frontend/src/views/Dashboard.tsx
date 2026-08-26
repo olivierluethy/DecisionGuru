@@ -8,6 +8,7 @@ import { fmtCHF, fmtCHFSigned, fmtPct, fmtPctSigned, fmtNum, plClass } from '../
 import { ValueChart } from '../components/ValueChart';
 import { TimeRangeSelector } from '../components/TimeRangeSelector';
 import { RangeStats } from '../components/RangeStats';
+import { Timeline } from '../components/Timeline';
 import { Segmented, Spinner, EmptyState, KindBadge, DataStatusBadge } from '../components/ui';
 import { buildPortfolioExport } from '../lib/exporters';
 import { downloadExport } from '../lib/api';
@@ -28,6 +29,7 @@ export function Dashboard() {
     useApp();
   const queryClient = useQueryClient();
   const [range, setRange] = useState<RangeKey>('1Y');
+  const [holdFilter, setHoldFilter] = useState<'all' | 'stock' | 'etf' | 'delisted'>('all');
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['portfolio', benchmark, preTax],
@@ -43,6 +45,12 @@ export function Dashboard() {
     queryKey: ['portfolio-series', range],
     queryFn: () => api.portfolioSeries(range),
     enabled: !!data?.hasPositions,
+  });
+
+  const { data: timeline } = useQuery({
+    queryKey: ['timeline'],
+    queryFn: () => api.timeline(),
+    enabled: !!(data?.hasPositions || data?.hasAccount),
   });
 
   const retryResolve = async (id: number) => {
@@ -83,6 +91,34 @@ export function Dashboard() {
   const todayPrev = pts.length >= 2 ? pts[pts.length - 2].value : null;
   const todayPct = todayDelta != null && todayPrev ? todayDelta / todayPrev : null;
   const totalGainPct = totals.investedCHF > 0 ? totals.totalGainCHF / totals.investedCHF : null;
+
+  // Holdings classification groups (Stock / ETF / delisted) + profit/loss counts.
+  const allPositions = data.positions;
+  const groupCount = (f: typeof holdFilter) =>
+    allPositions.filter((p) =>
+      f === 'all'
+        ? true
+        : f === 'delisted'
+          ? p.delisted
+          : !p.delisted && p.instrument.kind === f,
+    ).length;
+  const visiblePositions = allPositions.filter((p) =>
+    holdFilter === 'all'
+      ? true
+      : holdFilter === 'delisted'
+        ? p.delisted
+        : !p.delisted && p.instrument.kind === holdFilter,
+  );
+  const tracked = visiblePositions.filter((p) => !p.delisted && p.unrealizedCHF != null);
+  const winners = tracked.filter((p) => (p.unrealizedCHF ?? 0) > 0).length;
+  const losers = tracked.filter((p) => (p.unrealizedCHF ?? 0) < 0).length;
+  const groupPL = tracked.reduce((s, p) => s + (p.unrealizedCHF ?? 0), 0);
+  const holdFilters: { value: typeof holdFilter; label: string }[] = [
+    { value: 'all', label: `All ${groupCount('all')}` },
+    { value: 'stock', label: `Stocks ${groupCount('stock')}` },
+    { value: 'etf', label: `ETFs ${groupCount('etf')}` },
+  ];
+  if (groupCount('delisted') > 0) holdFilters.push({ value: 'delisted', label: `Delisted ${groupCount('delisted')}` });
 
   const doExport = async (kind: 'excel' | 'pdf') => {
     const payload = await buildPortfolioExport(data, kind);
@@ -231,9 +267,36 @@ export function Dashboard() {
         </section>
       )}
 
+      {/* Chronological timeline of account & trade events (both source files) */}
+      {(hasPositions || hasAccount) && timeline && timeline.events.length > 0 && (
+        <section className="card mb-6">
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+            <div className="eyebrow">Timeline · account history</div>
+            <div className="text-xs text-text-faint">{timeline.count} events · drag to scroll</div>
+          </div>
+          <Timeline events={timeline.events} />
+        </section>
+      )}
+
       {/* Holdings collection */}
       {hasPositions && (
         <section className="card !p-0 overflow-hidden">
+          {/* Filter by Stock / ETF / delisted + profit-loss counts for the group */}
+          <div className="px-4 py-3 border-b border-hairline flex flex-wrap items-center justify-between gap-3">
+            <Segmented value={holdFilter} onChange={setHoldFilter} options={holdFilters} />
+            <div className="flex items-center gap-3 text-xs">
+              {holdFilter === 'delisted' ? (
+                <span className="text-text-faint">Untracked — excluded from live valuation</span>
+              ) : (
+                <>
+                  <span className="text-gain">▲ {winners} in profit</span>
+                  <span className="text-loss">▼ {losers} in loss</span>
+                  <span className="text-text-faint">·</span>
+                  <span className={`font-mono tnum ${plClass(groupPL)}`}>{fmtCHFSigned(groupPL)}</span>
+                </>
+              )}
+            </div>
+          </div>
           <div className="overflow-x-auto max-h-[70vh] overflow-y-auto">
             <table className="w-full text-sm">
               <thead className="sticky top-0 z-10">
@@ -249,7 +312,7 @@ export function Dashboard() {
                 </tr>
               </thead>
               <tbody>
-                {data.positions.map((p) => {
+                {visiblePositions.map((p) => {
                   const costBasis =
                     p.currentValueCHF != null && p.unrealizedCHF != null
                       ? p.currentValueCHF - p.unrealizedCHF

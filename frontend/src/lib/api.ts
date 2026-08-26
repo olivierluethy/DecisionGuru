@@ -144,6 +144,7 @@ export const api = {
     }),
   portfolioSeries: (range: RangeKey = '1Y') =>
     req<RangeSeries>(`/analysis/portfolio/series?range=${range}`),
+  timeline: () => req<TimelineResponse>('/analysis/timeline'),
   instrumentSeries: (id: number, range: RangeKey = '1Y') =>
     req<RangeSeries>(`/analysis/series/${id}?range=${range}`),
   compare: (instrumentIds: number[], benchmarks: string[], preTax = false) =>
@@ -247,6 +248,27 @@ export interface PortfolioResponse {
   quotesUpdatedAt: string | null;
   /** True while the background pool is refreshing quotes/history. */
   refreshInProgress: boolean;
+}
+
+export type TimelineKind = 'deposit' | 'dividend' | 'fee' | 'buy' | 'sell';
+
+export interface TimelineEvent {
+  date: string;
+  time: string | null;
+  kind: TimelineKind;
+  category: 'cash' | 'trade';
+  title: string;
+  instrumentName: string | null;
+  isin: string | null;
+  symbol: string | null;
+  /** Signed CHF cash effect: + money in, − money out. */
+  amountCHF: number;
+  quantity: number | null;
+}
+
+export interface TimelineResponse {
+  events: TimelineEvent[];
+  count: number;
 }
 
 export interface CompareResponse {

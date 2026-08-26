@@ -80,6 +80,8 @@ export interface Position {
   metrics: PositionMetrics;
   priceAsOf?: string | null;
   stale?: boolean;
+  /** No resolvable ticker (delisted / untracked) — excluded from live valuation. */
+  delisted?: boolean;
   dataStatus?: InstrumentDataStatus;
   /** Net dividends (CHF) for this holding — from the account statement when available. */
   netDividendsCHF?: number;

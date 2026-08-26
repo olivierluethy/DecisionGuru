@@ -85,6 +85,11 @@ body {
     @apply bg-surface-2 border border-hairline rounded-sm h-9 px-3 text-sm text-text
       placeholder:text-text-faint focus:border-azure w-full tnum;
   }
+  .tl-btn {
+    @apply inline-flex items-center justify-center w-7 h-7 rounded-sm bg-surface-2 border border-hairline
+      text-text-muted hover:text-text hover:border-hairline-strong transition-colors
+      disabled:opacity-30 disabled:cursor-not-allowed;
+  }
   .label {
     @apply block text-[13px] font-medium text-text-muted mb-1.5;
   }

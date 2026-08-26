@@ -30,6 +30,7 @@ import { ProjectionChart } from '../components/ProjectionChart';
 import { PriceMovementChart } from '../components/PriceMovementChart';
 import { SymbolSearch } from '../components/SymbolSearch';
 import { Fundamentals } from '../components/Fundamentals';
+import { catchUp } from '../lib/rebase';
 import { PeriodReturns } from '../components/PeriodReturns';
 import { NewsFeed } from '../components/NewsFeed';
 import { Globe } from '../components/Globe';
@@ -136,6 +137,22 @@ export function PositionDetail() {
     return i >= 0 ? OVERLAY_COLORS[i % OVERLAY_COLORS.length] : '#5F6E82';
   };
   const benchmarkChoices: string[] = (settings.data?.benchmarks ?? []).map((b) => b.symbol);
+
+  // Catch-up: how far the stock must climb TODAY to draw level with each comparison,
+  // measured over the period you actually held it (anchored at the entry date), and when
+  // it fell behind for good. The first overlay drives the chart's "losing zone".
+  const entryDate =
+    p.firstBuyDate ??
+    (txs.data ?? [])
+      .filter((t) => t.action === 'buy')
+      .reduce<string | undefined>((m, t) => (!m || t.date < m ? t.date : m), undefined) ??
+    null;
+  const catchups = priceOverlays
+    .map((o) => ({ ...o, cu: catchUp(history.data ?? [], o.series, entryDate) }))
+    .filter((x): x is typeof x & { cu: NonNullable<typeof x.cu> } => x.cu != null);
+  const lossZone = catchups[0]?.cu.behindSince
+    ? { fromDate: catchups[0].cu.behindSince, label: `behind ${catchups[0].symbol}` }
+    : undefined;
 
   const doExport = async (kind: 'excel' | 'pdf') => {
     const notesList = await api.listNotes('instrument', id);
@@ -399,15 +416,60 @@ export function PositionDetail() {
             currency={inst.currency}
             height={300}
             overlays={priceOverlays}
+            lossZone={lossZone}
+            anchorDate={entryDate}
             news={(news.data?.items ?? [])
               .map((n) => ({ date: (n.publishedAt ?? '').slice(0, 10), title: n.title, link: n.link }))
               .filter((n) => n.date)}
           />
           <p className="text-[11px] text-text-faint mt-2">
-            Comparison lines are rebased to {inst.symbol}’s price where each series begins — so you compare
-            growth shape (which climbs faster, which stalls), independent of price level or currency. News dots
-            mark recent headlines on the price line (the provider serves recent news only).
+            Comparison lines are rebased to {inst.symbol}’s price at{' '}
+            {entryDate ? `your entry (${fmtDate(entryDate)})` : 'each series’ start'} — so both start level and you
+            see who pulled ahead. The red band marks where {inst.symbol} has trailed{' '}
+            {catchups[0]?.symbol ?? 'the benchmark'} for good — i.e. when selling into it would have cut your
+            losses. News dots pin recent headlines (the provider serves recent news only).
           </p>
+
+          {/* Catch-up: what the stock would need to reach today to draw level. */}
+          {catchups.length > 0 && (
+            <div className="mt-4 border border-hairline rounded overflow-hidden">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr>
+                    <th className="th">To match</th>
+                    <th className="th text-right">Behind since</th>
+                    <th className="th text-right">{inst.symbol} would need</th>
+                    <th className="th text-right">Catch-up from today</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {catchups.map(({ symbol, color, cu }) => (
+                    <tr key={symbol}>
+                      <td className="td">
+                        <span className="font-mono" style={{ color }}>{symbol}</span>
+                      </td>
+                      <td className="td text-right font-mono tnum text-text-muted">
+                        {cu.behindSince ? fmtDate(cu.behindSince) : 'not behind'}
+                      </td>
+                      <td className="td text-right font-mono tnum">{fmtMoney(cu.targetToday, inst.currency)}</td>
+                      <td
+                        className={`td text-right font-mono tnum ${cu.catchUpPct > 0 ? 'text-loss' : 'text-gain'}`}
+                      >
+                        {cu.catchUpPct > 0 ? '+' : ''}
+                        {fmtPct(cu.catchUpPct, 1)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div className="px-3 py-2 text-[11px] text-text-faint border-t border-hairline">
+                Measured since your entry{entryDate ? ` (${fmtDate(entryDate)})` : ''}. “{inst.symbol} would need” =
+                the price it must reach <span className="text-text-muted">today</span> just to equal that
+                instrument’s return over the same period; “catch-up from today” is how far above the current price
+                that is — before {inst.symbol} would even start to outperform again.
+              </div>
+            </div>
+          )}
         </section>
       )}
 

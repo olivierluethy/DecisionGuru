@@ -8,6 +8,7 @@ import {
   Tooltip,
   ResponsiveContainer,
   ReferenceArea,
+  ReferenceLine,
   ReferenceDot,
 } from 'recharts';
 import type { MovementsResponse } from '../lib/api';
@@ -33,6 +34,10 @@ interface Props {
   overlays?: PriceOverlay[];
   /** Headlines to pin onto the price line at their publish date. */
   news?: Array<{ date: string; title: string; link?: string | null }>;
+  /** Shade the stretch where the stock has trailed a benchmark for good ("losing zone"). */
+  lossZone?: { fromDate: string; label: string };
+  /** Anchor overlays here (e.g. the holding's entry date) instead of each series' start. */
+  anchorDate?: string | null;
 }
 
 const MAX_POINTS = 520;
@@ -54,7 +59,7 @@ function closeAtOrBefore(sorted: { t: number; c: number }[], ts: number): number
  * major up-legs marked gain and down-legs marked loss, plus optional rebased overlays of
  * other instruments. Time axis is numeric so uneven sampling and marker placement stay truthful.
  */
-export function PriceMovementChart({ series, movements, currency, height = 300, overlays, news }: Props) {
+export function PriceMovementChart({ series, movements, currency, height = 300, overlays, news, lossZone, anchorDate }: Props) {
   if (!series || series.length < 2) {
     return (
       <div className="flex items-center justify-center text-text-faint text-sm" style={{ height }}>
@@ -89,7 +94,7 @@ export function PriceMovementChart({ series, movements, currency, height = 300, 
     const key = `ov${i}`;
     data.forEach((d) => { d[key] = null; });
     const sorted = ov.series.map((p) => ({ t: t(p.date), c: p.close })).sort((a, b) => a.t - b.t);
-    const firstT = sorted[0].t;
+    const firstT = anchorDate ? Math.max(sorted[0].t, new Date(anchorDate).getTime()) : sorted[0].t;
     const anchor = data.find((d) => (d.t as number) >= firstT);
     if (!anchor) return;
     const etfAtAnchor = closeAtOrBefore(sorted, anchor.t as number);
@@ -154,6 +159,16 @@ export function PriceMovementChart({ series, movements, currency, height = 300, 
             strokeDasharray="3 3"
           />
         ))}
+        {/* Losing zone — from when the stock fell behind a benchmark for good. */}
+        {lossZone && data.length > 0 && (
+          <ReferenceArea
+            x1={t(lossZone.fromDate)}
+            x2={data[data.length - 1].t as number}
+            fill="#FF5D6C"
+            fillOpacity={0.06}
+            stroke="none"
+          />
+        )}
         <Area
           type="monotone"
           dataKey="close"
@@ -193,6 +208,15 @@ export function PriceMovementChart({ series, movements, currency, height = 300, 
         {newsMarks.map((m, i) => (
           <ReferenceDot key={`news-${i}`} x={m.x} y={m.y} r={2.6} fill="#6FC3FF" stroke="#0A0E15" strokeWidth={1} />
         ))}
+        {lossZone && (
+          <ReferenceLine
+            x={t(lossZone.fromDate)}
+            stroke="#FF5D6C"
+            strokeDasharray="3 3"
+            strokeOpacity={0.6}
+            label={{ value: lossZone.label, position: 'insideTopRight', fill: '#FF5D6C', fontSize: 10 }}
+          />
+        )}
       </ComposedChart>
     </ResponsiveContainer>
   );

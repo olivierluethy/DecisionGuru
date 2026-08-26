@@ -9,6 +9,7 @@ import { ValueChart } from '../components/ValueChart';
 import { TimeRangeSelector } from '../components/TimeRangeSelector';
 import { RangeStats } from '../components/RangeStats';
 import { Timeline } from '../components/Timeline';
+import { DecisionsBanner } from '../components/DecisionsBanner';
 import { Segmented, Spinner, EmptyState, KindBadge, DataStatusBadge } from '../components/ui';
 import { buildPortfolioExport } from '../lib/exporters';
 import { downloadExport } from '../lib/api';
@@ -233,6 +234,9 @@ export function Dashboard() {
           </div>
         </div>
       </section>
+
+      {/* Proactive strategy surface — most important decision, if any */}
+      {hasPositions && <DecisionsBanner />}
 
       {/* Account-only (no Transactions export yet) → guide to complete the picture */}
       {!hasPositions && hasAccount && (

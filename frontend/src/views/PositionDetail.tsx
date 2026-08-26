@@ -133,17 +133,24 @@ export function PositionDetail() {
               {hours.data && <MarketStatusChip hours={hours.data} />}
             </div>
             {p.openQuantity > 0 && p.currentValueCHF != null ? (
-              <div className="mt-2 flex items-baseline gap-2">
+              <div className="mt-2 flex items-baseline gap-2 flex-wrap">
                 <span className="font-mono text-3xl font-semibold tnum leading-none">
-                  {fmtCHF(p.currentValueCHF / p.openQuantity)}
+                  {fmtCHF(p.currentValueCHF / p.openQuantity, true)}
                 </span>
                 <span className="text-xs text-text-faint">
-                  per share{p.priceAsOf ? ` · as of ${fmtDate(p.priceAsOf)}` : ''}{p.stale ? ' · stale' : ''}
+                  per share
+                  {inst.currency !== 'CHF' && p.currentPrice != null
+                    ? ` · ${fmtMoney(p.currentPrice, inst.currency, true)}`
+                    : ''}
+                  {p.priceAsOf ? ` · as of ${fmtDate(p.priceAsOf)}` : ''}
+                  {p.stale ? ' · stale' : ''}
                 </span>
               </div>
             ) : p.currentPrice != null ? (
               <div className="mt-2 flex items-baseline gap-2">
-                <span className="font-mono text-3xl font-semibold tnum leading-none">{fmtCHF(p.currentPrice)}</span>
+                <span className="font-mono text-3xl font-semibold tnum leading-none">
+                  {fmtMoney(p.currentPrice, inst.currency, true)}
+                </span>
                 <span className="text-xs text-text-faint">per share{p.stale ? ' · stale' : ''}</span>
               </div>
             ) : (
@@ -229,14 +236,14 @@ export function PositionDetail() {
             <div className="grid grid-cols-2 gap-x-4 gap-y-3 mt-6">
               <Stat
                 label="Current price"
-                value={p.openQuantity > 0 && p.currentValueCHF != null ? fmtCHF(p.currentValueCHF / p.openQuantity) : fmtCHF(p.currentPrice)}
+                value={p.openQuantity > 0 && p.currentValueCHF != null ? fmtCHF(p.currentValueCHF / p.openQuantity, true) : fmtCHF(p.currentPrice, true)}
                 sub={p.openQuantity > 0 ? `× ${p.openQuantity} shares` : undefined}
               />
               <Stat label="Current value" value={fmtCHF(p.currentValueCHF)} sub="price × shares" />
               <Stat
                 label="Invested"
                 value={fmtCHF(p.investedCHF)}
-                sub={p.openQuantity > 0 ? `@ ${fmtCHF(p.investedCHF / p.openQuantity)} avg` : undefined}
+                sub={p.openQuantity > 0 ? `@ ${fmtCHF(p.investedCHF / p.openQuantity, true)} avg` : undefined}
               />
               <Stat
                 label="Unrealized P/L"

@@ -230,6 +230,7 @@ export function CompareModal({ instrumentIds }: { instrumentIds: number[] }) {
                                       pos && pos.openQuantity > 0 && pos.currentValueCHF != null
                                         ? pos.currentValueCHF / pos.openQuantity
                                         : pos?.currentPrice,
+                                      true,
                                     )}
                                   </td>
                                 )}

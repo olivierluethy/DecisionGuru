@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-export type View = 'dashboard' | 'position' | 'scenarios' | 'advisory';
+export type View = 'dashboard' | 'position' | 'scenarios' | 'advisory' | 'decisions' | 'research' | 'plans';
 
 export type ModalKind =
   | { kind: 'import' }
@@ -12,6 +12,9 @@ export type ModalKind =
   | { kind: 'export'; context: 'portfolio' | 'position'; instrumentId?: number }
   | { kind: 'compare'; instrumentIds: number[] }
   | { kind: 'cash-detail' }
+  | { kind: 'recovery'; instrumentId: number }
+  | { kind: 'create-plan'; sellInstrumentIds?: number[]; targets?: Array<{ symbol: string; name?: string; allocationPct: number }> }
+  | { kind: 'plan-compare'; planId: number }
   | null;
 
 interface AppState {

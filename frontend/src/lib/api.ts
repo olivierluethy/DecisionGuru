@@ -163,6 +163,52 @@ export const api = {
   // market
   allocation: (instrumentId: number) => req<AllocationBreakdown>(`/market/allocation/${instrumentId}`),
   quote: (symbol: string) => req<{ symbol: string; price: number; currency: string; name: string; stale: boolean }>(`/market/quote/${symbol}`),
+  news: (symbol: string, limit = 12) => req<NewsResponse>(`/market/news/${encodeURIComponent(symbol)}?limit=${limit}`),
+  marketHours: () => req<{ exchanges: ExchangeStatus[] }>('/market/hours'),
+  marketHoursSymbol: (symbol: string) => req<ExchangeStatus>(`/market/hours/${encodeURIComponent(symbol)}`),
+  movements: (symbol: string, from?: string) =>
+    req<MovementsResponse>(`/market/movements/${encodeURIComponent(symbol)}${from ? `?from=${from}` : ''}`),
+  marketHistory: (symbol: string, from?: string, to?: string) => {
+    const p = new URLSearchParams();
+    if (from) p.set('from', from);
+    if (to) p.set('to', to);
+    const qs = p.toString();
+    return req<Array<{ date: string; close: number }>>(
+      `/market/history/${encodeURIComponent(symbol)}${qs ? `?${qs}` : ''}`,
+    );
+  },
+
+  // decision engine
+  recommendations: () => req<RecommendationsResponse>('/decisions/recommendations'),
+  recovery: (id: number, horizon = 5, alternatives?: string[]) =>
+    req<RecoveryResponse>(
+      `/decisions/recovery/${id}?horizon=${horizon}${alternatives?.length ? `&alternatives=${alternatives.join(',')}` : ''}`,
+    ),
+  simulate: (body: { sellInstrumentIds: number[]; targets: ReinvestTarget[]; horizonYears?: number }) =>
+    req<SimulateResponse>('/decisions/simulate', { method: 'POST', body: JSON.stringify(body) }),
+  exposure: () => req<PortfolioExposure>('/decisions/exposure'),
+  exposureCompare: (a: number, b: number) => req<ExposureComparison>(`/decisions/exposure/compare?a=${a}&b=${b}`),
+
+  // decision plans
+  listPlans: () => req<DecisionPlan[]>('/plans'),
+  getPlan: (id: number) => req<DecisionPlan>(`/plans/${id}`),
+  createPlan: (name: string, config: PlanConfig) =>
+    req<DecisionPlan>('/plans', { method: 'POST', body: JSON.stringify({ name, config }) }),
+  updatePlan: (id: number, patch: { name?: string; config?: PlanConfig; status?: string }) =>
+    req<DecisionPlan>(`/plans/${id}`, { method: 'PUT', body: JSON.stringify(patch) }),
+  deletePlan: (id: number) => req<{ ok: true }>(`/plans/${id}`, { method: 'DELETE' }),
+  comparePlan: (id: number) => req<PlanComparison>(`/plans/${id}/compare`),
+
+  // research
+  researchAsset: (symbol: string, window = 5) =>
+    req<ResearchAsset>(`/research/asset/${encodeURIComponent(symbol)}?window=${window}`),
+  validateClaim: (symbol: string, claim: string | ClaimSpec) =>
+    req<ClaimResult>('/research/claim', { method: 'POST', body: JSON.stringify({ symbol, claim }) }),
+  universalCompare: (entities: CompareEntity[], windowYears = 5) =>
+    req<UniversalCompareResponse>('/research/compare', {
+      method: 'POST',
+      body: JSON.stringify({ entities, windowYears }),
+    }),
 
   // scenarios
   listScenarios: () => req<Scenario[]>('/scenarios'),
@@ -287,6 +333,290 @@ export interface CompareResponse {
     };
     perPosition: Array<{ instrumentId: number; symbol: string; name?: string; counterfactual: CounterfactualResult }>;
   }>;
+}
+
+// ---- News ----------------------------------------------------------------
+export interface NewsItem {
+  id: string;
+  symbol: string;
+  title: string;
+  publisher: string | null;
+  link: string | null;
+  publishedAt: string | null;
+  summary: string | null;
+}
+export interface NewsResponse {
+  symbol: string;
+  items: NewsItem[];
+  stale: boolean;
+  fetchedAt: number | null;
+}
+
+// ---- Market hours --------------------------------------------------------
+export interface ExchangeStatus {
+  code: string;
+  name: string;
+  country: string;
+  tz: string;
+  localTime: string;
+  localDate: string;
+  open: string;
+  close: string;
+  isOpen: boolean;
+  nextChange: 'opens' | 'closes';
+  minutesToNextChange: number;
+}
+
+// ---- Movements -----------------------------------------------------------
+export interface MovementLeg {
+  kind: 'surge' | 'drop';
+  from: string;
+  to: string;
+  startClose: number;
+  endClose: number;
+  changePct: number;
+  days: number;
+}
+export interface StagnationWindow {
+  kind: 'stagnation';
+  from: string;
+  to: string;
+  changePct: number;
+  days: number;
+}
+export interface MovementsResponse {
+  legs: MovementLeg[];
+  stagnation: StagnationWindow[];
+  coverage: { from: string; to: string; points: number } | null;
+}
+
+// ---- Recommendations -----------------------------------------------------
+export type RecAction = 'buy' | 'hold' | 'sell' | 'trim';
+export interface ReinvestTarget {
+  symbol: string;
+  name: string;
+  allocationPct: number;
+  amountCHF: number;
+}
+export interface Recommendation {
+  instrumentId: number;
+  symbol: string;
+  name: string;
+  isin: string | null;
+  kind: string | null;
+  action: RecAction;
+  conviction: 'high' | 'medium' | 'low';
+  investedCHF: number;
+  currentValueCHF: number;
+  weight: number;
+  holdingReturnPct: number | null;
+  holdingCagr: number | null;
+  holdingXirr: number | null;
+  benchmarkSymbol: string;
+  benchmarkName: string;
+  benchmarkReturnPct: number | null;
+  opportunityCostCHF: number;
+  recoveryMonths: number | null;
+  impactCHF: number;
+  sinceDate: string;
+  reason: string;
+}
+export interface CashSignal {
+  action: 'buy';
+  cashCHF: number;
+  symbol: string;
+  name: string;
+  allocationPct: number;
+  amountCHF: number;
+  reason: string;
+}
+export interface RecommendationsResponse {
+  recommendations: Recommendation[];
+  cashSignal: CashSignal | null;
+  summary: {
+    counts: Record<RecAction, number>;
+    reallocatableCHF: number;
+    totalOpportunityCostCHF: number;
+    portfolioValueCHF: number;
+    idleCashCHF: number;
+  };
+}
+
+// ---- Recovery / simulate -------------------------------------------------
+export interface RecoveryAlternative {
+  symbol: string;
+  name: string;
+  cagr: number | null;
+  recoveryYears: number | null;
+  expectedValueCHF: number;
+}
+export interface RecoveryCombo {
+  targets: Array<{ symbol: string; name: string; cagr: number | null; allocationPct: number; amountCHF: number }>;
+  recoveryYears: number | null;
+  expectedValueCHF: number;
+  blendedCagr: number;
+}
+export interface RecoveryResponse {
+  instrumentId: number;
+  symbol: string;
+  name: string;
+  investedCHF: number;
+  currentValueCHF: number;
+  proceedsCHF: number;
+  targetCHF: number;
+  horizonYears: number;
+  holdCagr: number | null;
+  holdReturnPct: number | null;
+  holdExpectedValueCHF: number;
+  alternatives: RecoveryAlternative[];
+  fastest: RecoveryAlternative | null;
+  singleBest: RecoveryAlternative | null;
+  combinations: RecoveryCombo[];
+}
+export interface SimulateResponse {
+  sold: Array<{ instrumentId: number; symbol: string; name: string; proceedsCHF: number; cagr: number | null }>;
+  targets: Array<ReinvestTarget & { cagr: number | null; expectedValueCHF: number }>;
+  proceedsCHF: number;
+  investedCHF: number;
+  horizonYears: number;
+  reinvestExpectedValueCHF: number;
+  holdValueNowCHF: number;
+  holdExpectedValueCHF: number;
+  deltaVsHoldCHF: number;
+  recoveryYears: number | null;
+  blendedCagr: number;
+}
+
+// ---- Exposure ------------------------------------------------------------
+export interface ExposureSlice {
+  key: string;
+  label: string;
+  weight: number;
+  lat?: number;
+  lng?: number;
+}
+export interface PortfolioExposure {
+  totalValueCHF: number;
+  countries: ExposureSlice[];
+  sectors: ExposureSlice[];
+  holdings: Array<{ instrumentId: number; symbol: string; name: string; valueCHF: number; weight: number }>;
+  concentration: { country: number; sector: number; topHoldingWeight: number };
+}
+export interface ExposureSide {
+  symbol: string;
+  name: string;
+  countries: ExposureSlice[];
+  sectors: ExposureSlice[];
+  concentration: { country: number; sector: number };
+}
+export interface ExposureComparison {
+  a: ExposureSide;
+  b: ExposureSide;
+  overlap: { country: number; sector: number };
+}
+
+// ---- Decision plans ------------------------------------------------------
+export interface PlanConfig {
+  sellInstrumentIds: number[];
+  targets: Array<{ symbol: string; name?: string; allocationPct: number }>;
+  horizonYears?: number;
+  intendedOutcome?: string;
+}
+export interface DecisionPlan {
+  id: number;
+  name: string;
+  config: PlanConfig;
+  baseline: Record<string, unknown> | null;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+}
+export interface PlanComparison {
+  planId: number;
+  name: string;
+  status: string;
+  createdDate: string;
+  asOf: string;
+  proceedsCHF: number;
+  plan: {
+    targets: Array<{ symbol: string; name: string | null; amountCHF: number; valueNowCHF: number; returnPct: number | null }>;
+    valueNowCHF: number;
+    returnPct: number | null;
+  };
+  hold: {
+    holdings: Array<{ symbol: string; name: string | null; valueAtPlanCHF: number; valueNowCHF: number; returnPct: number | null }>;
+    valueNowCHF: number;
+    returnPct: number | null;
+  };
+  deltaCHF: number;
+  intendedOutcome: string | null;
+  intendedReinvestValueCHF: number;
+  horizonYears: number;
+}
+
+// ---- Research / universal compare ----------------------------------------
+export interface AssetMetrics {
+  type: 'symbol' | 'instrument' | 'portfolio';
+  symbol: string;
+  name: string;
+  kind: string | null;
+  currency: string | null;
+  currentPrice: number | null;
+  trailingYield: number | null;
+  cagr: number | null;
+  totalReturnPct: number | null;
+  annualizedVol: number | null;
+  maxDrawdownPct: number | null;
+  last1yPct: number | null;
+  sharpe: number | null;
+  from: string | null;
+  to: string | null;
+  points: number;
+  investedCHF: number | null;
+  currentValueCHF: number | null;
+  xirr: number | null;
+  instrumentId?: number;
+  returnBasis?: string;
+  rank?: number;
+}
+export interface ResearchAsset {
+  symbol: string;
+  name: string | null;
+  kind: string;
+  currency: string | null;
+  currentPrice: number | null;
+  metrics: AssetMetrics;
+  allocation: AllocationBreakdown;
+  movements: MovementsResponse;
+  news: NewsItem[];
+}
+export interface ClaimSpec {
+  metric: string;
+  op: '>=' | '<=';
+  value: number;
+  years?: number | null;
+}
+export interface ClaimResult {
+  symbol: string;
+  claimText?: string | null;
+  parsed: ClaimSpec | null;
+  metric?: string;
+  op?: string;
+  threshold?: number;
+  actual?: number | null;
+  windowYears?: number;
+  supported: boolean | null;
+  explanation: string;
+  from?: string | null;
+  to?: string | null;
+}
+export type CompareEntity =
+  | { type: 'portfolio' }
+  | { type: 'instrument'; id: number }
+  | { type: 'symbol'; symbol: string; name?: string; kind?: string };
+export interface UniversalCompareResponse {
+  windowYears: number;
+  entities: AssetMetrics[];
 }
 
 /** POST a JSON body and stream the response as a file download. */

@@ -89,6 +89,7 @@ const STATUS_META: Record<
   pricing: { dot: 'bg-azure animate-pulse', text: 'text-azure', label: 'pricing…' },
   unresolved: { dot: 'bg-loss', text: 'text-loss', label: 'no ticker' },
   'no-data': { dot: 'bg-warn', text: 'text-warn', label: 'no data' },
+  'data-issue': { dot: 'bg-loss', text: 'text-loss', label: 'data issue' },
 };
 
 /**

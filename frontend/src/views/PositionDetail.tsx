@@ -9,6 +9,7 @@ import {
   Clock,
   TrendingDown,
   Activity,
+  AlertTriangle,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { api, downloadExport } from '../lib/api';
@@ -160,6 +161,24 @@ export function PositionDetail() {
           </button>
         </div>
       </header>
+
+      {p.dataStatus?.state === 'data-issue' && (
+        <section className="card mb-6 border-l-2 border-l-loss bg-loss/5">
+          <div className="flex items-start gap-3">
+            <AlertTriangle size={18} className="text-loss shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <div className="text-sm font-semibold text-loss">Data issue — values may be wrong</div>
+              <p className="text-sm text-text-muted mt-1">{p.dataStatus.message}</p>
+            </div>
+            <button
+              className="btn-secondary shrink-0"
+              onClick={() => openModal({ kind: 'edit-instrument', instrumentId: id })}
+            >
+              <Pencil size={15} /> Fix symbol
+            </button>
+          </div>
+        </section>
+      )}
 
       {/* Decision panel — opportunity cost crown */}
       <section className={`card mb-6 border-l-2 ${aheadOfEtf ? 'border-l-gain' : 'border-l-loss'}`}>

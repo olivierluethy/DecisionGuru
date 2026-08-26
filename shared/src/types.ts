@@ -31,11 +31,17 @@ export interface Instrument {
 
 /** Per-instrument market-data health, surfaced as a badge in the UI. */
 export interface InstrumentDataStatus {
-  /** 'ok' | 'stale' | 'pricing' | 'unresolved' | 'no-data' */
-  state: 'ok' | 'stale' | 'pricing' | 'unresolved' | 'no-data';
+  /**
+   * 'ok' | 'stale' | 'pricing' | 'unresolved' | 'no-data' | 'data-issue'
+   * 'data-issue' = the resolved price series disagrees with what the user
+   * actually paid (wrong instrument/currency); the shown value is untrustworthy.
+   */
+  state: 'ok' | 'stale' | 'pricing' | 'unresolved' | 'no-data' | 'data-issue';
   resolutionSource?: string | null;
   quoteAsOf?: string | null;
   priceCoverageDays?: number | null;
+  /** series/paid ratio at the trade date when state is 'data-issue'. */
+  integrityRatio?: number | null;
   message?: string | null;
 }
 

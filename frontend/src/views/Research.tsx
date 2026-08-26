@@ -6,6 +6,7 @@ import { api, type AssetMetrics } from '../lib/api';
 import { SymbolSearch } from '../components/SymbolSearch';
 import { PriceMovementChart } from '../components/PriceMovementChart';
 import { ExposureBars } from '../components/ExposureBars';
+import { PeriodReturns } from '../components/PeriodReturns';
 import { NewsFeed } from '../components/NewsFeed';
 import { Globe } from '../components/Globe';
 import { MarketStatusChip } from '../components/MarketStatusChip';
@@ -173,6 +174,10 @@ function AssetView({ symbol, onReset }: { symbol: string; onReset: () => void })
           </div>
         </div>
         <PriceMovementChart series={history ?? []} movements={data.movements} currency={data.currency} height={300} />
+      </div>
+
+      <div className="card">
+        <PeriodReturns symbol={data.symbol} />
       </div>
 
       <div className="grid lg:grid-cols-[1fr_360px] gap-6">

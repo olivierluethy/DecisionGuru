@@ -26,6 +26,7 @@ import {
 import { DeltaChart } from '../components/DeltaChart';
 import { ProjectionChart } from '../components/ProjectionChart';
 import { PriceMovementChart } from '../components/PriceMovementChart';
+import { PeriodReturns } from '../components/PeriodReturns';
 import { NewsFeed } from '../components/NewsFeed';
 import { Globe } from '../components/Globe';
 import { Segmented, Spinner, Stat, KindBadge, StaleDot, DataStatusBadge } from '../components/ui';
@@ -236,6 +237,15 @@ export function PositionDetail() {
             </div>
           </div>
           <PriceMovementChart series={history.data ?? []} movements={movements.data} currency={inst.currency} height={300} />
+        </section>
+      )}
+
+      {!delisted && (
+        <section className="card mb-6">
+          <PeriodReturns
+            symbol={inst.symbol}
+            entry={txs.data?.reduce<string | undefined>((m, t) => (!m || t.date < m ? t.date : m), undefined)}
+          />
         </section>
       )}
 

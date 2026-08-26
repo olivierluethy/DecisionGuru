@@ -168,6 +168,10 @@ export const api = {
   marketHoursSymbol: (symbol: string) => req<ExchangeStatus>(`/market/hours/${encodeURIComponent(symbol)}`),
   movements: (symbol: string, from?: string) =>
     req<MovementsResponse>(`/market/movements/${encodeURIComponent(symbol)}${from ? `?from=${from}` : ''}`),
+  periods: (symbol: string, entry?: string) =>
+    req<PeriodReturnsResponse>(
+      `/market/periods/${encodeURIComponent(symbol)}${entry ? `?entry=${entry}` : ''}`,
+    ),
   marketHistory: (symbol: string, from?: string, to?: string) => {
     const p = new URLSearchParams();
     if (from) p.set('from', from);
@@ -371,6 +375,26 @@ export interface ExchangeStatus {
   nextChangeAt: string;
   /** Server clock at reply time (UTC ISO) — lets the client correct for clock skew. */
   serverNowUtc: string;
+}
+
+// ---- Period returns ------------------------------------------------------
+export interface PeriodReturn {
+  key: string;
+  label: string;
+  years: number;
+  fromDate: string;
+  toDate: string;
+  startClose: number;
+  endClose: number;
+  /** Price return over the window (fraction). */
+  changePct: number;
+  /** Annualised price return, null for very short windows. */
+  cagr: number | null;
+}
+export interface PeriodReturnsResponse {
+  symbol: string;
+  asOf: string;
+  periods: PeriodReturn[];
 }
 
 // ---- Movements -----------------------------------------------------------

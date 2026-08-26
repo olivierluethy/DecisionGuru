@@ -12,6 +12,7 @@ from ..services.marketdata import get_fund_summary, get_history, get_quote, sear
 from ..services.markethours import all_statuses, status_for_symbol
 from ..services.movements import movements_for_symbol
 from ..services.news import get_news
+from ..services.periods import period_returns
 
 router = APIRouter()
 
@@ -35,6 +36,12 @@ async def market_hours_symbol(symbol: str) -> dict:
 @router.get("/movements/{symbol:path}")
 async def movements(symbol: str, from_: str | None = Query(default=None, alias="from")) -> dict:
     return await run_in_threadpool(movements_for_symbol, symbol, from_)
+
+
+@router.get("/periods/{symbol:path}")
+async def periods(symbol: str, entry: str | None = Query(default=None)) -> dict:
+    """Price return over 1Y/2Y/3Y/5Y trailing windows + full holding period (if `entry`)."""
+    return await run_in_threadpool(period_returns, symbol, entry)
 
 
 @router.get("/quote/{symbol:path}")

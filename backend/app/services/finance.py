@@ -176,7 +176,7 @@ def build_position(instrument: dict, txs: list[dict], tax: dict, pre_tax: bool =
         "priceAsOf": quote["time"] if (quote and not pending) else None,
         "stale": stale,
         "delisted": bool(delisted),
-        "dataStatus": instrument_data_status(instrument, open_qty),
+        "dataStatus": instrument_data_status(instrument, open_qty, sorted_txs),
         "metrics": {
             "absolutePLChf": absolute_pl_chf,
             "absolutePLChfPreTax": absolute_pl_chf_pre_tax,

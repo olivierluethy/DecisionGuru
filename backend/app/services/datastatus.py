@@ -8,7 +8,9 @@ from ..core import db
 from ..core.timefmt import iso_from_ms
 
 
-def instrument_data_status(inst: dict, open_quantity: float | None = None) -> dict:
+def instrument_data_status(
+    inst: dict, open_quantity: float | None = None, txs: list[dict] | None = None
+) -> dict:
     if inst.get("unresolved") or (inst.get("isin") and inst.get("symbol") == inst.get("isin")):
         return {
             "state": "unresolved",
@@ -42,6 +44,38 @@ def instrument_data_status(inst: dict, open_quantity: float | None = None) -> di
             "priceCoverageDays": 0,
             "message": "No market data yet (provider may be rate-limiting) — try again shortly.",
         }
+
+    # Integrity guard: does the resolved series agree with what the user actually
+    # paid? A large divergence means a wrong instrument/currency is being priced —
+    # never show that plausible-looking wrong number as "ok".
+    if txs:
+        try:
+            from .price_integrity import check_price_integrity
+
+            verdict = check_price_integrity(inst, txs)
+        except Exception:  # noqa: BLE001 — a guard must never break the page
+            verdict = None
+        if verdict and not verdict.get("ok"):
+            r = verdict.get("ratio")
+            paid = verdict.get("executedCHF")
+            shown = verdict.get("seriesCHF")
+            if r and paid and shown:
+                msg = (
+                    f"Priced series (~CHF {shown:,.0f}) is {r:.1f}x the price actually "
+                    f"paid (~CHF {paid:,.0f}) on {verdict.get('tradeDate')} — likely the "
+                    f"wrong instrument or currency. Values shown may be incorrect; "
+                    f"edit the symbol to fix."
+                )
+            else:
+                msg = ("Priced series is implausibly high for a single share — likely "
+                       "the wrong instrument. Edit the symbol to fix.")
+            return {
+                "state": "data-issue",
+                "resolutionSource": inst.get("resolutionSource"),
+                "priceCoverageDays": coverage_days,
+                "integrityRatio": r,
+                "message": msg,
+            }
 
     quote_as_of = iso_from_ms(quote["fetchedAt"]) if quote else None
     now = pd.Timestamp.utcnow().tz_localize(None)

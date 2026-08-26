@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
+import { useQuery, useQueries, useQueryClient, useMutation } from '@tanstack/react-query';
 import {
   ArrowLeft,
   Download,
@@ -10,6 +10,7 @@ import {
   TrendingDown,
   Activity,
   AlertTriangle,
+  X,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { api, downloadExport } from '../lib/api';
@@ -27,6 +28,7 @@ import {
 import { DeltaChart } from '../components/DeltaChart';
 import { ProjectionChart } from '../components/ProjectionChart';
 import { PriceMovementChart } from '../components/PriceMovementChart';
+import { SymbolSearch } from '../components/SymbolSearch';
 import { PeriodReturns } from '../components/PeriodReturns';
 import { NewsFeed } from '../components/NewsFeed';
 import { Globe } from '../components/Globe';
@@ -35,6 +37,10 @@ import { BenchmarkSelect } from '../components/BenchmarkSelect';
 import { NotesPanel } from '../components/NotesPanel';
 import { MarketStatusChip } from '../components/MarketStatusChip';
 import { buildPositionExport } from '../lib/exporters';
+
+// Distinct, dark-legible colours for comparison overlays. Azure is the subject stock and
+// green/red mark surge/drop, so those hues are deliberately excluded here.
+const OVERLAY_COLORS = ['#D9A94E', '#A98BFF', '#4FD0E0', '#F0883E', '#EC6DB0', '#B6D94E', '#8FA0B8'];
 
 export function PositionDetail() {
   const { selectedInstrumentId: id, benchmark, preTax, setPreTax, setView, openModal } = useApp();
@@ -73,11 +79,19 @@ export function PositionDetail() {
     queryFn: () => api.movements(symbol!),
     enabled: !!symbol && !delisted,
   });
-  const benchHistory = useQuery({
-    queryKey: ['pos-bench-history', benchmark],
-    queryFn: () => api.marketHistory(benchmark),
-    enabled: !!benchmark && !delisted,
+  const settings = useQuery({ queryKey: ['settings'], queryFn: api.getSettings });
+  const [overlaySymbols, setOverlaySymbols] = useState<string[]>(benchmark ? [benchmark] : []);
+  const [showAddOverlay, setShowAddOverlay] = useState(false);
+  const overlayHistories = useQueries({
+    queries: overlaySymbols.map((sym) => ({
+      queryKey: ['pos-history-cmp', sym],
+      queryFn: () => api.marketHistory(sym),
+      enabled: !!sym && !delisted,
+      staleTime: 5 * 60_000,
+    })),
   });
+  const toggleOverlay = (sym: string) =>
+    setOverlaySymbols((prev) => (prev.includes(sym) ? prev.filter((s) => s !== sym) : [...prev, sym]));
   const hours = useQuery({
     queryKey: ['pos-hours', symbol],
     queryFn: () => api.marketHoursSymbol(symbol!),
@@ -102,6 +116,20 @@ export function PositionDetail() {
   const inst = p.instrument;
   const delta = c.deltaCHF;
   const aheadOfEtf = delta >= 0;
+
+  // Rebased comparison lines for the Full-price-history chart (ETFs + stocks).
+  const priceOverlays = overlaySymbols
+    .map((sym, i) => ({
+      symbol: sym,
+      series: (overlayHistories[i]?.data ?? []) as Array<{ date: string; close: number }>,
+      color: OVERLAY_COLORS[i % OVERLAY_COLORS.length],
+    }))
+    .filter((o) => o.series.length > 1);
+  const overlayColorOf = (sym: string) => {
+    const i = overlaySymbols.indexOf(sym);
+    return i >= 0 ? OVERLAY_COLORS[i % OVERLAY_COLORS.length] : '#5F6E82';
+  };
+  const benchmarkChoices: string[] = (settings.data?.benchmarks ?? []).map((b) => b.symbol);
 
   const doExport = async (kind: 'excel' | 'pdf') => {
     const notesList = await api.listNotes('instrument', id);
@@ -294,32 +322,79 @@ export function PositionDetail() {
         </div>
       </section>
 
-      {/* Full-history price with major-move & stagnation markers */}
+      {/* Full-history price with rebased comparison overlays + stagnation markers */}
       {!delisted && (history.data?.length ?? 0) > 1 && (
         <section className="card mb-6">
           <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
             <div className="eyebrow">Full price history · {inst.symbol}</div>
-            <div className="flex items-center gap-3 text-[11px] text-text-faint">
+            <div className="flex items-center gap-3 text-[11px] text-text-faint flex-wrap">
               <span className="flex items-center gap-1"><span className="w-4 h-0.5 bg-azure inline-block" /> {inst.symbol}</span>
-              {(benchHistory.data?.length ?? 0) > 1 && (
-                <span className="flex items-center gap-1"><span className="w-4 h-0 border-t-2 border-dashed border-gold inline-block" /> {benchmark} (rebased)</span>
-              )}
+              {priceOverlays.map((o) => (
+                <span key={o.symbol} className="flex items-center gap-1">
+                  <span className="w-4 h-0 border-t-2 border-dashed inline-block" style={{ borderColor: o.color }} /> {o.symbol}
+                </span>
+              ))}
               <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-gain" /> surge</span>
               <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-loss" /> drop</span>
               <span className="flex items-center gap-1"><span className="w-3 h-2 bg-warn/20 border border-warn/30" /> stagnation</span>
             </div>
           </div>
+
+          {/* Compare-with toolbar: toggle benchmark ETFs, add any stock/ETF, remove chips. */}
+          <div className="flex items-center gap-2 flex-wrap mb-3">
+            <span className="eyebrow">Compare</span>
+            {benchmarkChoices.map((sym) => {
+              const on = overlaySymbols.includes(sym);
+              return (
+                <button
+                  key={sym}
+                  onClick={() => toggleOverlay(sym)}
+                  className={`chip cursor-pointer ${on ? '!text-text' : 'opacity-60'}`}
+                  style={on ? { borderColor: overlayColorOf(sym), color: overlayColorOf(sym) } : undefined}
+                >
+                  {sym}
+                </button>
+              );
+            })}
+            {overlaySymbols
+              .filter((s) => s && !benchmarkChoices.includes(s))
+              .map((sym) => (
+                <button
+                  key={sym}
+                  onClick={() => toggleOverlay(sym)}
+                  className="chip cursor-pointer !text-text inline-flex items-center gap-1"
+                  style={{ borderColor: overlayColorOf(sym), color: overlayColorOf(sym) }}
+                  title="Remove"
+                >
+                  {sym} <X size={11} />
+                </button>
+              ))}
+            <button onClick={() => setShowAddOverlay((v) => !v)} className="chip cursor-pointer">
+              <Plus size={12} /> Add stock / ETF
+            </button>
+          </div>
+          {showAddOverlay && (
+            <div className="mb-3 max-w-md">
+              <SymbolSearch
+                onPick={(pick) => {
+                  setOverlaySymbols((prev) => (prev.includes(pick.symbol) ? prev : [...prev, pick.symbol]));
+                  setShowAddOverlay(false);
+                }}
+              />
+            </div>
+          )}
+
           <PriceMovementChart
             series={history.data ?? []}
             movements={movements.data}
             currency={inst.currency}
             height={300}
-            benchmark={
-              (benchHistory.data?.length ?? 0) > 1
-                ? { symbol: benchmark, series: benchHistory.data ?? [] }
-                : undefined
-            }
+            overlays={priceOverlays}
           />
+          <p className="text-[11px] text-text-faint mt-2">
+            Comparison lines are rebased to {inst.symbol}’s price where each series begins — so you compare
+            growth shape (which climbs faster, which stalls), independent of price level or currency.
+          </p>
         </section>
       )}
 

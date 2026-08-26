@@ -162,6 +162,33 @@ CREATE TABLE IF NOT EXISTS account_events (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_account_dedupe ON account_events(dedupeKey) WHERE dedupeKey IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_account_isin ON account_events(isin);
+
+-- Per-ticker news headlines (Yahoo Finance RSS), cached & de-duplicated. `id` is a
+-- stable hash of the article link so re-fetching upserts instead of duplicating.
+CREATE TABLE IF NOT EXISTS news_cache (
+  id TEXT PRIMARY KEY,
+  symbol TEXT NOT NULL,
+  title TEXT NOT NULL,
+  publisher TEXT,
+  link TEXT,
+  publishedAt TEXT,
+  summary TEXT,
+  fetchedAt INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_news_symbol ON news_cache(symbol, publishedAt);
+
+-- Persisted investment decision plans: a named set of holdings to sell, the reinvest
+-- targets (symbol + intended CHF), the intended outcome, and a baseline snapshot taken
+-- at creation so the plan can later be compared against the actual result.
+CREATE TABLE IF NOT EXISTS decision_plans (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  config TEXT NOT NULL,
+  baseline TEXT,
+  status TEXT NOT NULL DEFAULT 'open',
+  createdAt TEXT NOT NULL DEFAULT (datetime('now')),
+  updatedAt TEXT NOT NULL DEFAULT (datetime('now'))
+);
 """
 
 _lock = threading.RLock()

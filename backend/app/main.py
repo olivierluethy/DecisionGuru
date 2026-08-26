@@ -16,6 +16,15 @@ def create_app() -> FastAPI:
     setup_logging()
     init_db()
 
+    # Repair any legacy minor-unit (GBp) cache rows written before normalisation,
+    # so headline figures are correct on first load without a live refresh.
+    try:
+        from .services.marketdata import repair_minor_units
+
+        repair_minor_units()
+    except Exception:  # noqa: BLE001 — never block startup on a cache repair
+        pass
+
     app = FastAPI(
         title="DecisionGuru API",
         version="0.1.0",

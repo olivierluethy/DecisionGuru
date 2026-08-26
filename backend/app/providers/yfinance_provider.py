@@ -16,7 +16,13 @@ import yfinance as yf
 
 from ..core.config import settings
 from ..core.logging import get_logger
-from .base import ChartResult, MarketDataProvider, ProviderQuote, SearchHit
+from .base import (
+    ChartResult,
+    MarketDataProvider,
+    ProviderQuote,
+    SearchHit,
+    normalize_minor_currency,
+)
 
 log = get_logger("marketdata")
 
@@ -71,23 +77,36 @@ class YFinanceProvider(MarketDataProvider):
     def chart(self, symbol: str, from_date: str) -> ChartResult:
         start = (pd.Timestamp(from_date) - pd.Timedelta(days=10)).strftime("%Y-%m-%d")
 
-        def _fetch() -> pd.DataFrame:
-            return yf.Ticker(symbol).history(
+        def _fetch() -> tuple[pd.DataFrame, str | None]:
+            t = yf.Ticker(symbol)
+            df = t.history(
                 start=start, interval="1d", auto_adjust=False, actions=True, raise_errors=False
             )
+            ccy = None
+            try:
+                md = t.history_metadata or {}
+                ccy = md.get("currency") if isinstance(md, dict) else None
+            except Exception:  # noqa: BLE001
+                ccy = None
+            return df, ccy
 
-        df = self._call(f"chart {symbol}", _fetch)
+        df, raw_ccy = self._call(f"chart {symbol}", _fetch)
         result = ChartResult()
         if df is None or df.empty:
             return result
+        # Listing currency drives minor-unit (GBp→GBP) normalisation of every close.
+        _, major_ccy = normalize_minor_currency(1.0, raw_ccy)
+        result.currency = major_ccy or raw_ccy
         for idx, row in df.iterrows():
             date = pd.Timestamp(idx).strftime("%Y-%m-%d")
             close = row.get("Close")
             if close is not None and pd.notna(close):
-                result.prices.append({"date": date, "close": float(close)})
+                px, _ = normalize_minor_currency(float(close), raw_ccy)
+                result.prices.append({"date": date, "close": px})
             div = row.get("Dividends")
             if div is not None and pd.notna(div) and float(div) != 0.0:
-                result.dividends.append({"date": date, "amount": float(div)})
+                amt, _ = normalize_minor_currency(float(div), raw_ccy)
+                result.dividends.append({"date": date, "amount": amt})
         return result
 
     # ---- quote ----
@@ -118,6 +137,8 @@ class YFinanceProvider(MarketDataProvider):
                 currency = md.get("currency") or currency
                 if not price:
                     price = float(md.get("regularMarketPrice") or 0)
+            # Normalise minor units (GBp→GBP ÷100) so downstream FX is applied once.
+            price, currency = normalize_minor_currency(price, currency)
             return ProviderQuote(price=price, currency=currency or "USD", name=name or symbol)
 
         return self._call(f"quote {symbol}", _fetch)

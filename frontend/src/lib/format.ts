@@ -14,15 +14,25 @@ const chf2 = new Intl.NumberFormat('de-CH', {
 const num2 = new Intl.NumberFormat('de-CH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const num0 = new Intl.NumberFormat('de-CH', { maximumFractionDigits: 0 });
 
+/** Collapse a value that rounds to zero at the display precision (incl. -0 and
+ *  tiny negative float artefacts) to a clean 0, so nothing ever reads "CHF -0.00". */
+function deneg(v: number, decimals: boolean): number {
+  const rounded = Number(v.toFixed(decimals ? 2 : 0));
+  return rounded === 0 ? 0 : v;
+}
+
 export function fmtCHF(v: number | null | undefined, decimals = false): string {
   if (v == null || !Number.isFinite(v)) return '—';
-  return decimals ? chf2.format(v) : chf.format(v);
+  const vv = deneg(v, decimals);
+  return decimals ? chf2.format(vv) : chf.format(vv);
 }
 
 export function fmtCHFSigned(v: number | null | undefined, decimals = false): string {
   if (v == null || !Number.isFinite(v)) return '—';
-  const s = fmtCHF(Math.abs(v), decimals);
-  return v < 0 ? `− ${s}` : `+ ${s}`;
+  const vv = deneg(v, decimals);
+  const s = fmtCHF(Math.abs(vv), decimals);
+  if (vv === 0) return s;
+  return vv < 0 ? `− ${s}` : `+ ${s}`;
 }
 
 export function fmtNum(v: number | null | undefined, decimals = true): string {

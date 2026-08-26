@@ -14,6 +14,10 @@ from .fx import to_chf
 
 INCOME_TYPES = {"dividend", "withholding_tax"}
 FEE_TYPES = {"corp_action_fee", "connectivity_fee"}
+# A cash_sweep only shuttles money between DEGIRO's settlement account and the
+# interest-bearing flatex Geldkonto — both are still the holder's cash. Counting it
+# makes a deposit and its sweep cancel to ~0. It must be excluded from the ledger.
+CASH_LEDGER_EXCLUDE = {"cash_sweep"}
 
 
 def _active(events: list[dict]) -> list[dict]:
@@ -21,13 +25,21 @@ def _active(events: list[dict]) -> list[dict]:
 
 
 def cash_by_currency(events: list[dict]) -> dict[str, float]:
-    """Live cash position per currency = Σ signed mutation amounts (non-reversed)."""
+    """Canonical cash position per currency.
+
+    = Σ signed mutations (non-reversed) EXCLUDING internal cash_sweep transfers.
+    That is the ledger of money that entered the account (deposits + net dividends
+    − fees + net FX) and has not been spent on securities. Summing sweeps too would
+    cancel every deposit against its Geldkonto sweep → the old ``CHF -0.00`` bug."""
     out: dict[str, float] = defaultdict(float)
     for e in _active(events):
+        if e.get("type") in CASH_LEDGER_EXCLUDE:
+            continue
         ccy = e.get("currency")
         if ccy:
             out[ccy] += e.get("amount") or 0.0
-    return {k: v for k, v in out.items()}
+    # +0.0 collapses any -0.0 float artefact to 0.0 before it reaches the UI.
+    return {k: v + 0.0 for k, v in out.items()}
 
 
 def cash_chf(events: list[dict], as_of: str) -> dict:
@@ -36,9 +48,9 @@ def cash_chf(events: list[dict], as_of: str) -> dict:
     total = 0.0
     for ccy, amt in by.items():
         chf = to_chf(amt, ccy, as_of) if ccy != "CHF" else amt
-        detail[ccy] = {"amount": amt, "chf": chf}
+        detail[ccy] = {"amount": amt, "chf": chf + 0.0}
         total += chf
-    return {"totalCHF": total, "byCurrency": detail}
+    return {"totalCHF": total + 0.0, "byCurrency": detail}
 
 
 def dividends_by_isin(events: list[dict], as_of: str) -> dict[str, dict]:

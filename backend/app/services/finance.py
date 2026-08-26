@@ -8,6 +8,7 @@ from .finance_math import cagr, xirr, years_between
 from .fx import get_fx_rate, to_chf
 from .marketdata import get_quote
 from .tax import dividend_tax, wealth_tax
+from ..providers.base import normalize_minor_currency
 
 
 def build_position(instrument: dict, txs: list[dict], tax: dict, pre_tax: bool = False) -> dict:
@@ -78,17 +79,28 @@ def build_position(instrument: dict, txs: list[dict], tax: dict, pre_tax: bool =
             flows_after_tax.append({"date": tx["date"], "amount": bd.netAfterTaxCHF})
             flows_pre_tax.append({"date": tx["date"], "amount": gross_chf})
 
+    # Delisted / untracked: no resolvable ticker (symbol never resolved past the
+    # ISIN, or explicitly flagged unresolved). Never fetch a live quote for these —
+    # they no longer trade — so they can't be valued at a stale price and don't spin
+    # the refresh pool. Their realised P/L, dividends and cost history are preserved.
+    delisted = bool(instrument.get("unresolved")) or (
+        instrument.get("isin") and instrument.get("symbol") == instrument.get("isin")
+    )
     # Current valuation. A "pending" quote (no cached price yet, refresh in flight)
     # leaves value unknown (None) rather than 0, so the row renders a pending state.
-    quote = get_quote(instrument["symbol"]) if open_qty > 0 else None
+    quote = get_quote(instrument["symbol"]) if (open_qty > 0 and not delisted) else None
     pending = bool(quote and quote.get("pending"))
     current_price = None
     current_value_chf = None
     stale = False
     if open_qty > 0 and quote and not pending:
-        current_price = quote["price"]
+        # Minor-unit guard (e.g. GBp→GBP): normalise price + currency so FX is
+        # applied exactly once against a real ECB rate, never degraded to 1.0.
+        current_price, quote_ccy = normalize_minor_currency(
+            quote["price"], quote["currency"] or instrument["currency"]
+        )
         stale = quote["stale"]
-        fx = get_fx_rate(quote["currency"] or instrument["currency"], "CHF", today)
+        fx = get_fx_rate(quote_ccy or instrument["currency"], "CHF", today)
         current_value_chf = open_qty * current_price * fx
     elif open_qty <= 0:
         current_value_chf = 0.0
@@ -152,6 +164,7 @@ def build_position(instrument: dict, txs: list[dict], tax: dict, pre_tax: bool =
         "dividends": div_summary,
         "priceAsOf": quote["time"] if (quote and not pending) else None,
         "stale": stale,
+        "delisted": bool(delisted),
         "dataStatus": instrument_data_status(instrument, open_qty),
         "metrics": {
             "absolutePLChf": absolute_pl_chf,

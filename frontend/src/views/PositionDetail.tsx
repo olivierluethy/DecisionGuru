@@ -30,6 +30,7 @@ import { ProjectionChart } from '../components/ProjectionChart';
 import { PriceMovementChart } from '../components/PriceMovementChart';
 import { SymbolSearch } from '../components/SymbolSearch';
 import { Fundamentals } from '../components/Fundamentals';
+import { ValueAnalysis } from '../components/ValueAnalysis';
 import { catchUp } from '../lib/rebase';
 import { PeriodReturns } from '../components/PeriodReturns';
 import { NewsFeed } from '../components/NewsFeed';
@@ -478,6 +479,20 @@ export function PositionDetail() {
         <section className="card mb-6">
           <div className="eyebrow mb-3">Company fundamentals · {inst.symbol}</div>
           <Fundamentals symbol={inst.symbol} domicile={inst.domicile} name={inst.name} currency={inst.currency} />
+        </section>
+      )}
+
+      {/* Value-investing analysis — intrinsic value, quality, ETF-realism verdict */}
+      {!delisted && inst.kind === 'stock' && (
+        <section className="card mb-6">
+          <div className="eyebrow mb-3">Value analysis · what {inst.symbol} is really worth</div>
+          <ValueAnalysis
+            symbol={inst.symbol}
+            price={p.currentPrice}
+            currency={inst.currency}
+            catchUpPct={catchups[0]?.cu.catchUpPct ?? null}
+            benchmarkSymbol={catchups[0]?.symbol ?? null}
+          />
         </section>
       )}
 

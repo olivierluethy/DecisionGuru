@@ -215,6 +215,15 @@ export const api = {
       `/research/fundamentals/${encodeURIComponent(symbol)}${qs ? `?${qs}` : ''}`,
     );
   },
+  valuation: (symbol: string, price?: number | null, currency?: string | null) => {
+    const q = new URLSearchParams();
+    if (price != null) q.set('price', String(price));
+    if (currency) q.set('currency', currency);
+    const qs = q.toString();
+    return req<ValuationResult>(
+      `/research/valuation/${encodeURIComponent(symbol)}${qs ? `?${qs}` : ''}`,
+    );
+  },
   validateClaim: (symbol: string, claim: string | ClaimSpec) =>
     req<ClaimResult>('/research/claim', { method: 'POST', body: JSON.stringify({ symbol, claim }) }),
   universalCompare: (entities: CompareEntity[], windowYears = 5) =>
@@ -427,6 +436,32 @@ export interface FundamentalsBundle {
   history: FundamentalsYear[];
   financialCurrency: string | null;
   indexWeight: IndexWeight | null;
+}
+
+export interface ValuationCheck {
+  label: string;
+  pass: boolean;
+  detail: string;
+}
+export interface ValuationResult {
+  symbol: string;
+  currency: string | null;
+  price: number | null;
+  growthUsed: number;
+  growthRaw: number | null;
+  models: Record<string, number>;
+  intrinsic: { low: number | null; mid: number | null; high: number | null };
+  marginOfSafety: number | null;
+  impliedGrowth: number | null;
+  supportableReturn: number;
+  quality: { score: number; max: number; checks: ValuationCheck[] };
+  assumptions: { discountRate: number; terminalGrowth: number; years: number };
+  eps: number | null;
+  forwardEps: number | null;
+  bookValuePerShare: number | null;
+  roe: number | null;
+  dividendYield: number | null;
+  hasData: boolean;
 }
 
 // ---- Market hours --------------------------------------------------------

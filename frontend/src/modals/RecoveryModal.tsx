@@ -4,13 +4,13 @@ import { Zap } from 'lucide-react';
 import { Modal } from '../components/Modal';
 import { Spinner, Stat } from '../components/ui';
 import { api, type RecoveryAlternative } from '../lib/api';
-import { fmtCHF, fmtCHFSigned, fmtPct, fmtPctSigned, plClass } from '../lib/format';
+import { fmtCHF, fmtCHFSigned, fmtDurationYears, fmtPct, fmtPctSigned, plClass } from '../lib/format';
 import { useApp } from '../store';
 
 function recoveryLabel(a: { recoveryYears: number | null; cagr: number | null }): string {
   if (a.recoveryYears == null) return '—';
   if (a.recoveryYears === 0) return 'already recovered';
-  return `${a.recoveryYears.toFixed(1)} yr @ ${((a.cagr ?? 0) * 100).toFixed(1)}%`;
+  return `${fmtDurationYears(a.recoveryYears)} @ ${((a.cagr ?? 0) * 100).toFixed(1)}% p.a.`;
 }
 
 export function RecoveryModal({ instrumentId }: { instrumentId: number }) {
@@ -104,7 +104,7 @@ export function RecoveryModal({ instrumentId }: { instrumentId: number }) {
                         <span key={t.symbol} className="font-mono text-gold text-[13px]">{t.symbol}</span>
                       ))}
                       <span className="text-text-faint text-[12px] ml-1">
-                        blended {fmtPct(c.blendedCagr)} · recover {c.recoveryYears != null ? `${c.recoveryYears.toFixed(1)} yr` : '—'}
+                        blended {fmtPct(c.blendedCagr)} · recover {c.recoveryYears != null ? fmtDurationYears(c.recoveryYears) : '—'}
                       </span>
                     </div>
                     <div className="flex items-center gap-3">

@@ -4,7 +4,7 @@ import { Play, Save, Trash2, FolderOpen, Layers } from 'lucide-react';
 import { api } from '../lib/api';
 import type { ScenarioConfig, ScenarioResult } from '@decisionguru/shared';
 import { useApp } from '../store';
-import { fmtCHF, fmtCHFSigned, fmtPct, plClass } from '../lib/format';
+import { fmtCHF, fmtCHFSigned, fmtDurationMonths, fmtPct, plClass } from '../lib/format';
 import { DeltaChart } from '../components/DeltaChart';
 import { Segmented, Spinner, KindBadge } from '../components/ui';
 
@@ -305,7 +305,7 @@ function ScenarioResultView({ result, includedCount }: { result: ScenarioResult;
                     <td className="td text-right font-mono tnum text-gold">{fmtCHF(c.counterfactualValueCHF)}</td>
                     <td className={`td text-right font-mono tnum font-medium ${plClass(c.deltaCHF)}`}>{fmtCHFSigned(c.deltaCHF)}</td>
                     <td className="td text-right font-mono tnum text-text-muted">
-                      {c.recoveryMonths ? `${Math.round(c.recoveryMonths)} mo` : '—'}
+                      {c.recoveryMonths ? fmtDurationMonths(c.recoveryMonths) : '—'}
                     </td>
                   </tr>
                 );

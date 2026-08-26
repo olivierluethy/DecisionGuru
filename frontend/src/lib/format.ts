@@ -73,6 +73,33 @@ export function fmtMonths(m: number | null | undefined): string {
   return `${years.toFixed(1)} yr`;
 }
 
+/**
+ * Human-readable duration from a fractional number of YEARS, broken into
+ * years / months / days: 0.2 → "2 mo 13 d", 1.35 → "1 y 4 mo 8 d".
+ * Zero-value units are dropped; <= 0 reads as "now".
+ */
+export function fmtDurationYears(years: number | null | undefined): string {
+  if (years == null || !Number.isFinite(years)) return '—';
+  if (years <= 0) return 'now';
+  let totalDays = Math.round(years * 365);
+  const y = Math.floor(totalDays / 365);
+  totalDays -= y * 365;
+  const mo = Math.floor(totalDays / 30);
+  const d = totalDays - mo * 30;
+  const parts: string[] = [];
+  if (y) parts.push(`${y} y`);
+  if (mo) parts.push(`${mo} mo`);
+  if (d) parts.push(`${d} d`);
+  return parts.length ? parts.join(' ') : 'today';
+}
+
+/** Same granular y/mo/d duration, but from a number of MONTHS. */
+export function fmtDurationMonths(months: number | null | undefined): string {
+  if (months == null || !Number.isFinite(months)) return '—';
+  if (months <= 0) return 'already ahead';
+  return fmtDurationYears(months / 12);
+}
+
 export function fmtDate(d: string | null | undefined): string {
   if (!d) return '—';
   const date = new Date(d);

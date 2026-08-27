@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
-import { ArrowUpRight, Eye, Info, Clock, Globe2, Sparkles } from 'lucide-react';
+import { ArrowUpRight, Eye, Info, Clock, Globe2, Sparkles, Loader2, DownloadCloud } from 'lucide-react';
 import { api, type ScreenerRow, type ScreenerVerdict } from '../lib/api';
 import { useApp } from '../store';
 import { Spinner, EmptyState, Segmented } from '../components/ui';
@@ -63,7 +63,18 @@ export function Screener() {
   const [groupBy, setGroupBy] = useState<GroupBy>('none');
   const [sortBy, setSortBy] = useState<SortBy>('attractiveness');
 
-  const { data, isLoading, isError } = useQuery({ queryKey: ['screener'], queryFn: api.screen });
+  // Poll while the universe is still warming: each refetch both refreshes the rows and
+  // (server-side) kicks the next bounded warm batch, so coverage grows on its own.
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ['screener'],
+    queryFn: api.screen,
+    refetchInterval: (query) => ((query.state.data?.warm?.missing ?? 0) > 0 ? 6000 : false),
+  });
+  const warmAll = useMutation({
+    mutationFn: () => api.refreshScreener(null),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['screener'] }),
+  });
+  const warm = data?.warm;
 
   const watchlistQ = useQuery({ queryKey: ['watchlist'], queryFn: api.listWatchlist });
   const addWatch = useMutation({
@@ -153,24 +164,62 @@ export function Screener() {
         <EmptyState title="Couldn't run the screen" hint="Is the backend running? It needs a restart to pick up the screener route." />
       ) : (
         <>
-          <div className="flex items-center gap-2 text-[12px] text-text-faint mb-4 flex-wrap">
+          <div className="flex items-center gap-2 text-[12px] text-text-faint mb-3 flex-wrap">
             <Info size={13} />
             <span>
               Scored <span className="text-text">{data.analysedCount}</span> of {data.universeSize} names.
               {mode === 'new' && (
                 <> <span className="text-gain">{data.rows.filter(isNewOpportunity).length}</span> not-yet-owned opportunities.</>
               )}
-              {data.unanalysedCount > 0 && (
-                <> {data.unanalysedCount} not analysed yet — open any in Research to fetch its fundamentals, then re-run.</>
-              )}
             </span>
           </div>
 
+          {/* Universe warmer — fetches the missing fundamentals so the whole universe
+              becomes screenable. Cache is an optimisation, not an eligibility filter. */}
+          {warm && warm.missing > 0 && (
+            <div className="card mb-5 !py-3">
+              <div className="flex items-center gap-3 flex-wrap">
+                {warm.running
+                  ? <Loader2 size={15} className="text-azure animate-spin shrink-0" />
+                  : <DownloadCloud size={15} className="text-text-muted shrink-0" />}
+                <div className="flex-1 min-w-[220px]">
+                  <div className="text-[13px] text-text">
+                    {warm.running
+                      ? <>Fetching fundamentals across the universe… <span className="font-mono tnum">{warm.cached}</span>/{warm.universeTotal} ready</>
+                      : <><span className="font-mono tnum text-text">{warm.cached}</span>/{warm.universeTotal} names ready · {warm.missing} still to fetch</>}
+                  </div>
+                  <div className="mt-1.5 h-1.5 rounded-full bg-surface-2 overflow-hidden">
+                    <div className="h-full rounded-full bg-azure transition-all"
+                      style={{ width: `${Math.round((warm.cached / Math.max(1, warm.universeTotal)) * 100)}%` }} />
+                  </div>
+                  {warm.running && warm.lastSymbol && (
+                    <div className="text-[10px] text-text-faint mt-1 font-mono">…{warm.lastSymbol}{warm.failed > 0 ? ` · ${warm.failed} unavailable` : ''}</div>
+                  )}
+                </div>
+                <button className="btn-secondary shrink-0" disabled={warm.running || warmAll.isPending}
+                  onClick={() => warmAll.mutate()}>
+                  <DownloadCloud size={14} /> {warm.running ? 'Fetching…' : 'Fetch all remaining'}
+                </button>
+              </div>
+              <p className="text-[11px] text-text-faint mt-2">
+                Fetched in throttled batches to respect the data provider's rate limit; results refresh
+                automatically as names load. Names the provider can't return are retried on the next scan.
+              </p>
+            </div>
+          )}
+
           {data.analysedCount === 0 ? (
-            <EmptyState
-              title="No names have fundamentals cached yet"
-              hint="The screen only scores names whose fundamentals are already fetched (the provider rate-limits bulk pulls). Open a few companies in Research or hold/watch them, then come back."
-            />
+            (warm && (warm.running || warm.missing > 0)) ? (
+              <EmptyState
+                title="Fetching fundamentals for the universe…"
+                hint="The screener is loading the data it needs to value each name. Results will appear here as they load — this respects the provider's rate limit, so give it a moment."
+              />
+            ) : (
+              <EmptyState
+                title="No names have fundamentals cached yet"
+                hint="Open a few companies in Research or hold/watch them, then come back — or use ‘Fetch all remaining’ above."
+              />
+            )
           ) : (
             <>
               {/* Mode toggle — All names (default, unchanged) vs New opportunities. */}

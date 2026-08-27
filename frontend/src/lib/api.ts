@@ -254,6 +254,12 @@ export const api = {
 
   // screener
   screen: () => req<ScreenerResult>('/screener'),
+  refreshScreener: (limit?: number | null) =>
+    req<ScreenerWarmStatus>('/screener/refresh', {
+      method: 'POST',
+      body: JSON.stringify(limit != null ? { limit } : {}),
+    }),
+  screenerWarmStatus: () => req<ScreenerWarmStatus>('/screener/refresh/status'),
 
   // watchlist
   listWatchlist: () => req<WatchlistItem[]>('/watchlist'),
@@ -867,6 +873,24 @@ export interface GeoDensity {
   density: number;
   topSymbols: string[];
 }
+export interface ScreenerWarmStatus {
+  running: boolean;
+  total: number;          // names targeted in the current/last warm run
+  done: number;
+  ok: number;
+  failed: number;
+  startedAt: string | null;
+  finishedAt: string | null;
+  lastSymbol: string | null;
+  trigger: string | null;
+  universeTotal: number;  // whole screening universe
+  cached: number;         // names with fundamentals cached
+  missing: number;        // still to fetch
+  workers?: number;
+  started?: boolean;      // present on the refresh trigger response
+  reason?: string;
+  queued?: number;
+}
 export interface ScreenerResult {
   universeSize: number;
   analysedCount: number;
@@ -876,6 +900,7 @@ export interface ScreenerResult {
   themes: string[];
   rows: ScreenerRow[];
   geo: GeoDensity[];
+  warm?: ScreenerWarmStatus;
 }
 export interface WatchlistItem {
   id: number;

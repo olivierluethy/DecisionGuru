@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Download, ArrowUpRight, ArrowDownRight, Wallet, PieChart, AlertTriangle, Search, X } from 'lucide-react';
+import { Download, ArrowUpRight, ArrowDownRight, Wallet, PieChart, AlertTriangle, Search, X, TrendingDown } from 'lucide-react';
 import type { RangeKey, AllocationBreakdown } from '@decisionguru/shared';
 import { api } from '../lib/api';
 import { useApp } from '../store';
@@ -286,6 +286,38 @@ export function Dashboard() {
       {/* Proactive strategy surface — most important decision, if any */}
       {hasPositions && <DecisionsBanner />}
 
+      {/* Valuation sell signals — holdings that have run significantly above fair value. */}
+      {(data.sellSignals?.length ?? 0) > 0 && (
+        <section className="card mb-6 border-l-2 border-l-loss bg-loss/5">
+          <div className="flex items-start gap-3">
+            <TrendingDown size={18} className="text-loss shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-semibold text-loss">
+                {data.sellSignals!.filter((s) => s.isSellSignal).length} sell signal
+                {data.sellSignals!.filter((s) => s.isSellSignal).length === 1 ? '' : 's'}
+                {data.sellSignals!.some((s) => !s.isSellSignal) &&
+                  ` · ${data.sellSignals!.filter((s) => !s.isSellSignal).length} overvalued`}
+              </div>
+              <div className="flex flex-wrap gap-2 mt-2">
+                {data.sellSignals!.map((s) => (
+                  <button
+                    key={s.symbol}
+                    onClick={() => s.instrumentId && selectInstrument(s.instrumentId)}
+                    className="chip !py-1 hover:border-hairline-strong transition-colors"
+                    title={s.reasoning.headline}
+                  >
+                    <span className="font-mono text-text">{s.symbol}</span>
+                    <span className={`ml-2 ${s.isSellSignal ? 'text-loss' : 'text-warn'}`}>
+                      +{s.reasoning.premiumToFairPct.toFixed(0)}% vs fair
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
+
       {/* Account-only (no Transactions export yet) → guide to complete the picture */}
       {!hasPositions && hasAccount && (
         <section className="card mb-6 border-l-2 border-l-warn">
@@ -456,6 +488,14 @@ export function Dashboard() {
                               <span className="font-mono text-text">{p.instrument.symbol}</span>
                               {sold && (
                                 <span className="chip !py-0 !px-1.5 text-gold border-gold/40">sold</span>
+                              )}
+                              {p.sellSignal && (
+                                <span
+                                  className={`chip !py-0 !px-1.5 ${p.sellSignal.isSellSignal ? 'text-loss border-loss/40' : 'text-warn border-warn/40'}`}
+                                  title={p.sellSignal.reasoning.headline}
+                                >
+                                  {p.sellSignal.isSellSignal ? 'Sell signal' : 'Overvalued'}
+                                </span>
                               )}
                               <DataStatusBadge status={p.dataStatus} onRetry={() => retryResolve(p.instrument.id)} />
                             </div>

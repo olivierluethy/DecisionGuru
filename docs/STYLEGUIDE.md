@@ -122,6 +122,13 @@ mono for dense numeric tables and the big delta numbers.
 
 ## 7. Charts (Recharts) & globe (cobe)
 
+- **Colour tokens are Tailwind theme values (`tailwind.config.js`), _not_ CSS custom
+  properties.** There is no `--azure`/`--gain`/`--surface-2` CSS variable, so passing
+  `var(--token)` to a Recharts `stroke`/`fill`/`tick.fill` prop resolves to nothing and the
+  SVG presentation attribute falls back to black — invisible on `--bg`. Always pass the
+  **hex literal** (e.g. `stroke="#3DA9FC"`), the way `DeltaChart` does. Token→hex: gain
+  `#31D6A0`, loss `#FF5D6C`, warn `#F0B34A`, azure `#3DA9FC`, gold `#D9A94E`, text-faint
+  `#5F6E82`, hairline `#243040`, surface-2 `#1A2331`.
 - Grid lines `--hairline` at low alpha; axes `--text-faint`; tooltips `--surface-2` + hairline.
 - **Actual series = `--azure` solid.** **Counterfactual/ETF series = `--gold`, dashed (`4 3`).**
 - Delta area between them: `--gain`/`--loss` at ~12% alpha.
@@ -157,10 +164,17 @@ gain/loss/warn semantics, never decoration.
 - **`BandBadge`** is the canonical chip (dot + label) — reuse it everywhere a band is shown
   (valuation panel, watchlist, screener, map drill-in, replay).
 - **Price-zone chart** (`PriceBandChart`): the azure price line over shaded `ReferenceArea`
-  zones — buy = `--gain`@12%, fair = `--azure`@5%, overvalued = `--warn`@10%, sell =
-  `--loss`@13% — with dashed guides for the entry target (`--gain`), fair value
-  (`--text-faint`) and sell zone (`--loss`). This is the only place price and valuation
-  share an axis; keep the azure price line dominant.
+  zones — buy = `--gain`@15%, fair = `--azure`@8%, overvalued = `--warn`@14%, sell =
+  `--loss`@18% (fills clearly perceptible on `--bg` yet subordinate to the line). Thin
+  dashed **boundary dividers** sit at each band edge — entry target (`--gain`), overvalued
+  threshold (`--warn`) and sell zone (`--loss`) — and a separate dashed **fair-value
+  reference line** (`--text-faint`) is labelled with its value. The azure price line is the
+  dominant mark (≈2.2px, full opacity) with a **marker dot at the latest point**. Subtle
+  horizontal-only gridlines (`--hairline`, dashed) sit behind the bands. The y-domain always
+  spans `min/max(price series ∪ all four zone thresholds)` plus padding, so no band is ever
+  clipped off-canvas. This is the only place price and valuation share an axis; keep the
+  azure price line dominant. One shared component feeds Discover, Research and the map/screener
+  drill-in — never fork per-view variants.
 - **Sell signal** is a loss-bordered card; the crown figure is the **after-tax gain if sold
   now** in `display-l`/mono, gain-coloured. State the tax fact plainly (capital gains are
   tax-free for a private investor); never say "sell".

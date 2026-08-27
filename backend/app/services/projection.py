@@ -37,6 +37,63 @@ def compute_break_even(current_value_chf: float, invested_chf: float, etf_cagr: 
     }
 
 
+def prospective_projection(
+    symbol: str,
+    benchmark: str,
+    amount_chf: float = 10_000.0,
+    years: float = 5.0,
+    stock_cagr: float | None = None,
+    etf_cagr: float | None = None,
+) -> dict:
+    """Forward opportunity cost for a *prospective* (not-yet-owned) investment.
+
+    Given a hypothetical CHF amount invested today, project holding ``symbol`` vs the
+    same money in ``benchmark``. Expected growth defaults to each asset's own historical
+    CAGR (from cached history); when that is unavailable we fall back to a documented
+    assumption and flag it, so the estimate never silently invents a trend. Purely
+    symbol-driven — reuses the same math the held-position projection uses.
+    """
+    DEFAULT_STOCK_CAGR = 0.07
+    DEFAULT_ETF_CAGR = 0.05
+
+    stock_basis = "assumption"
+    etf_basis = "assumption"
+
+    if stock_cagr is None:
+        hist_cagr = benchmark_cagr(symbol)
+        if hist_cagr is not None:
+            stock_cagr, stock_basis = hist_cagr, "history"
+        else:
+            stock_cagr = DEFAULT_STOCK_CAGR
+    else:
+        stock_basis = "override"
+
+    if etf_cagr is None:
+        hist_cagr = benchmark_cagr(benchmark)
+        if hist_cagr is not None:
+            etf_cagr, etf_basis = hist_cagr, "history"
+        else:
+            etf_cagr = DEFAULT_ETF_CAGR
+    else:
+        etf_basis = "override"
+
+    result = project_hold_vs_etf(amount_chf, stock_cagr, etf_cagr, years)
+    end = result["points"][-1] if result["points"] else {"hold": amount_chf, "etf": amount_chf}
+    result.update({
+        "symbol": symbol,
+        "benchmark": benchmark,
+        "amountCHF": amount_chf,
+        "stockCagrBasis": stock_basis,
+        "etfCagrBasis": etf_basis,
+        # Opportunity cost at the horizon: how much more the stock is projected to make
+        # over the ETF (negative = the ETF wins, i.e. holding the stock costs you).
+        "endHoldCHF": end["hold"],
+        "endEtfCHF": end["etf"],
+        "advantageCHF": end["hold"] - end["etf"],
+    })
+    return result
+
+
 def project_hold_vs_etf(current_value_chf: float, stock_cagr: float, etf_cagr: float, years: float) -> dict:
     months = round(years * 12)
     stock_monthly = (1 + stock_cagr) ** (1 / 12) - 1

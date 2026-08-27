@@ -224,6 +224,21 @@ export const api = {
       `/research/valuation/${encodeURIComponent(symbol)}${qs ? `?${qs}` : ''}`,
     );
   },
+  researchProjection: (
+    symbol: string,
+    opts: { benchmark?: string; amount?: number; years?: number; stockCagr?: number; etfCagr?: number } = {},
+  ) => {
+    const q = new URLSearchParams();
+    if (opts.benchmark) q.set('benchmark', opts.benchmark);
+    if (opts.amount != null) q.set('amount', String(opts.amount));
+    if (opts.years != null) q.set('years', String(opts.years));
+    if (opts.stockCagr != null) q.set('stockCagr', String(opts.stockCagr));
+    if (opts.etfCagr != null) q.set('etfCagr', String(opts.etfCagr));
+    const qs = q.toString();
+    return req<ProspectiveProjection>(
+      `/research/projection/${encodeURIComponent(symbol)}${qs ? `?${qs}` : ''}`,
+    );
+  },
   validateClaim: (symbol: string, claim: string | ClaimSpec) =>
     req<ClaimResult>('/research/claim', { method: 'POST', body: JSON.stringify({ symbol, claim }) }),
   universalCompare: (entities: CompareEntity[], windowYears = 5) =>
@@ -731,6 +746,18 @@ export interface ResearchAsset {
   allocation: AllocationBreakdown;
   movements: MovementsResponse;
   news: NewsItem[];
+}
+export interface ProspectiveProjection extends ProjectionResult {
+  symbol: string;
+  benchmark: string;
+  amountCHF: number;
+  /** Where each expected-growth rate came from: cached history, an override, or a fallback assumption. */
+  stockCagrBasis: 'history' | 'override' | 'assumption';
+  etfCagrBasis: 'history' | 'override' | 'assumption';
+  endHoldCHF: number;
+  endEtfCHF: number;
+  /** endHoldCHF - endEtfCHF: >0 the stock wins, <0 holding it costs you vs the ETF. */
+  advantageCHF: number;
 }
 export interface ClaimSpec {
   metric: string;

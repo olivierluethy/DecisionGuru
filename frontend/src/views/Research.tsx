@@ -10,11 +10,13 @@ import { ExposureBars } from '../components/ExposureBars';
 import { PeriodReturns } from '../components/PeriodReturns';
 import { Fundamentals } from '../components/Fundamentals';
 import { ValueAnalysis } from '../components/ValueAnalysis';
+import { ProjectionChart } from '../components/ProjectionChart';
+import { BenchmarkSelect } from '../components/BenchmarkSelect';
 import { NewsFeed } from '../components/NewsFeed';
 import { Globe } from '../components/Globe';
 import { MarketStatusChip } from '../components/MarketStatusChip';
 import { Stat, Spinner, Segmented, EmptyState, KindBadge } from '../components/ui';
-import { fmtCHF, fmtPct, fmtPctSigned, fmtNum, plClass } from '../lib/format';
+import { fmtCHF, fmtCHFSigned, fmtPct, fmtPctSigned, fmtNum, plClass } from '../lib/format';
 
 const WINDOWS = [
   { value: '3', label: '3Y' },
@@ -134,6 +136,92 @@ function UniversalCompare({ symbol, name, kind, window }: { symbol: string; name
   );
 }
 
+const HORIZONS = [
+  { value: '3', label: '3Y' },
+  { value: '5', label: '5Y' },
+  { value: '10', label: '10Y' },
+];
+
+const BASIS_LABEL: Record<string, string> = {
+  history: 'historical CAGR',
+  override: 'your estimate',
+  assumption: 'assumed',
+};
+
+/**
+ * Forward opportunity cost for a *prospective* buy: if you put a hypothetical amount
+ * into this asset today vs the same money in a benchmark ETF, where do the two lines
+ * land over the horizon? This is the future-oriented lens Research adds for assets you
+ * don't yet own — the held-position page has the equivalent for money already invested.
+ */
+function ProspectiveSection({ symbol }: { symbol: string }) {
+  const benchmark = useApp((s) => s.benchmark);
+  const [amount, setAmount] = useState(10_000);
+  const [horizon, setHorizon] = useState('5');
+  const years = Number(horizon);
+
+  const { data, isFetching } = useQuery({
+    queryKey: ['research-projection', symbol, benchmark, amount, years],
+    queryFn: () => api.researchProjection(symbol, { benchmark, amount, years }),
+    enabled: amount > 0,
+  });
+
+  return (
+    <div className="card">
+      <div className="flex items-center justify-between mb-3 flex-wrap gap-3">
+        <div className="eyebrow">Opportunity cost · invest {fmtCHF(amount)} today vs {benchmark}</div>
+        <div className="flex items-center gap-3">
+          <label className="flex items-center gap-2 text-[13px] text-text-muted">
+            CHF
+            <input
+              type="number"
+              min={0}
+              step={1000}
+              className="input w-28 tnum"
+              value={amount}
+              onChange={(e) => setAmount(Math.max(0, Number(e.target.value)))}
+            />
+          </label>
+          <Segmented options={HORIZONS} value={horizon} onChange={setHorizon} />
+          <BenchmarkSelect />
+        </div>
+      </div>
+
+      {isFetching && !data ? (
+        <Spinner label="Projecting forward…" />
+      ) : data ? (
+        <>
+          <div className="flex items-center gap-4 text-[11px] text-text-faint mb-2">
+            <span className="flex items-center gap-1">
+              <span className="w-4 h-0 border-t-2 border-dashed border-azure inline-block" /> hold {symbol}
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="w-4 h-0 border-t-2 border-dashed border-gold inline-block" /> {benchmark} (ETF)
+            </span>
+          </div>
+          <ProjectionChart points={data.points} crossoverMonth={data.crossoverMonth} height={260} />
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mt-4">
+            <Stat label={`${symbol} in ${years}y`} value={fmtCHF(data.endHoldCHF)} />
+            <Stat label={`${benchmark} in ${years}y`} value={fmtCHF(data.endEtfCHF)} />
+            <Stat
+              label="Stock advantage"
+              value={fmtCHFSigned(data.advantageCHF)}
+              valueClass={plClass(data.advantageCHF)}
+            />
+          </div>
+          <p className="text-[11px] text-text-faint mt-3 leading-relaxed">
+            Expected growth — {symbol}: {fmtPct(data.assumedStockCagr)} ({BASIS_LABEL[data.stockCagrBasis]}) ·{' '}
+            {benchmark}: {fmtPct(data.assumedEtfCagr)} ({BASIS_LABEL[data.etfCagrBasis]}). Model estimate,
+            pre-tax, dividends not modelled here — not advice.
+          </p>
+        </>
+      ) : (
+        <p className="text-sm text-text-faint">Enter an amount to project forward.</p>
+      )}
+    </div>
+  );
+}
+
 function AssetView({ symbol, onReset }: { symbol: string; onReset: () => void }) {
   const [win, setWin] = useState('5');
   const window = Number(win);
@@ -199,6 +287,9 @@ function AssetView({ symbol, onReset }: { symbol: string; onReset: () => void })
           <ValueAnalysis symbol={data.symbol} price={data.currentPrice ?? null} currency={data.currency} />
         </div>
       )}
+
+      {/* Future-oriented opportunity cost for a prospective buy of this asset. */}
+      <ProspectiveSection symbol={data.symbol} />
 
       <div className="grid lg:grid-cols-[1fr_360px] gap-6">
         <div className="card">

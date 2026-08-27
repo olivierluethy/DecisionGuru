@@ -9,6 +9,7 @@ from ..services.research import research_asset, validate_claim
 from ..services.fundamentals import fundamentals_bundle
 from ..services.valuation import value_analysis
 from ..services.universal import universal_compare
+from ..services.projection import prospective_projection
 
 router = APIRouter()
 
@@ -31,6 +32,23 @@ async def valuation(symbol: str, price: float | None = None, currency: str | Non
     """Intrinsic-value estimates, a Buffett-style quality scorecard, and the growth the
     market is pricing in — from cached fundamentals. Estimates only, not advice."""
     return await run_in_threadpool(value_analysis, symbol, price, currency)
+
+
+@router.get("/projection/{symbol:path}")
+async def projection(
+    symbol: str,
+    benchmark: str = "VWRL.SW",
+    amount: float = 10_000.0,
+    years: float = 5.0,
+    stockCagr: float | None = None,
+    etfCagr: float | None = None,
+) -> dict:
+    """Forward opportunity cost of investing a hypothetical amount in this symbol today
+    vs the same money in an ETF benchmark — the future-oriented lens for prospective buys.
+    Expected growth defaults to each asset's own historical CAGR (flagged when assumed)."""
+    return await run_in_threadpool(
+        prospective_projection, symbol, benchmark, amount, years, stockCagr, etfCagr
+    )
 
 
 @router.post("/claim")

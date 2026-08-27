@@ -10,6 +10,7 @@ import {
   Compass,
   Telescope,
   ClipboardList,
+  Eye,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useApp } from '../store';
@@ -20,6 +21,7 @@ const NAV = [
   { view: 'decisions', label: 'Decisions', icon: Compass },
   { view: 'advisory', label: 'Advisory', icon: Sparkles },
   { view: 'research', label: 'Research', icon: Telescope },
+  { view: 'watchlist', label: 'Watchlist', icon: Eye },
   { view: 'scenarios', label: 'Scenarios', icon: GitCompareArrows },
   { view: 'plans', label: 'Plans', icon: ClipboardList },
 ] as const;

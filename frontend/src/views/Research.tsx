@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
-import { Check, X, CircleHelp, RefreshCw } from 'lucide-react';
+import { Check, X, CircleHelp, RefreshCw, Eye } from 'lucide-react';
 import { api, type AssetMetrics } from '../lib/api';
 import { useApp } from '../store';
 import { SymbolSearch } from '../components/SymbolSearch';
@@ -222,6 +222,26 @@ function ProspectiveSection({ symbol }: { symbol: string }) {
   );
 }
 
+/** Toggle the researched asset on/off the watchlist without leaving the page. */
+function WatchToggle({ symbol, name, kind }: { symbol: string; name: string | null; kind: string }) {
+  const qc = useQueryClient();
+  const { data: items = [] } = useQuery({ queryKey: ['watchlist'], queryFn: api.listWatchlist });
+  const watched = items.find((i) => i.symbol === symbol);
+  const invalidate = () => qc.invalidateQueries({ queryKey: ['watchlist'] });
+  const add = useMutation({ mutationFn: () => api.addToWatchlist({ symbol, name, kind }), onSuccess: invalidate });
+  const remove = useMutation({ mutationFn: (id: number) => api.removeFromWatchlist(id), onSuccess: invalidate });
+
+  return watched ? (
+    <button className="btn-secondary h-9 !text-azure !border-azure/40" onClick={() => remove.mutate(watched.id)}>
+      <Eye size={14} /> Watching
+    </button>
+  ) : (
+    <button className="btn-secondary h-9" onClick={() => add.mutate()}>
+      <Eye size={14} /> Watch
+    </button>
+  );
+}
+
 function AssetView({ symbol, onReset }: { symbol: string; onReset: () => void }) {
   const [win, setWin] = useState('5');
   const window = Number(win);
@@ -248,6 +268,7 @@ function AssetView({ symbol, onReset }: { symbol: string; onReset: () => void })
           )}
         </div>
         <div className="flex items-center gap-3">
+          <WatchToggle symbol={data.symbol} name={data.name} kind={data.kind} />
           <Segmented options={WINDOWS} value={win} onChange={setWin} />
           <button className="btn-secondary h-9" onClick={onReset}><RefreshCw size={14} /> New search</button>
         </div>

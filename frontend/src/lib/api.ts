@@ -247,6 +247,13 @@ export const api = {
       body: JSON.stringify({ entities, windowYears }),
     }),
 
+  // watchlist
+  listWatchlist: () => req<WatchlistItem[]>('/watchlist'),
+  addToWatchlist: (item: { symbol: string; name?: string | null; kind?: string }) =>
+    req<WatchlistItem>('/watchlist', { method: 'POST', body: JSON.stringify(item) }),
+  removeFromWatchlist: (id: number) =>
+    req<{ ok: true }>(`/watchlist/${id}`, { method: 'DELETE' }),
+
   // scenarios
   listScenarios: () => req<Scenario[]>('/scenarios'),
   runScenario: (config: ScenarioConfig) =>
@@ -746,6 +753,13 @@ export interface ResearchAsset {
   allocation: AllocationBreakdown;
   movements: MovementsResponse;
   news: NewsItem[];
+}
+export interface WatchlistItem {
+  id: number;
+  symbol: string;
+  name: string | null;
+  kind: string;
+  addedAt: string;
 }
 export interface ProspectiveProjection extends ProjectionResult {
   symbol: string;

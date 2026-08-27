@@ -8,6 +8,7 @@ import { Advisory } from './views/Advisory';
 import { Decisions } from './views/Decisions';
 import { Research } from './views/Research';
 import { Plans } from './views/Plans';
+import { Watchlist } from './views/Watchlist';
 import { ModalHost } from './modals/ModalHost';
 import { useApp } from './store';
 import { api } from './lib/api';
@@ -34,6 +35,7 @@ export default function App() {
         {view === 'decisions' && <Decisions />}
         {view === 'research' && <Research />}
         {view === 'plans' && <Plans />}
+        {view === 'watchlist' && <Watchlist />}
       </main>
       <ModalHost />
     </div>

@@ -195,6 +195,13 @@ CREATE TABLE IF NOT EXISTS decision_plans (
   createdAt TEXT NOT NULL DEFAULT (datetime('now')),
   updatedAt TEXT NOT NULL DEFAULT (datetime('now'))
 );
+CREATE TABLE IF NOT EXISTS watchlist (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  symbol TEXT NOT NULL UNIQUE,
+  name TEXT,
+  kind TEXT NOT NULL DEFAULT 'stock',
+  addedAt TEXT NOT NULL DEFAULT (datetime('now'))
+);
 """
 
 _lock = threading.RLock()

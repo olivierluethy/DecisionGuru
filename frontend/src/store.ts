@@ -1,6 +1,14 @@
 import { create } from 'zustand';
 
-export type View = 'dashboard' | 'position' | 'scenarios' | 'advisory' | 'decisions' | 'research' | 'plans';
+export type View =
+  | 'dashboard'
+  | 'position'
+  | 'scenarios'
+  | 'advisory'
+  | 'decisions'
+  | 'research'
+  | 'plans'
+  | 'watchlist';
 
 export type ModalKind =
   | { kind: 'import' }

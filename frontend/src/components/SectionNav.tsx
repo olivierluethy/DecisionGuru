@@ -1,36 +1,22 @@
 import { useEffect, useRef, useState } from 'react';
 import clsx from 'clsx';
+import type { LucideIcon } from 'lucide-react';
 
 export interface NavSection {
   id: string;
   label: string;
-}
-
-// Height (px) to leave clear above a target section so it isn't hidden under the
-// sticky rail after a jump.
-const SCROLL_OFFSET = 84;
-
-/** Nearest scrollable ancestor, or null to fall back to the window. */
-function getScrollParent(node: HTMLElement | null): HTMLElement | null {
-  let el = node?.parentElement ?? null;
-  while (el) {
-    const oy = getComputedStyle(el).overflowY;
-    if ((oy === 'auto' || oy === 'scroll') && el.scrollHeight > el.clientHeight) return el;
-    el = el.parentElement;
-  }
-  return null;
+  icon?: LucideIcon;
 }
 
 /**
  * Sticky "on this page" rail with scroll-spy. Gives a long detail view a table of
  * contents so a first-time viewer sees every chapter at a glance and can jump between
  * them without scrolling. Highlights the section currently in view; clicking a pill
- * scrolls to it inside the real scroll container (computed, not scrollIntoView — a
- * sticky element's scrollIntoView snaps the page back to its unstuck position).
+ * scrolls to it via the target's own scrollIntoView, which reliably resolves the real
+ * scroll container in either direction (the sections carry scroll-mt to clear the rail).
  */
 export function SectionNav({ sections }: { sections: NavSection[] }) {
   const [active, setActive] = useState(sections[0]?.id ?? '');
-  const navRef = useRef<HTMLElement>(null);
   const railRef = useRef<HTMLDivElement>(null);
   const pillRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const ids = sections.map((s) => s.id).join(',');
@@ -57,7 +43,7 @@ export function SectionNav({ sections }: { sections: NavSection[] }) {
   }, [ids]);
 
   // Keep the active pill in view by nudging ONLY the rail's horizontal scroll — never
-  // scrollIntoView, which would also move the vertical page scroll.
+  // scrollIntoView, which would also move (and fight) the vertical page scroll.
   useEffect(() => {
     const pill = pillRefs.current[active];
     const rail = railRef.current;
@@ -70,21 +56,8 @@ export function SectionNav({ sections }: { sections: NavSection[] }) {
   const go = (id: string) => {
     const target = document.getElementById(id);
     if (!target) return;
-    const behavior: ScrollBehavior = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
-      ? 'auto'
-      : 'smooth';
-    const container = getScrollParent(navRef.current);
-    if (container) {
-      const top =
-        target.getBoundingClientRect().top -
-        container.getBoundingClientRect().top +
-        container.scrollTop -
-        SCROLL_OFFSET;
-      container.scrollTo({ top, behavior });
-    } else {
-      const top = target.getBoundingClientRect().top + window.scrollY - SCROLL_OFFSET;
-      window.scrollTo({ top, behavior });
-    }
+    const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    target.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
     setActive(id);
   };
 
@@ -92,7 +65,6 @@ export function SectionNav({ sections }: { sections: NavSection[] }) {
 
   return (
     <nav
-      ref={navRef}
       aria-label="On this page"
       className="sticky top-0 z-20 -mx-6 mb-6 px-6 py-2.5 bg-bg/85 backdrop-blur-md border-b border-hairline"
     >
@@ -101,6 +73,7 @@ export function SectionNav({ sections }: { sections: NavSection[] }) {
         <div ref={railRef} className="flex items-center gap-1 overflow-x-auto no-scrollbar">
           {sections.map((s) => {
             const on = active === s.id;
+            const Icon = s.icon;
             return (
               <button
                 key={s.id}
@@ -110,12 +83,13 @@ export function SectionNav({ sections }: { sections: NavSection[] }) {
                 onClick={() => go(s.id)}
                 aria-current={on ? 'true' : undefined}
                 className={clsx(
-                  'px-3 h-8 rounded-full text-[13px] whitespace-nowrap transition-colors',
+                  'inline-flex items-center gap-1.5 px-3 h-8 rounded-full text-[13px] whitespace-nowrap transition-colors',
                   on
                     ? 'bg-azure/12 text-azure ring-1 ring-inset ring-azure/30'
                     : 'text-text-muted hover:text-text hover:bg-surface-2',
                 )}
               >
+                {Icon && <Icon size={14} className={on ? 'text-azure' : 'text-text-faint'} />}
                 {s.label}
               </button>
             );

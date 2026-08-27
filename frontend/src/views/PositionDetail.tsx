@@ -11,6 +11,17 @@ import {
   Activity,
   AlertTriangle,
   X,
+  Scale,
+  GitCompareArrows,
+  LineChart,
+  Building2,
+  Gem,
+  Percent,
+  Rocket,
+  Shuffle,
+  ArrowLeftRight,
+  Newspaper,
+  StickyNote,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { api, downloadExport } from '../lib/api';
@@ -165,17 +176,17 @@ export function PositionDetail() {
   const isStock = inst.kind === 'stock';
   const hasHistory = !delisted && (history.data?.length ?? 0) > 1;
   const navSections: NavSection[] = [
-    { id: 'sec-opportunity', label: 'Opportunity cost' },
-    { id: 'sec-alternatives', label: 'Alternatives' },
-    ...(hasHistory ? [{ id: 'sec-history', label: 'Price history' }] : []),
-    ...(!delisted && isStock ? [{ id: 'sec-fundamentals', label: 'Fundamentals' }] : []),
-    ...(!delisted && isStock ? [{ id: 'sec-value', label: 'Value' }] : []),
-    ...(!delisted ? [{ id: 'sec-returns', label: 'Returns' }] : []),
-    { id: 'sec-projection', label: 'Projection' },
-    { id: 'sec-whatif', label: 'What-if sale' },
-    { id: 'sec-transactions', label: 'Transactions' },
-    ...(!delisted ? [{ id: 'sec-news', label: 'News' }] : []),
-    { id: 'sec-notes', label: 'Notes' },
+    { id: 'sec-opportunity', label: 'Opportunity cost', icon: Scale },
+    { id: 'sec-alternatives', label: 'Alternatives', icon: GitCompareArrows },
+    ...(hasHistory ? [{ id: 'sec-history', label: 'Price history', icon: LineChart }] : []),
+    ...(!delisted && isStock ? [{ id: 'sec-fundamentals', label: 'Fundamentals', icon: Building2 }] : []),
+    ...(!delisted && isStock ? [{ id: 'sec-value', label: 'Value', icon: Gem }] : []),
+    ...(!delisted ? [{ id: 'sec-returns', label: 'Returns', icon: Percent }] : []),
+    { id: 'sec-projection', label: 'Projection', icon: Rocket },
+    { id: 'sec-whatif', label: 'What-if sale', icon: Shuffle },
+    { id: 'sec-transactions', label: 'Transactions', icon: ArrowLeftRight },
+    ...(!delisted ? [{ id: 'sec-news', label: 'News', icon: Newspaper }] : []),
+    { id: 'sec-notes', label: 'Notes', icon: StickyNote },
   ];
 
   return (

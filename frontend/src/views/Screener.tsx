@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
-import { ArrowUpRight, Eye, Info, Clock, Globe2, Sparkles, Loader2, DownloadCloud } from 'lucide-react';
+import { ArrowUpRight, Eye, Info, Clock, Globe2, Sparkles, Loader2, DownloadCloud, ChevronDown } from 'lucide-react';
 import { api, type ScreenerRow, type ScreenerVerdict } from '../lib/api';
 import { useApp } from '../store';
 import { Spinner, EmptyState, Segmented } from '../components/ui';
@@ -32,6 +32,41 @@ const VERDICT_FILTERS: { value: string; label: string }[] = [
   { value: 'expensive', label: 'Expensive' },
 ];
 
+/** A sortable column header: the `.th` cell wraps a full-width button; the active
+ *  column shows a chevron (down = descending, up = ascending), hidden otherwise. */
+function SortHeader({
+  label, col, sortCol, sortDir, onSort, align = 'left',
+}: {
+  label: string;
+  col: SortCol;
+  sortCol: SortCol;
+  sortDir: SortDir;
+  onSort: (c: SortCol) => void;
+  align?: 'left' | 'right';
+}) {
+  const active = sortCol === col;
+  return (
+    <th className={clsx('th', align === 'right' && 'text-right')}>
+      <button
+        type="button"
+        onClick={() => onSort(col)}
+        className={clsx(
+          'inline-flex items-center gap-1 select-none hover:text-text transition-colors uppercase',
+          align === 'right' && 'flex-row-reverse',
+          active ? 'text-text' : 'text-text-muted',
+        )}
+        aria-sort={active ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
+      >
+        <span>{label}</span>
+        <ChevronDown
+          size={12}
+          className={clsx('shrink-0 transition-transform', !active && 'opacity-0', sortDir === 'asc' && 'rotate-180')}
+        />
+      </button>
+    </th>
+  );
+}
+
 function AttractivenessBar({ value }: { value: number }) {
   const hue = value >= 66 ? 'bg-gain' : value >= 40 ? 'bg-warn' : 'bg-loss';
   return (
@@ -46,11 +81,46 @@ function AttractivenessBar({ value }: { value: number }) {
 
 type Mode = 'all' | 'new';
 type GroupBy = 'none' | 'sector' | 'theme' | 'country';
-type SortBy = 'attractiveness' | 'fresh';
+// Every results column is a sort key, plus 'fresh' — the movers ordering (recently
+// attractive, then biggest price drop) that isn't expressible as a single column.
+type SortCol =
+  | 'company' | 'sector' | 'price' | 'mos' | 'quality' | 'supportable'
+  | 'yield' | 'fit' | 'attractiveness' | 'verdict' | 'fresh';
+type SortDir = 'asc' | 'desc';
+
+const TEXT_COLS = new Set<SortCol>(['company', 'sector', 'verdict']);
+// Best-fit-first ordering so Portfolio-fit sorts numerically like the other columns.
+const FIT_RANK: Record<string, number> = {
+  'new sector': 4, diversifies: 3, neutral: 2, concentrates: 1, unknown: 0,
+};
 
 /** A not-yet-owned name that clears the attractiveness bar. */
 function isNewOpportunity(r: ScreenerRow): boolean {
   return !r.inPortfolio && r.verdict === 'attractive';
+}
+
+/** Numeric value backing a numeric sort column (null → sorted last, both directions). */
+function numVal(r: ScreenerRow, col: SortCol): number | null {
+  switch (col) {
+    case 'price': return r.price;
+    case 'mos': return r.marginOfSafety;
+    case 'quality': return r.quality.max ? r.quality.score / r.quality.max : null;
+    case 'supportable': return r.supportableReturn;
+    case 'yield': return r.dividendYield;
+    case 'fit': return FIT_RANK[r.portfolioFit.status] ?? 0;
+    case 'attractiveness': return r.attractiveness;
+    default: return null;
+  }
+}
+
+/** Text value backing an alphabetical sort column. */
+function textVal(r: ScreenerRow, col: SortCol): string {
+  switch (col) {
+    case 'company': return r.symbol;
+    case 'sector': return r.sector ?? '';
+    case 'verdict': return VERDICT_META[r.verdict].label;
+    default: return '';
+  }
 }
 
 export function Screener() {
@@ -61,7 +131,20 @@ export function Screener() {
   const [theme, setTheme] = useState('');
   const [verdict, setVerdict] = useState('');
   const [groupBy, setGroupBy] = useState<GroupBy>('none');
-  const [sortBy, setSortBy] = useState<SortBy>('attractiveness');
+  const [sortCol, setSortCol] = useState<SortCol>('attractiveness');
+  const [sortDir, setSortDir] = useState<SortDir>('desc');
+
+  // Click a header to sort by it; click the active header again to flip direction.
+  // First click defaults to descending for numeric columns (biggest first) and
+  // ascending for text columns (A→Z) — the useful default in each case.
+  const onSort = (col: SortCol) => {
+    if (col === sortCol) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortCol(col);
+      setSortDir(TEXT_COLS.has(col) ? 'asc' : 'desc');
+    }
+  };
 
   // Poll while the universe is still warming: each refetch both refreshes the rows and
   // (server-side) kicks the next bounded warm batch, so coverage grows on its own.
@@ -102,17 +185,30 @@ export function Screener() {
     if (theme) rows = rows.filter((r) => r.theme === theme);
     if (verdict) rows = rows.filter((r) => r.verdict === verdict);
     rows = [...rows];
-    if (sortBy === 'fresh') {
-      // Freshly attractive first, then biggest price drop, then attractiveness.
-      rows.sort((a, b) =>
-        Number(b.isNew) - Number(a.isNew) ||
-        (a.priceChangePct ?? 0) - (b.priceChangePct ?? 0) ||
-        b.attractiveness - a.attractiveness);
-    } else {
-      rows.sort((a, b) => b.attractiveness - a.attractiveness || (b.marginOfSafety ?? -1) - (a.marginOfSafety ?? -1));
-    }
+    const dir = sortDir === 'asc' ? 1 : -1;
+    rows.sort((a, b) => {
+      if (sortCol === 'fresh') {
+        // Freshly attractive first, then biggest price drop, then attractiveness.
+        return Number(b.isNew) - Number(a.isNew) ||
+          (a.priceChangePct ?? 0) - (b.priceChangePct ?? 0) ||
+          b.attractiveness - a.attractiveness;
+      }
+      let primary: number;
+      if (TEXT_COLS.has(sortCol)) {
+        primary = textVal(a, sortCol).localeCompare(textVal(b, sortCol)) * dir;
+      } else {
+        const av = numVal(a, sortCol), bv = numVal(b, sortCol);
+        // Nulls always sort last, regardless of direction.
+        if (av == null && bv == null) primary = 0;
+        else if (av == null) primary = 1;
+        else if (bv == null) primary = -1;
+        else primary = (av - bv) * dir;
+      }
+      // Stable tie-break: strongest names first.
+      return primary || b.attractiveness - a.attractiveness;
+    });
     return rows;
-  }, [data, mode, sector, theme, verdict, sortBy]);
+  }, [data, mode, sector, theme, verdict, sortCol, sortDir]);
 
   // Names that newly became attractive since the last scan (movers strip).
   const freshNames = useMemo(() => filtered.filter((r) => r.isNew), [filtered]);
@@ -227,7 +323,12 @@ export function Screener() {
                 <Segmented
                   options={[{ value: 'all', label: 'All names' }, { value: 'new', label: 'New opportunities' }]}
                   value={mode}
-                  onChange={(m) => { setMode(m as Mode); if (m === 'new') setSortBy('fresh'); }}
+                  onChange={(m) => {
+                    setMode(m as Mode);
+                    // New-opportunities defaults to the movers ordering; All names to attractiveness.
+                    if (m === 'new') { setSortCol('fresh'); }
+                    else { setSortCol('attractiveness'); setSortDir('desc'); }
+                  }}
                 />
                 {mode === 'new' && (
                   <span className="text-[12px] text-text-faint">
@@ -292,11 +393,14 @@ export function Screener() {
                     <option value="theme">Industry / theme</option>
                     <option value="country">Country</option>
                   </select>
-                  <label className="text-[12px] text-text-faint ml-1">Sort</label>
-                  <select className="input w-auto" value={sortBy} onChange={(e) => setSortBy(e.target.value as SortBy)}>
-                    <option value="attractiveness">Attractiveness</option>
-                    <option value="fresh">Recently attractive / price drop</option>
-                  </select>
+                  {/* Movers ordering can't be expressed as a single column, so it keeps a control. */}
+                  <button
+                    className={clsx('btn-secondary !h-9', sortCol === 'fresh' && '!border-gain/50 !text-gain')}
+                    onClick={() => (sortCol === 'fresh' ? onSort('attractiveness') : setSortCol('fresh'))}
+                    title="Sort by recently-attractive names and biggest price drops"
+                  >
+                    <Sparkles size={14} /> Movers
+                  </button>
                 </div>
               </div>
 
@@ -305,16 +409,16 @@ export function Screener() {
                   <table className="w-full text-sm">
                     <thead>
                       <tr>
-                        <th className="th">Company</th>
-                        <th className="th">Sector</th>
-                        <th className="th text-right">Price</th>
-                        <th className="th text-right">Margin of safety</th>
-                        <th className="th text-right">Quality</th>
-                        <th className="th text-right">Supportable</th>
-                        <th className="th text-right">Yield</th>
-                        <th className="th">Portfolio fit</th>
-                        <th className="th text-right">Attractiveness</th>
-                        <th className="th">Verdict</th>
+                        <SortHeader label="Company" col="company" sortCol={sortCol} sortDir={sortDir} onSort={onSort} />
+                        <SortHeader label="Sector" col="sector" sortCol={sortCol} sortDir={sortDir} onSort={onSort} />
+                        <SortHeader label="Price" col="price" align="right" sortCol={sortCol} sortDir={sortDir} onSort={onSort} />
+                        <SortHeader label="Margin of safety" col="mos" align="right" sortCol={sortCol} sortDir={sortDir} onSort={onSort} />
+                        <SortHeader label="Quality" col="quality" align="right" sortCol={sortCol} sortDir={sortDir} onSort={onSort} />
+                        <SortHeader label="Supportable" col="supportable" align="right" sortCol={sortCol} sortDir={sortDir} onSort={onSort} />
+                        <SortHeader label="Yield" col="yield" align="right" sortCol={sortCol} sortDir={sortDir} onSort={onSort} />
+                        <SortHeader label="Portfolio fit" col="fit" sortCol={sortCol} sortDir={sortDir} onSort={onSort} />
+                        <SortHeader label="Attractiveness" col="attractiveness" align="right" sortCol={sortCol} sortDir={sortDir} onSort={onSort} />
+                        <SortHeader label="Verdict" col="verdict" sortCol={sortCol} sortDir={sortDir} onSort={onSort} />
                         <th className="th w-10"></th>
                       </tr>
                     </thead>

@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import {
-  ComposedChart, Line, ReferenceArea, ReferenceLine, XAxis, YAxis, Tooltip,
-  ResponsiveContainer,
+  ComposedChart, Line, ReferenceArea, ReferenceLine, ReferenceDot, CartesianGrid,
+  XAxis, YAxis, Tooltip, ResponsiveContainer,
 } from 'recharts';
 import clsx from 'clsx';
 import { api, type ValuationBand, type ValuationBandKey } from '../lib/api';
@@ -95,6 +95,7 @@ export function PriceBandChart({
   const lo = Math.min(...candidates) * 0.92;
   const hi = Math.max(...candidates) * 1.06;
   const data = (history ?? []).map((h) => ({ date: h.date, close: h.close }));
+  const lastDate = data.length ? data[data.length - 1].date : undefined;
 
   const zone = (y1: number, y2: number, fill: string, opacity: number, key: string) => (
     <ReferenceArea key={key} y1={Math.max(y1, lo)} y2={Math.min(y2, hi)} fill={fill}
@@ -106,11 +107,13 @@ export function PriceBandChart({
       <div style={{ width: '100%', height }}>
         <ResponsiveContainer>
           <ComposedChart data={data} margin={{ top: 6, right: 8, bottom: 0, left: 0 }}>
+            {/* Subtle horizontal grid, kept behind the bands so it never competes. */}
+            <CartesianGrid stroke={C.hairline} strokeDasharray="2 4" strokeOpacity={0.5} vertical={false} />
             {/* Zones, cheapest at the bottom. */}
-            {zone(0, band.entryTarget, C.gain, 0.12, 'buy')}
-            {zone(band.entryTarget, band.overvaluedAt, C.azure, 0.05, 'fair')}
-            {zone(band.overvaluedAt, band.sellZoneAt, C.warn, 0.1, 'over')}
-            {zone(band.sellZoneAt, hi * 2, C.loss, 0.13, 'sell')}
+            {zone(0, band.entryTarget, C.gain, 0.15, 'buy')}
+            {zone(band.entryTarget, band.overvaluedAt, C.azure, 0.08, 'fair')}
+            {zone(band.overvaluedAt, band.sellZoneAt, C.warn, 0.14, 'over')}
+            {zone(band.sellZoneAt, hi * 2, C.loss, 0.18, 'sell')}
             <XAxis dataKey="date" tick={{ fontSize: 10, fill: C.textFaint }}
               tickFormatter={(d) => fmtDate(d).replace(/ \d{4}$/, '')} minTickGap={48}
               stroke={C.hairline} />
@@ -122,11 +125,21 @@ export function PriceBandChart({
               labelStyle={{ color: C.textFaint }}
               formatter={(v: number) => [fmtMoney(v, ccy), 'Price']}
               labelFormatter={(d) => fmtDate(d as string)} />
+            {/* Band-boundary dividers at entry / overvalued / sell thresholds. */}
             <ReferenceLine y={band.entryTarget} stroke={C.gain} strokeDasharray="4 3" strokeOpacity={0.8} />
-            <ReferenceLine y={band.fairValue} stroke={C.textFaint} strokeDasharray="2 3" />
+            <ReferenceLine y={band.overvaluedAt} stroke={C.warn} strokeDasharray="4 3" strokeOpacity={0.7} />
             <ReferenceLine y={band.sellZoneAt} stroke={C.loss} strokeDasharray="4 3" strokeOpacity={0.8} />
-            <Line type="monotone" dataKey="close" stroke={C.azure} strokeWidth={1.6} dot={false}
+            {/* Fair value: distinct dashed reference, labelled with its value. */}
+            <ReferenceLine y={band.fairValue} stroke={C.textFaint} strokeDasharray="2 3"
+              label={{ value: `Fair ${fmtMoney(band.fairValue, ccy, false)}`, position: 'insideTopLeft',
+                fill: C.textFaint, fontSize: 10 }} />
+            <Line type="monotone" dataKey="close" stroke={C.azure} strokeWidth={2.2} dot={false}
               isAnimationActive={false} />
+            {/* Latest price — bright marker so "where it is now" reads instantly. */}
+            {lastDate !== undefined && (
+              <ReferenceDot x={lastDate} y={lastPrice} r={3.5} fill={C.azure}
+                stroke={C.bg} strokeWidth={1.5} ifOverflow="extendDomain" />
+            )}
           </ComposedChart>
         </ResponsiveContainer>
       </div>

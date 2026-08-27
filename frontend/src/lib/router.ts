@@ -25,6 +25,7 @@ const SIMPLE_PATHS: Record<Exclude<View, 'position' | 'research' | 'dashboard'>,
   plans: 'plans',
   watchlist: 'watchlist',
   screener: 'screener',
+  alerts: 'alerts',
 };
 
 /** Build the canonical hash for the current store state. */
@@ -66,6 +67,7 @@ function parseHash(): Parsed {
     case 'plans':
     case 'watchlist':
     case 'screener':
+    case 'alerts':
       return { view: head };
     default:
       return { view: 'dashboard' };

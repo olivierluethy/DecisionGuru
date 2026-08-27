@@ -10,6 +10,7 @@ import { Research } from './views/Research';
 import { Plans } from './views/Plans';
 import { Watchlist } from './views/Watchlist';
 import { Screener } from './views/Screener';
+import { Alerts } from './views/Alerts';
 import { ModalHost } from './modals/ModalHost';
 import { useApp } from './store';
 import { api } from './lib/api';
@@ -38,6 +39,7 @@ export default function App() {
         {view === 'plans' && <Plans />}
         {view === 'watchlist' && <Watchlist />}
         {view === 'screener' && <Screener />}
+        {view === 'alerts' && <Alerts />}
       </main>
       <ModalHost />
     </div>

@@ -9,7 +9,8 @@ export type View =
   | 'research'
   | 'plans'
   | 'watchlist'
-  | 'screener';
+  | 'screener'
+  | 'alerts';
 
 export type ModalKind =
   | { kind: 'import' }
@@ -25,6 +26,7 @@ export type ModalKind =
   | { kind: 'recovery'; instrumentId: number }
   | { kind: 'create-plan'; sellInstrumentIds?: number[]; targets?: Array<{ symbol: string; name?: string; allocationPct: number }> }
   | { kind: 'plan-compare'; planId: number }
+  | { kind: 'replay'; symbol: string; name?: string | null }
   | null;
 
 interface AppState {

@@ -11,10 +11,13 @@ import {
   Telescope,
   ClipboardList,
   Eye,
-  Filter,
+  Globe2,
+  Bell,
 } from 'lucide-react';
 import clsx from 'clsx';
+import { useQuery } from '@tanstack/react-query';
 import { useApp } from '../store';
+import { api } from '../lib/api';
 import { MarketHoursStrip } from './MarketHoursStrip';
 
 const NAV = [
@@ -23,22 +26,45 @@ const NAV = [
   { view: 'advisory', label: 'Advisory', icon: Sparkles },
   { view: 'research', label: 'Research', icon: Telescope },
   { view: 'watchlist', label: 'Watchlist', icon: Eye },
-  { view: 'screener', label: 'Screener', icon: Filter },
+  { view: 'screener', label: 'Discover', icon: Globe2 },
+  { view: 'alerts', label: 'Alerts', icon: Bell },
   { view: 'scenarios', label: 'Scenarios', icon: GitCompareArrows },
   { view: 'plans', label: 'Plans', icon: ClipboardList },
 ] as const;
 
 export function Sidebar() {
   const { view, setView, openModal } = useApp();
+  // Poll the unread badge so it reflects background-scan alerts without a manual refresh.
+  const unread = useQuery({
+    queryKey: ['unread-count'],
+    queryFn: api.unreadCount,
+    refetchInterval: 60_000,
+  });
+  const unreadCount = unread.data?.unreadCount ?? 0;
 
   return (
     <aside className="w-60 shrink-0 bg-bg-elev border-r border-hairline flex flex-col h-full">
       <div className="px-5 py-5 border-b border-hairline">
-        <div className="flex items-center gap-2">
-          <TrendingUpDown size={20} className="text-azure" />
-          <span className="font-display text-lg font-semibold tracking-tight">
-            Decision<span className="text-azure">Guru</span>
-          </span>
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <TrendingUpDown size={20} className="text-azure" />
+            <span className="font-display text-lg font-semibold tracking-tight">
+              Decision<span className="text-azure">Guru</span>
+            </span>
+          </div>
+          {/* Header bell → alert centre, with an unread badge. */}
+          <button
+            onClick={() => setView('alerts')}
+            title="Alerts & notifications"
+            className="relative p-1.5 rounded text-text-muted hover:text-text hover:bg-surface-2 transition-colors"
+          >
+            <Bell size={17} className={unreadCount > 0 ? 'text-azure' : ''} />
+            {unreadCount > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 min-w-[15px] h-[15px] px-1 rounded-full bg-loss text-bg text-[9px] font-semibold flex items-center justify-center tnum">
+                {unreadCount > 9 ? '9+' : unreadCount}
+              </span>
+            )}
+          </button>
         </div>
         <p className="text-[11px] text-text-faint mt-1">Portfolio overview · after Swiss tax</p>
       </div>

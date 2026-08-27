@@ -30,8 +30,21 @@ DEFAULT_BENCHMARKS: list[dict] = [
     {"symbol": "SPY", "name": "SPDR S&P 500 ETF Trust", "currency": "USD", "domicile": "US", "incomeYield": 0.013, "accumulating": False},
 ]
 
+# Value-investing knobs. Margin of safety and the discount rate are the two the owner
+# is most likely to tune; the band multipliers define what counts as (significantly)
+# overvalued. All are read by services/valuation.py so a change here (or via Settings)
+# reshapes every fair-value band, entry target, sell signal and alert consistently.
+DEFAULT_VALUATION_SETTINGS: dict = {
+    "marginOfSafety": 0.30,          # buy target = fairValue × (1 − MoS)
+    "discountRate": 0.09,            # WACC proxy for the owner-earnings DCF
+    "terminalGrowth": 0.025,         # perpetual growth beyond the 10y horizon
+    "overvaluedPremium": 0.20,       # price ≥ fairValue × 1.20  → overvalued
+    "significantOvervaluedPremium": 0.40,  # price ≥ fairValue × 1.40 → sell zone
+}
+
 DEFAULT_SETTINGS: dict = {
     "tax": DEFAULT_TAX_SETTINGS,
     "benchmarks": DEFAULT_BENCHMARKS,
     "defaultBenchmarkSymbol": "VWRL.SW",
+    "valuation": DEFAULT_VALUATION_SETTINGS,
 }

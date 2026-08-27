@@ -21,6 +21,7 @@ async def put_settings(request: Request) -> dict:
         **current,
         **incoming,
         "tax": {**current["tax"], **(incoming.get("tax") or {})},
+        "valuation": {**current.get("valuation", {}), **(incoming.get("valuation") or {})},
         "benchmarks": incoming.get("benchmarks") or current["benchmarks"],
     }
     save_settings(merged)

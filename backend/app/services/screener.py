@@ -22,6 +22,7 @@ from .fundamentals import get_cached_fundamentals
 from .valuation import value_analysis
 from .marketdata import price_on
 from .exposure import portfolio_exposure
+from ..reference import geo
 from ..reference.universe import UNIVERSE_SEED
 
 
@@ -97,7 +98,7 @@ def screen_universe(settings: dict) -> dict:
             continue
 
         price = price_on(sym, today)
-        va = value_analysis(sym, price, snap.get("currency"), data=cached)
+        va = value_analysis(sym, price, snap.get("currency"), data=cached, settings=settings)
         if not va.get("hasData"):
             unanalysed.append(sym)
             continue
@@ -120,6 +121,12 @@ def screen_universe(settings: dict) -> dict:
             "price": price,
             "currency": va.get("currency"),
             "marginOfSafety": mos,
+            "fairValue": va.get("fairValue"),
+            "entryTarget": va.get("entryTarget"),
+            "band": (va.get("band") or {}).get("band"),
+            "bandLabel": (va.get("band") or {}).get("label"),
+            "country": geo.country_from_symbol(sym) or geo.country_from_isin(
+                (holdings.get(sym, {}) or {}).get("isin")),
             "intrinsicMid": (va.get("intrinsic") or {}).get("mid"),
             "quality": quality,
             "supportableReturn": supportable,
@@ -142,4 +149,53 @@ def screen_universe(settings: dict) -> dict:
         "unanalysed": unanalysed,
         "sectors": sorted(sectors_present),
         "rows": rows,
+        "geo": _geo_density(rows),
     }
+
+
+def _geo_density(rows: list[dict]) -> list[dict]:
+    """Opportunity density per country for the Discover world map: how many attractive
+    names sit in each market and their average margin of safety, with a centroid so a
+    cobe/marker map can size a point by it. Only genuinely attractive names count toward
+    density; the drill-in list keeps every scored name in that country."""
+    by_country: dict[str, dict] = {}
+    for r in rows:
+        cc = r.get("country")
+        if not cc:
+            continue
+        coord = geo.COUNTRY_COORDS.get(cc)
+        bucket = by_country.setdefault(cc, {
+            "country": cc,
+            "name": (coord or {}).get("name", cc),
+            "lat": (coord or {}).get("lat"),
+            "lng": (coord or {}).get("lng"),
+            "attractiveCount": 0,
+            "totalCount": 0,
+            "mosSum": 0.0,
+            "topSymbols": [],
+        })
+        bucket["totalCount"] += 1
+        mos = r.get("marginOfSafety")
+        if r.get("verdict") == "attractive":
+            bucket["attractiveCount"] += 1
+            if mos is not None:
+                bucket["mosSum"] += max(mos, 0.0)
+        bucket["topSymbols"].append(r["symbol"])
+
+    out: list[dict] = []
+    for cc, b in by_country.items():
+        avg_mos = round(b["mosSum"] / b["attractiveCount"], 4) if b["attractiveCount"] else 0.0
+        out.append({
+            "country": cc,
+            "name": b["name"],
+            "lat": b["lat"],
+            "lng": b["lng"],
+            "attractiveCount": b["attractiveCount"],
+            "totalCount": b["totalCount"],
+            "avgMarginOfSafety": avg_mos,
+            # Density = attractive names weighted by their average discount to fair value.
+            "density": round(b["attractiveCount"] * (1 + avg_mos), 3),
+            "topSymbols": b["topSymbols"][:8],
+        })
+    out.sort(key=lambda c: (c["density"], c["attractiveCount"]), reverse=True)
+    return out

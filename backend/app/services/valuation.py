@@ -16,6 +16,62 @@ TERMINAL_GROWTH = 0.025
 DCF_YEARS = 10
 GROWTH_CAP = 0.15
 
+# Default band multipliers (overridable per-user via settings["valuation"]).
+DEFAULT_MOS = 0.30
+OVERVALUED_PREMIUM = 0.20
+SIGNIFICANT_OVERVALUED_PREMIUM = 0.40
+
+
+def _val_cfg(settings: dict | None) -> dict:
+    """Pull the value-investing knobs from settings with safe fallbacks so the engine
+    works even when called without a settings blob (e.g. bulk screening)."""
+    v = (settings or {}).get("valuation") or {}
+    return {
+        "mos": float(v.get("marginOfSafety", DEFAULT_MOS)),
+        "disc": float(v.get("discountRate", DISCOUNT_RATE)),
+        "tg": float(v.get("terminalGrowth", TERMINAL_GROWTH)),
+        "ov": float(v.get("overvaluedPremium", OVERVALUED_PREMIUM)),
+        "sig": float(v.get("significantOvervaluedPremium", SIGNIFICANT_OVERVALUED_PREMIUM)),
+    }
+
+
+def classify_band(price: float | None, fair_value: float | None, cfg: dict) -> dict | None:
+    """Map a live price onto the fair-value bands. Returns the band key, a plain-language
+    label, the boundary prices, and the buy/fair/overvalued/sell zone edges used to shade
+    the price chart. None when there's no fair value or price to place."""
+    if not fair_value or fair_value <= 0 or not price or price <= 0:
+        return None
+    entry = fair_value * (1 - cfg["mos"])          # attractive buy target
+    over = fair_value * (1 + cfg["ov"])            # overvalued threshold
+    sig = fair_value * (1 + cfg["sig"])            # significantly overvalued / sell zone
+    if price <= entry:
+        band, label = "undervalued", "Undervalued"
+    elif price >= sig:
+        band, label = "significantly-overvalued", "Significantly overvalued"
+    elif price >= over:
+        band, label = "overvalued", "Overvalued"
+    else:
+        band, label = "fair", "Fairly valued"
+    premium = round(price / fair_value - 1, 4)  # +ve = trading above fair value
+    return {
+        "band": band,
+        "label": label,
+        "premiumToFair": premium,
+        "entryTarget": round(entry, 2),
+        "fairValue": round(fair_value, 2),
+        "overvaluedAt": round(over, 2),
+        "sellZoneAt": round(sig, 2),
+        # Zone edges for the price chart's shaded ReferenceAreas (buy ≤ entry,
+        # fair (entry..over), overvalued (over..sig), sell ≥ sig).
+        "zones": {
+            "buy": [0.0, round(entry, 2)],
+            "fair": [round(entry, 2), round(over, 2)],
+            "overvalued": [round(over, 2), round(sig, 2)],
+            "sell": [round(sig, 2), round(sig * 1.6, 2)],
+        },
+        "marginOfSafetyPct": cfg["mos"],
+    }
+
 
 def _clamp(v: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, v))
@@ -108,14 +164,14 @@ def _confidence(snap: dict, models: dict, price: float | None) -> tuple[str, lis
     return conf, flags
 
 
-def _implied_growth(eps0: float | None, price: float | None) -> float | None:
+def _implied_growth(eps0: float | None, price: float | None, r: float = DISCOUNT_RATE) -> float | None:
     """Reverse DCF: the constant growth rate that makes the DCF equal today's price."""
     if not eps0 or eps0 <= 0 or not price or price <= 0:
         return None
     lo, hi = -0.10, 0.40
     for _ in range(64):
         mid = (lo + hi) / 2
-        v = _dcf(eps0, mid, cap=False)
+        v = _dcf(eps0, mid, r=r, cap=False)
         if v is None:
             return None
         if v < price:
@@ -126,9 +182,11 @@ def _implied_growth(eps0: float | None, price: float | None) -> float | None:
 
 
 def value_analysis(symbol: str, price: float | None, currency: str | None = None,
-                   data: dict | None = None) -> dict:
+                   data: dict | None = None, settings: dict | None = None) -> dict:
     # `data` lets callers (e.g. the screener) pass an already-loaded fundamentals payload
-    # so a bulk screen never re-fetches from the rate-limited provider.
+    # so a bulk screen never re-fetches from the rate-limited provider. `settings` carries
+    # the per-user valuation knobs (margin of safety, discount rate, band thresholds).
+    cfg = _val_cfg(settings)
     data = data if data is not None else (fund.get_fundamentals(symbol) or {})
     snap = data.get("snapshot") or {}
     hist = data.get("history") or []
@@ -150,7 +208,7 @@ def value_analysis(symbol: str, price: float | None, currency: str | None = None
         models["grahamNumber"] = round(math.sqrt(22.5 * eps * bvps), 2)
     if eps and eps > 0:
         models["grahamGrowth"] = round(eps * (8.5 + 2 * min(max(g * 100, 0), 15)), 2)
-    dcf = _dcf(base_eps, g)
+    dcf = _dcf(base_eps, g, r=cfg["disc"], tg=cfg["tg"])
     if dcf:
         models["dcf"] = round(dcf, 2)
 
@@ -161,7 +219,12 @@ def value_analysis(symbol: str, price: float | None, currency: str | None = None
         "high": round(vals[-1], 2) if vals else None,
     }
     mos = round(intrinsic["mid"] / price - 1, 4) if (intrinsic["mid"] and price) else None
-    implied_g = _implied_growth(base_eps, price)
+    implied_g = _implied_growth(base_eps, price, r=cfg["disc"])
+
+    # Fair-value bands + attractive entry target. fairValue is the model midpoint; the
+    # bands turn it into a plain buy/fair/overvalued/sell verdict the UI shades on charts.
+    fair_value = intrinsic.get("mid")
+    band = classify_band(price, fair_value, cfg)
 
     def chk(label: str, ok: bool, detail: str) -> dict:
         return {"label": label, "pass": bool(ok), "detail": detail}
@@ -188,6 +251,9 @@ def value_analysis(symbol: str, price: float | None, currency: str | None = None
         "models": models,
         "intrinsic": intrinsic,
         "marginOfSafety": mos,
+        "fairValue": fair_value,
+        "entryTarget": band["entryTarget"] if band else None,
+        "band": band,
         "impliedGrowth": round(implied_g, 4) if implied_g is not None else None,
         "supportableReturn": round((g or 0) + (dy or 0), 4),
         "quality": {"score": sum(1 for c in checks if c["pass"]), "max": len(checks), "checks": checks},

@@ -299,6 +299,7 @@ def get_settings() -> dict:
             **DEFAULT_SETTINGS,
             **stored,
             "tax": {**DEFAULT_SETTINGS["tax"], **(stored.get("tax") or {})},
+            "valuation": {**DEFAULT_SETTINGS["valuation"], **(stored.get("valuation") or {})},
             "benchmarks": stored.get("benchmarks") or DEFAULT_SETTINGS["benchmarks"],
         }
     except Exception:

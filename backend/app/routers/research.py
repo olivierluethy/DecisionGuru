@@ -29,10 +29,51 @@ async def fundamentals(symbol: str, domicile: str | None = None, name: str | Non
 
 
 @router.get("/valuation/{symbol:path}")
-async def valuation(symbol: str, price: float | None = None, currency: str | None = None) -> dict:
-    """Intrinsic-value estimates, a Buffett-style quality scorecard, and the growth the
-    market is pricing in — from cached fundamentals. Estimates only, not advice."""
-    return await run_in_threadpool(value_analysis, symbol, price, currency)
+async def valuation(
+    symbol: str,
+    price: float | None = None,
+    currency: str | None = None,
+    asOf: str | None = None,
+) -> dict:
+    """Intrinsic-value estimates, fair-value bands, an attractive entry target, and a
+    Buffett-style quality scorecard — from cached fundamentals with the user's margin of
+    safety / discount rate. Estimates only, not advice.
+
+    When `asOf` (YYYY-MM-DD) is given, this is a point-in-time replay: the security is
+    valued against its price on that date (last-available fundamentals), returning the
+    band verdict then and the hypothetical price return since. Fundamentals are today's
+    best-available snapshot (the provider has no historical statements here), so the
+    replay is flagged accordingly."""
+    settings = get_settings()
+    if asOf:
+        return await run_in_threadpool(_valuation_as_of, symbol, asOf, currency, settings)
+    return await run_in_threadpool(value_analysis, symbol, price, currency, None, settings)
+
+
+def _valuation_as_of(symbol: str, as_of: str, currency: str | None, settings: dict) -> dict:
+    """Point-in-time replay: value the security at its price on `as_of`, then report the
+    band verdict then plus the hypothetical price return between then and today."""
+    from ..services.marketdata import price_on, get_quote
+
+    hist_price = price_on(symbol, as_of)
+    va = value_analysis(symbol, hist_price, currency, None, settings)
+    quote = get_quote(symbol) or {}
+    now_price = quote.get("price")
+    since_return = (
+        round(now_price / hist_price - 1, 4)
+        if (now_price and hist_price and hist_price > 0)
+        else None
+    )
+    va["asOf"] = as_of
+    va["asOfPrice"] = hist_price
+    va["currentPrice"] = now_price
+    va["hypotheticalReturnSince"] = since_return
+    va["asOfNote"] = (
+        "Valued against the price on this date using today's best-available fundamentals — "
+        "the data provider has no point-in-time financial statements, so the fundamentals are "
+        "current, not as-of. Read the verdict as indicative."
+    )
+    return va
 
 
 @router.get("/projection/{symbol:path}")

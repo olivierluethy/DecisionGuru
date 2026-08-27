@@ -27,6 +27,7 @@ export type ModalKind =
   | { kind: 'create-plan'; sellInstrumentIds?: number[]; targets?: Array<{ symbol: string; name?: string; allocationPct: number }> }
   | { kind: 'plan-compare'; planId: number }
   | { kind: 'replay'; symbol: string; name?: string | null }
+  | { kind: 'opportunity'; symbol: string; name?: string | null; price?: number | null; currency?: string | null }
   | null;
 
 interface AppState {

@@ -55,7 +55,6 @@ function isNewOpportunity(r: ScreenerRow): boolean {
 
 export function Screener() {
   const qc = useQueryClient();
-  const researchSymbolView = useApp((s) => s.researchSymbolView);
   const openModal = useApp((s) => s.openModal);
   const [mode, setMode] = useState<Mode>('all');
   const [sector, setSector] = useState('');
@@ -128,7 +127,11 @@ export function Screener() {
     return [...m.entries()].sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]));
   }, [filtered, groupBy, countryName]);
 
-  const openRow = (sym: string) => researchSymbolView(sym);
+  // Open the fair-value detail modal without leaving Discover (modals, not redirects).
+  const openRow = (sym: string) => {
+    const r = (data?.rows ?? []).find((x) => x.symbol === sym);
+    openModal({ kind: 'opportunity', symbol: sym, name: r?.name, price: r?.price, currency: r?.currency });
+  };
   const openReplay = (symbol: string, name?: string | null) => openModal({ kind: 'replay', symbol, name });
 
   return (

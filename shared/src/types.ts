@@ -314,6 +314,21 @@ export interface AppSettings {
   tax: TaxSettings;
   benchmarks: BenchmarkEtf[];
   defaultBenchmarkSymbol: string;
+  valuation?: ValuationSettings;
+}
+
+/** Value-investing knobs (see backend reference/defaults.py). */
+export interface ValuationSettings {
+  /** Buy target = fairValue × (1 − marginOfSafety). Default 0.30. */
+  marginOfSafety: number;
+  /** WACC proxy for the owner-earnings DCF. Default 0.09. */
+  discountRate: number;
+  /** Perpetual growth beyond the 10y horizon. Default 0.025. */
+  terminalGrowth: number;
+  /** price ≥ fairValue × (1 + overvaluedPremium) → overvalued. Default 0.20. */
+  overvaluedPremium: number;
+  /** price ≥ fairValue × (1 + this) → significantly overvalued / sell zone. Default 0.40. */
+  significantOvervaluedPremium: number;
 }
 
 export interface BenchmarkEtf {

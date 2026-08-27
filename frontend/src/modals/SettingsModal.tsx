@@ -4,7 +4,15 @@ import { AlertTriangle, Info } from 'lucide-react';
 import { Modal } from '../components/Modal';
 import { api } from '../lib/api';
 import { useApp } from '../store';
-import type { AppSettings, TaxSettings } from '@decisionguru/shared';
+import type { AppSettings, TaxSettings, ValuationSettings } from '@decisionguru/shared';
+
+const VALUATION_DEFAULTS: ValuationSettings = {
+  marginOfSafety: 0.3,
+  discountRate: 0.09,
+  terminalGrowth: 0.025,
+  overvaluedPremium: 0.2,
+  significantOvervaluedPremium: 0.4,
+};
 
 export function SettingsModal() {
   const { closeModal } = useApp();
@@ -47,6 +55,9 @@ export function SettingsModal() {
   if (!s) return null;
   const tax = s.tax;
   const setTax = (patch: Partial<TaxSettings>) => setS({ ...s, tax: { ...s.tax, ...patch } });
+  const val = s.valuation ?? VALUATION_DEFAULTS;
+  const setVal = (patch: Partial<ValuationSettings>) =>
+    setS({ ...s, valuation: { ...VALUATION_DEFAULTS, ...s.valuation, ...patch } });
 
   return (
     <Modal
@@ -93,6 +104,14 @@ export function SettingsModal() {
         <Group title="Wealth & other">
           <PctField label="Wealth tax rate (p.a.)" value={tax.wealthTaxRate} onChange={(v) => setTax({ wealthTaxRate: v })} digits={3} />
           <PctField label="Stamp duty per side" value={tax.stampDutyRate} onChange={(v) => setTax({ stampDutyRate: v })} digits={3} />
+        </Group>
+
+        <Group title="Valuation & margin of safety">
+          <PctField label="Margin of safety" value={val.marginOfSafety} onChange={(v) => setVal({ marginOfSafety: v })} digits={0} hint="Buy target = fair value less this discount" />
+          <PctField label="Discount rate (WACC proxy)" value={val.discountRate} onChange={(v) => setVal({ discountRate: v })} digits={0} hint="Rate used in the owner-earnings DCF" />
+          <PctField label="Terminal growth" value={val.terminalGrowth} onChange={(v) => setVal({ terminalGrowth: v })} digits={1} hint="Perpetual growth beyond 10 years" />
+          <PctField label="Overvalued premium" value={val.overvaluedPremium} onChange={(v) => setVal({ overvaluedPremium: v })} digits={0} hint="Above fair value by this → overvalued" />
+          <PctField label="Sell-zone premium" value={val.significantOvervaluedPremium} onChange={(v) => setVal({ significantOvervaluedPremium: v })} digits={0} hint="Above fair value by this → sell signal" />
         </Group>
 
         <Group title="Benchmarks">

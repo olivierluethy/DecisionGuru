@@ -3,8 +3,11 @@ from __future__ import annotations
 from fastapi import APIRouter, Request
 from fastapi.concurrency import run_in_threadpool
 
+from ..core.db import get_settings
 from ..core.errors import ApiError
-from ..services.watchlist import list_watchlist, add_to_watchlist, remove_from_watchlist
+from ..services.watchlist import (
+    list_watchlist, add_to_watchlist, remove_from_watchlist, watchlist_analysis,
+)
 
 router = APIRouter()
 
@@ -12,6 +15,13 @@ router = APIRouter()
 @router.get("")
 async def get_all() -> list[dict]:
     return await run_in_threadpool(list_watchlist)
+
+
+@router.get("/analysis")
+async def get_analysis() -> list[dict]:
+    """Watched names with a computed attractive entry price, gap and valuation reasoning."""
+    settings = get_settings()
+    return await run_in_threadpool(watchlist_analysis, settings)
 
 
 @router.post("")

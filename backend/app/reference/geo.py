@@ -42,7 +42,8 @@ EXCHANGE_COUNTRY: dict[str, str] = {
     "SW": "CH", "L": "GB", "DE": "DE", "F": "DE", "PA": "FR", "AS": "NL",
     "MI": "IT", "MC": "ES", "T": "JP", "HK": "HK", "TW": "TW", "KS": "KR",
     "TO": "CA", "AX": "AU", "ST": "SE", "CO": "DK", "HE": "FI", "OL": "NO",
-    "BR": "BE", "SA": "BR", "MX": "MX", "SI": "SG", "VX": "CH",
+    "BR": "BE", "SA": "BR", "MX": "MX", "SI": "SG", "VX": "CH", "NS": "IN",
+    "BO": "IN",
 }
 
 _ISIN_PREFIX_OVERRIDES = {"KY": "KY", "BM": "BM", "JE": "JE", "GG": "GG", "XS": "XS"}

@@ -26,12 +26,29 @@ _US = [
     "QCOM", "TXN", "COST", "SBUX", "GS", "MS", "PM", "TMO", "AVGO",
 ]
 
-# Europe / UK large caps
+# Europe / UK large caps (STOXX Europe 600 constituents subset)
 _EUROPE = [
     "SHEL.L", "BP.L", "HSBA.L", "AZN.L", "ULVR.L", "GSK.L", "RIO.L", "BATS.L",
     "DGE.L", "VOD.L", "BARC.L", "GLEN.L", "MC.PA", "OR.PA", "AIR.PA", "SAN.PA",
     "BNP.PA", "SAP.DE", "SIE.DE", "ALV.DE", "BAS.DE", "BMW.DE", "VOW3.DE",
-    "DTE.DE", "MBG.DE", "ASML.AS", "PHIA.AS", "TTE.PA",
+    "DTE.DE", "MBG.DE", "ASML.AS", "PHIA.AS", "TTE.PA", "IBE.MC", "ITX.MC",
+    "ENEL.MI", "ISP.MI", "NOVO-B.CO", "NDA-FI.HE", "EQNR.OL", "INVE-B.ST",
 ]
 
-UNIVERSE_SEED: list[str] = [*_SWISS, *_US, *_EUROPE]
+# Asia-Pacific & emerging-market large caps (widen the map beyond CH/US/EU)
+_ASIA = [
+    "7203.T", "6758.T", "9984.T", "0700.HK", "9988.HK", "1299.HK", "005930.KS",
+    "TSM", "BABA", "TCEHY", "RELIANCE.NS", "INFY.NS", "BHP.AX", "CBA.AX",
+]
+
+# Curated global ETF universe — broad market, regional and factor funds, including the
+# VWRL all-world family this app benchmarks against. Valued on relative yield / valuation
+# vs the benchmark when fundamentals are thin.
+_ETFS = [
+    "VWRL.SW", "VWRL.L", "VWRA.L", "VWCE.DE", "VT", "URTH", "ACWI",
+    "CSPX.L", "SPY", "VOO", "IVV", "QQQ", "VTI",
+    "VGK", "EZU", "IEUR", "EWU.L", "EWJ", "MCHI", "EEM", "VWO", "INDA",
+    "VYM", "SCHD", "VIG", "VNQ", "IEF", "TLT", "GLD",
+]
+
+UNIVERSE_SEED: list[str] = [*_SWISS, *_US, *_EUROPE, *_ASIA, *_ETFS]

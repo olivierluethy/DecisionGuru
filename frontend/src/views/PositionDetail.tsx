@@ -346,6 +346,16 @@ export function PositionDetail() {
         </div>
       </section>
 
+      {/* Opportunity cost against every configured ETF — not just the selected one. */}
+      {benchmarkChoices.length > 1 && (
+        <section className="card mb-6">
+          <div className="eyebrow mb-3">
+            Opportunity cost vs each ETF · {preTax ? 'pre-tax' : 'after-tax'} · CHF
+          </div>
+          <MultiEtfOpportunityCost id={id!} preTax={preTax} benchmarks={benchmarkChoices} current={c.benchmarkSymbol} />
+        </section>
+      )}
+
       {/* Full-history price with rebased comparison overlays + stagnation markers */}
       {!delisted && (history.data?.length ?? 0) > 1 && (
         <section className="card mb-6">
@@ -530,6 +540,79 @@ export function PositionDetail() {
         <h3 className="font-display text-base font-semibold mb-3">Notes</h3>
         <NotesPanel target="instrument" targetId={id} />
       </section>
+    </div>
+  );
+}
+
+// ---- Opportunity cost vs multiple ETFs ----------------------------------
+/**
+ * After-tax opportunity cost of this holding measured against every configured
+ * benchmark ETF at once, so the comparison isn't limited to a single ETF. Reuses the
+ * per-benchmark counterfactual endpoint; best-for-you (stock ahead) sorted first.
+ */
+function MultiEtfOpportunityCost({
+  id,
+  preTax,
+  benchmarks,
+  current,
+}: {
+  id: number;
+  preTax: boolean;
+  benchmarks: string[];
+  current: string;
+}) {
+  const results = useQueries({
+    queries: benchmarks.map((sym) => ({
+      queryKey: ['counterfactual', id, sym, preTax],
+      queryFn: () => api.counterfactual(id, sym, preTax),
+    })),
+  });
+
+  const rows = results
+    .map((r, i) => ({ sym: benchmarks[i], data: r.data }))
+    .filter((r): r is { sym: string; data: NonNullable<typeof r.data> } => !!r.data)
+    .map((r) => ({ sym: r.sym, name: r.data.benchmarkName, delta: r.data.deltaCHF, xirr: r.data.benchmarkXirr }))
+    .sort((a, b) => b.delta - a.delta);
+
+  if (rows.length === 0) return <Spinner label="Comparing against your ETFs…" />;
+
+  return (
+    <div className="overflow-x-auto -mx-5">
+      <table className="w-full text-sm">
+        <thead>
+          <tr>
+            <th className="th">ETF</th>
+            <th className="th text-right">ETF XIRR</th>
+            <th className="th text-right">Opportunity cost</th>
+            <th className="th">Verdict</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => {
+            const ahead = r.delta >= 0;
+            return (
+              <tr key={r.sym} className={clsx('hover:bg-surface-2', r.sym === current && 'bg-azure/5')}>
+                <td className="td">
+                  <span className="font-mono text-gold">{r.sym}</span>
+                  <span className="text-text-muted ml-2 text-[13px]">{r.name}</span>
+                  {r.sym === current && <span className="ml-2 text-[10px] uppercase text-azure">selected</span>}
+                </td>
+                <td className="td text-right font-mono tnum text-gold">{fmtPctSigned(r.xirr)}</td>
+                <td className={clsx('td text-right font-mono tnum', plClass(r.delta))}>{fmtCHFSigned(r.delta)}</td>
+                <td className="td">
+                  <span className={clsx('text-[13px]', ahead ? 'text-gain' : 'text-loss')}>
+                    {ahead ? 'stock ahead' : 'ETF ahead'}
+                  </span>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      <p className="text-[11px] text-text-faint mt-3">
+        Positive = {`your stock is ahead of that ETF after tax`}; negative = the money would have done
+        better in the ETF. Same Swiss-tax basis as the headline figure.
+      </p>
     </div>
   );
 }

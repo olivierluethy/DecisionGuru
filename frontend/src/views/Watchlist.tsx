@@ -2,12 +2,14 @@ import { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
 import { Trash2, ArrowUpRight, TrendingUp, TrendingDown } from 'lucide-react';
-import { api, type CompareEntity, type WatchlistItem, type AssetMetrics } from '../lib/api';
+import { BellPlus, Check } from 'lucide-react';
+import { api, type CompareEntity, type WatchlistItem, type AssetMetrics, type WatchlistAnalysisItem } from '../lib/api';
 import { useApp } from '../store';
 import { SymbolSearch, type SymbolPick } from '../components/SymbolSearch';
 import { BenchmarkSelect } from '../components/BenchmarkSelect';
+import { BandBadge } from '../components/ValuationBand';
 import { Spinner, EmptyState, Segmented, KindBadge } from '../components/ui';
-import { fmtPct, fmtPctSigned, fmtNum, plClass } from '../lib/format';
+import { fmtPct, fmtPctSigned, fmtNum, fmtMoney, plClass } from '../lib/format';
 
 const WINDOWS = [
   { value: '3', label: '3Y' },
@@ -63,6 +65,17 @@ export function Watchlist() {
   const benchCagr = cmp?.entities.find((e) => e.type === 'symbol' && e.symbol === benchmark)?.cagr ?? null;
   const bySymbol = new Map(items.map((i) => [i.symbol, i]));
 
+  // Fair-value entry targets for each watched name (closest-to-target first).
+  const { data: analysis } = useQuery({
+    queryKey: ['watchlist-analysis', compareKey],
+    queryFn: api.watchlistAnalysis,
+    enabled: items.length > 0,
+  });
+  const setAlert = useMutation({
+    mutationFn: (symbol: string) => api.createAlert({ symbol, kind: 'buy' }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['unread-count'] }),
+  });
+
   return (
     <div className="p-6 max-w-[1200px] mx-auto">
       <header className="mb-6">
@@ -98,6 +111,39 @@ export function Watchlist() {
           hint="Search for a company or ETF above — Shell, Apple, anything — to start monitoring it against your benchmark."
         />
       ) : (
+        <>
+        {/* Fair-value entry targets — the price at which each name becomes attractive. */}
+        {(analysis?.length ?? 0) > 0 && (
+          <div className="card mb-6">
+            <div className="eyebrow mb-3">Fair value &amp; attractive entry price</div>
+            <div className="overflow-x-auto -mx-5">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr>
+                    <th className="th">Company</th>
+                    <th className="th text-right">Price</th>
+                    <th className="th text-right">Fair value</th>
+                    <th className="th text-right">Entry target</th>
+                    <th className="th text-right">Gap to entry</th>
+                    <th className="th">Valuation</th>
+                    <th className="th w-10"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {analysis!.map((w) => (
+                    <EntryRow key={w.id} w={w} onOpen={() => researchSymbolView(w.symbol)}
+                      onAlert={() => setAlert.mutate(w.symbol)} alerted={setAlert.isSuccess && setAlert.variables === w.symbol} />
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="text-[11px] text-text-faint mt-3">
+              Entry target = fair value less your margin of safety. A negative gap means the price is already
+              at/below the target — the buy zone. Names without cached fundamentals show once valued (open in Research).
+            </p>
+          </div>
+        )}
+
         <div className="card">
           <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
             <div className="eyebrow">Ranked vs {benchmark} &amp; your portfolio · {windowYears}y</div>
@@ -145,8 +191,40 @@ export function Watchlist() {
             money-weighted (XIRR). Model estimates — not advice.
           </p>
         </div>
+        </>
       )}
     </div>
+  );
+}
+
+function EntryRow({ w, onOpen, onAlert, alerted }: {
+  w: WatchlistAnalysisItem; onOpen: () => void; onAlert: () => void; alerted: boolean;
+}) {
+  const ccy = w.currency || '';
+  const inBuyZone = w.gapToEntry != null && w.gapToEntry <= 0;
+  return (
+    <tr className="hover:bg-surface-2">
+      <td className="td">
+        <button className="text-left" onClick={onOpen}>
+          <span className="font-mono text-azure hover:underline">{w.symbol}</span>
+          {w.name && <span className="text-text-muted ml-2 text-[13px]">{w.name}</span>}
+        </button>
+      </td>
+      <td className="td text-right font-mono tnum">{w.price != null ? fmtMoney(w.price, ccy) : '—'}</td>
+      <td className="td text-right font-mono tnum text-text-muted">{w.fairValue != null ? fmtMoney(w.fairValue, ccy) : '—'}</td>
+      <td className="td text-right font-mono tnum text-gain">{w.entryTarget != null ? fmtMoney(w.entryTarget, ccy) : '—'}</td>
+      <td className={clsx('td text-right font-mono tnum', inBuyZone ? 'text-gain' : 'text-text-muted')}>
+        {w.gapToEntry != null ? (inBuyZone ? `in buy zone` : `+${fmtPct(w.gapToEntry, 1)}`) : '—'}
+      </td>
+      <td className="td">{w.band ? <BandBadge band={w.band.band} /> : <span className="text-text-faint text-[12px]">not valued yet</span>}</td>
+      <td className="td text-right">
+        {w.entryTarget != null && (
+          <button className="text-text-faint hover:text-azure transition-colors" title="Alert me at the entry price" onClick={onAlert}>
+            {alerted ? <Check size={14} className="text-gain" /> : <BellPlus size={14} />}
+          </button>
+        )}
+      </td>
+    </tr>
   );
 }
 

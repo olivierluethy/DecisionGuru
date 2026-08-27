@@ -1,9 +1,11 @@
 """Undervalued-stock screener.
 
 Screens (curated seed ∪ holdings ∪ watchlist) using the existing value-investing
-engine (Graham/Buffett intrinsic value + quality) run entirely off *cached*
-fundamentals — a name is only scored once its fundamentals have been fetched (via
-Research/Overview), so the screen never fans out into rate-limited provider calls.
+engine (Graham/Buffett intrinsic value + quality). Scoring runs off *cached*
+fundamentals so the screen itself never blocks on the provider; the cache for the
+whole universe is filled separately by the controlled background warmer
+(`services/screener_warm.py`), so a missing cache entry is a "not fetched yet",
+never a permanent "excluded". Cache = performance optimisation, not eligibility.
 
 Each scored name gets:
   - a value read (margin of safety vs intrinsic mid, Graham/DCF models, quality),

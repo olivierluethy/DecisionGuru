@@ -19,9 +19,14 @@ import time
 from ..core.db import get_settings, get_state, set_state, q
 from ..core.logging import get_logger
 from . import alerts as alerts_svc
+from . import screener_warm
 from .watchlist import list_watchlist
 from .screener import screen_universe
 from .fundamentals import get_cached_fundamentals
+
+# Fundamentals to warm per scan, so the screening universe fills over successive scans
+# without a single large burst against the rate-limited provider.
+SCAN_WARM_BATCH = 40
 
 log = get_logger("scan")
 
@@ -137,6 +142,13 @@ def run_scan(trigger: str = "manual") -> dict:
     with _lock:
         started = time.time()
         settings = get_settings()
+        # Fill a batch of the universe's missing fundamentals first, so each scan makes the
+        # screener cover more of the universe (throttled + resumable inside the warmer).
+        warmed = 0
+        try:
+            warmed = screener_warm.warm_blocking_batch(SCAN_WARM_BATCH, "scan")
+        except Exception as exc:  # noqa: BLE001 — warming must never break the scan
+            log.warning("scan warm batch failed: %s", exc)
         auto = _sync_auto_alerts(settings)
         fired = alerts_svc.evaluate_alerts()
         opps = _detect_new_opportunities(settings)
@@ -144,6 +156,7 @@ def run_scan(trigger: str = "manual") -> dict:
             "trigger": trigger,
             "finishedAt": _now_iso(),
             "durationMs": int((time.time() - started) * 1000),
+            "warmedFundamentals": warmed,
             "alertsFired": len(fired),
             "firedSymbols": [f["symbol"] for f in fired],
             **auto,

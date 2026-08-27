@@ -141,6 +141,40 @@ Responsive to mobile (rail collapses to top bar), visible keyboard focus (azure 
 reduced-motion honoured, hit targets ≥ 36px, contrast AA on `--text`/`--text-muted`
 against surfaces. A persistent "Not financial advice" disclaimer lives in the footer/rail.
 
+## 9b. Valuation bands, sell signals & alerts (value-investing layer)
+
+These reuse the existing tokens — no new colours. Meaning is carried by the reserved
+gain/loss/warn semantics, never decoration.
+
+**Fair-value bands** (a security's price vs its estimated fair value):
+| Band | Colour role | Token |
+|---|---|---|
+| Undervalued (≤ entry target) | gain | `--gain` |
+| Fairly valued | neutral | `--text-muted` / `--hairline-strong` |
+| Overvalued (≥ fair ×1.20) | caution | `--warn` |
+| Significantly overvalued (≥ fair ×1.40) | loss | `--loss` |
+
+- **`BandBadge`** is the canonical chip (dot + label) — reuse it everywhere a band is shown
+  (valuation panel, watchlist, screener, map drill-in, replay).
+- **Price-zone chart** (`PriceBandChart`): the azure price line over shaded `ReferenceArea`
+  zones — buy = `--gain`@12%, fair = `--azure`@5%, overvalued = `--warn`@10%, sell =
+  `--loss`@13% — with dashed guides for the entry target (`--gain`), fair value
+  (`--text-faint`) and sell zone (`--loss`). This is the only place price and valuation
+  share an axis; keep the azure price line dominant.
+- **Sell signal** is a loss-bordered card; the crown figure is the **after-tax gain if sold
+  now** in `display-l`/mono, gain-coloured. State the tax fact plainly (capital gains are
+  tax-free for a private investor); never say "sell".
+- **Attractive entry price** = fair value × (1 − margin of safety), always gain-coloured.
+
+**Alerts & notifications:** buy alerts carry a `--gain` up-glyph, sell alerts a `--loss`
+down-glyph; `auto` (scan-maintained) alerts get a faint `auto` chip. Triggered alerts use a
+`--warn` surface. The header **bell** shows an unread count in a `--loss` dot badge — the one
+place a small red badge is allowed, because an unread alert is genuinely actionable.
+
+**Discover map:** the signature **cobe** globe (§7) doubles as the opportunity map — gold
+markers sized by opportunity density; the country rail is the legend and the drill-in
+trigger. No second map metaphor.
+
 ## 10. Voice
 
 Plain, factual, instrument-like. State numbers; never advise. "You'd have CHF 4,120

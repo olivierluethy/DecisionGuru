@@ -896,7 +896,7 @@ function AllocationCard({ instrumentId }: { instrumentId: number }) {
       </p>
       {a ? (
         <>
-          <Globe allocation={a} size={260} />
+          <Globe allocation={a} size={260} autoRotate={false} />
           <div className="w-full mt-4 space-y-3">
             <AllocList title="Countries" items={a.countries.slice(0, 6).map((c) => ({ label: c.label, weight: c.weight }))} />
             {a.sectors.length > 0 && (

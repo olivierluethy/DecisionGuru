@@ -197,7 +197,7 @@ function AssetView({ symbol, onReset }: { symbol: string; onReset: () => void })
           {data.allocation.countries?.length ? (
             <>
               <div className="flex justify-center mb-4">
-                <Globe allocation={data.allocation} size={240} />
+                <Globe allocation={data.allocation} size={240} autoRotate={false} />
               </div>
               <ExposureBars countries={data.allocation.countries} sectors={data.allocation.sectors} columns={false} />
             </>

@@ -5,17 +5,24 @@ import type { AllocationBreakdown } from '@decisionguru/shared';
 interface Props {
   allocation: AllocationBreakdown;
   size?: number;
+  /**
+   * When true (default, e.g. the Overview globe) the globe gently auto-spins while
+   * idle. Company detail views pass `false`: the globe opens centered on the
+   * company's primary location and stays put, but manual drag still works.
+   */
+  autoRotate?: boolean;
 }
 
 const TWO_PI = Math.PI * 2;
 
 /**
  * cobe globe with gold markers sized by allocation weight. Click-and-drag to rotate
- * (both axes); auto-spin pauses while dragging and resumes on release. On open it
- * orients to the heaviest-weighted country so the primary marker faces the viewer —
- * markers are always drawn, so you never have to wait for the spin to bring one around.
+ * (both axes). On open it orients to the heaviest-weighted country so the primary
+ * marker faces the viewer — markers are always drawn, so you never have to wait for a
+ * spin to bring one around. With `autoRotate` (the default) it gently spins while idle
+ * and resumes after a drag; with `autoRotate={false}` it holds the focused view.
  */
-export function Globe({ allocation, size = 300 }: Props) {
+export function Globe({ allocation, size = 300, autoRotate = true }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [dragging, setDragging] = useState(false);
 
@@ -34,6 +41,9 @@ export function Globe({ allocation, size = 300 }: Props) {
   const theta = useRef(initialTheta);
   const draggingRef = useRef(false);
   const pointer = useRef<{ x: number; y: number } | null>(null);
+  // Live-read inside the render loop so toggling autoRotate never re-creates the globe.
+  const autoRotateRef = useRef(autoRotate);
+  autoRotateRef.current = autoRotate;
 
   useEffect(() => {
     if (!canvasRef.current) return;
@@ -53,7 +63,7 @@ export function Globe({ allocation, size = 300 }: Props) {
       glowColor: [0.1, 0.32, 0.55],
       markers,
       onRender: (state) => {
-        if (!draggingRef.current) phi.current += 0.004; // gentle auto-spin when idle
+        if (autoRotateRef.current && !draggingRef.current) phi.current += 0.004; // gentle auto-spin when idle
         state.phi = phi.current;
         state.theta = theta.current;
         state.width = width * 2;

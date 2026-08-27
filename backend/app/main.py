@@ -68,6 +68,7 @@ def create_app() -> FastAPI:
         plans,
         research,
         scenarios,
+        screener,
         settings as settings_router,
         transactions,
         watchlist,
@@ -87,6 +88,7 @@ def create_app() -> FastAPI:
     app.include_router(export.router, prefix="/api/export", tags=["export"])
     app.include_router(data.router, prefix="/api/data", tags=["data"])
     app.include_router(watchlist.router, prefix="/api/watchlist", tags=["watchlist"])
+    app.include_router(screener.router, prefix="/api/screener", tags=["screener"])
 
     return app
 

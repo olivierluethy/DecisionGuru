@@ -125,8 +125,11 @@ def _implied_growth(eps0: float | None, price: float | None) -> float | None:
     return (lo + hi) / 2
 
 
-def value_analysis(symbol: str, price: float | None, currency: str | None = None) -> dict:
-    data = fund.get_fundamentals(symbol) or {}
+def value_analysis(symbol: str, price: float | None, currency: str | None = None,
+                   data: dict | None = None) -> dict:
+    # `data` lets callers (e.g. the screener) pass an already-loaded fundamentals payload
+    # so a bulk screen never re-fetches from the rate-limited provider.
+    data = data if data is not None else (fund.get_fundamentals(symbol) or {})
     snap = data.get("snapshot") or {}
     hist = data.get("history") or []
     ccy = currency or snap.get("currency")

@@ -26,6 +26,14 @@ def _now_ms() -> int:
     return int(time.time() * 1000)
 
 
+def get_cached_fundamentals(symbol: str) -> dict | None:
+    """Cache-only read — never triggers the live scrape. The screener uses this so a
+    large candidate universe can't fan out into hundreds of (rate-limited) provider
+    calls; stale rows are fine for a value screen and returned as-is."""
+    cached = db.q("SELECT payload FROM fundamentals_cache WHERE symbol = ?").get((symbol,))
+    return json.loads(cached["payload"]) if cached else None
+
+
 def get_fundamentals(symbol: str) -> dict | None:
     cached = db.q("SELECT payload, fetchedAt FROM fundamentals_cache WHERE symbol = ?").get((symbol,))
     if cached and (_now_ms() - cached["fetchedAt"] < settings.cache_ttl_fundamentals * 1000):

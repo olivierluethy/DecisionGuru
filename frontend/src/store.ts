@@ -8,7 +8,8 @@ export type View =
   | 'decisions'
   | 'research'
   | 'plans'
-  | 'watchlist';
+  | 'watchlist'
+  | 'screener';
 
 export type ModalKind =
   | { kind: 'import' }

@@ -247,6 +247,9 @@ export const api = {
       body: JSON.stringify({ entities, windowYears }),
     }),
 
+  // screener
+  screen: () => req<ScreenerResult>('/screener'),
+
   // watchlist
   listWatchlist: () => req<WatchlistItem[]>('/watchlist'),
   addToWatchlist: (item: { symbol: string; name?: string | null; kind?: string }) =>
@@ -753,6 +756,34 @@ export interface ResearchAsset {
   allocation: AllocationBreakdown;
   movements: MovementsResponse;
   news: NewsItem[];
+}
+export type ScreenerVerdict = 'attractive' | 'cheap-only' | 'fair' | 'expensive' | 'unknown';
+export interface ScreenerRow {
+  symbol: string;
+  name: string | null;
+  sector: string | null;
+  price: number | null;
+  currency: string | null;
+  marginOfSafety: number | null;
+  intrinsicMid: number | null;
+  quality: { score: number; max: number };
+  supportableReturn: number | null;
+  dividendYield: number | null;
+  impliedGrowth: number | null;
+  confidence: string | null;
+  attractiveness: number;
+  verdict: ScreenerVerdict;
+  portfolioFit: { status: string; sectorWeight: number };
+  inPortfolio: boolean;
+  onWatchlist: boolean;
+}
+export interface ScreenerResult {
+  universeSize: number;
+  analysedCount: number;
+  unanalysedCount: number;
+  unanalysed: string[];
+  sectors: string[];
+  rows: ScreenerRow[];
 }
 export interface WatchlistItem {
   id: number;

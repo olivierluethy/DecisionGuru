@@ -21,6 +21,8 @@ export type ModalKind =
 interface AppState {
   view: View;
   selectedInstrumentId: number | null;
+  /** Symbol shown in the Research view — held in the store so it can be deep-linked. */
+  researchSymbol: string | null;
   modal: ModalKind;
   preTax: boolean;
   benchmark: string;
@@ -29,6 +31,9 @@ interface AppState {
 
   setView: (v: View) => void;
   selectInstrument: (id: number) => void;
+  setResearchSymbol: (s: string | null) => void;
+  /** Jump straight to the Research view for a given symbol (deep-link friendly). */
+  researchSymbolView: (s: string) => void;
   openModal: (m: ModalKind) => void;
   closeModal: () => void;
   setPreTax: (v: boolean) => void;
@@ -40,6 +45,7 @@ interface AppState {
 export const useApp = create<AppState>((set) => ({
   view: 'dashboard',
   selectedInstrumentId: null,
+  researchSymbol: null,
   modal: null,
   preTax: false,
   benchmark: 'VWRL.SW',
@@ -47,6 +53,8 @@ export const useApp = create<AppState>((set) => ({
 
   setView: (view) => set({ view }),
   selectInstrument: (id) => set({ selectedInstrumentId: id, view: 'position' }),
+  setResearchSymbol: (researchSymbol) => set({ researchSymbol }),
+  researchSymbolView: (researchSymbol) => set({ researchSymbol, view: 'research' }),
   openModal: (modal) => set({ modal }),
   closeModal: () => set({ modal: null }),
   setPreTax: (preTax) => set({ preTax }),

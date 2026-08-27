@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import clsx from 'clsx';
 import { Check, X, CircleHelp, RefreshCw } from 'lucide-react';
 import { api, type AssetMetrics } from '../lib/api';
+import { useApp } from '../store';
 import { SymbolSearch } from '../components/SymbolSearch';
 import { PriceMovementChart } from '../components/PriceMovementChart';
 import { ExposureBars } from '../components/ExposureBars';
@@ -214,7 +215,9 @@ function AssetView({ symbol, onReset }: { symbol: string; onReset: () => void })
 }
 
 export function Research() {
-  const [symbol, setSymbol] = useState<string | null>(null);
+  // Symbol lives in the store so the Research view is deep-linkable (#/research/AAPL).
+  const symbol = useApp((s) => s.researchSymbol);
+  const setSymbol = useApp((s) => s.setResearchSymbol);
 
   return (
     <div className="p-6 max-w-[1200px] mx-auto">

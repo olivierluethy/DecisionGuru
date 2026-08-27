@@ -830,6 +830,8 @@ export interface ScreenerRow {
   symbol: string;
   name: string | null;
   sector: string | null;
+  industry: string | null;
+  theme: string | null;
   price: number | null;
   currency: string | null;
   marginOfSafety: number | null;
@@ -838,6 +840,10 @@ export interface ScreenerRow {
   band: ValuationBandKey | null;
   bandLabel: string | null;
   country: string | null;
+  // "Freshly attractive / mover" flags, populated from the last scan's diff.
+  isNew: boolean;
+  priceChangePct: number | null;
+  becameAttractiveAt: string | null;
   intrinsicMid: number | null;
   quality: { score: number; max: number };
   supportableReturn: number | null;
@@ -867,6 +873,7 @@ export interface ScreenerResult {
   unanalysedCount: number;
   unanalysed: string[];
   sectors: string[];
+  themes: string[];
   rows: ScreenerRow[];
   geo: GeoDensity[];
 }

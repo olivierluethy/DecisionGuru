@@ -1,10 +1,10 @@
 import { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
-import { ArrowUpRight, Eye, Info, Clock, Globe2 } from 'lucide-react';
+import { ArrowUpRight, Eye, Info, Clock, Globe2, Sparkles } from 'lucide-react';
 import { api, type ScreenerRow, type ScreenerVerdict } from '../lib/api';
 import { useApp } from '../store';
-import { Spinner, EmptyState } from '../components/ui';
+import { Spinner, EmptyState, Segmented } from '../components/ui';
 import { DiscoverMap } from '../components/DiscoverMap';
 import { fmtPct, fmtPctSigned, fmtNum, plClass } from '../lib/format';
 
@@ -44,13 +44,25 @@ function AttractivenessBar({ value }: { value: number }) {
   );
 }
 
+type Mode = 'all' | 'new';
+type GroupBy = 'none' | 'sector' | 'theme' | 'country';
+type SortBy = 'attractiveness' | 'fresh';
+
+/** A not-yet-owned name that clears the attractiveness bar. */
+function isNewOpportunity(r: ScreenerRow): boolean {
+  return !r.inPortfolio && r.verdict === 'attractive';
+}
+
 export function Screener() {
   const qc = useQueryClient();
   const researchSymbolView = useApp((s) => s.researchSymbolView);
   const openModal = useApp((s) => s.openModal);
+  const [mode, setMode] = useState<Mode>('all');
   const [sector, setSector] = useState('');
+  const [theme, setTheme] = useState('');
   const [verdict, setVerdict] = useState('');
-  const [groupBySector, setGroupBySector] = useState(false);
+  const [groupBy, setGroupBy] = useState<GroupBy>('none');
+  const [sortBy, setSortBy] = useState<SortBy>('attractiveness');
 
   const { data, isLoading, isError } = useQuery({ queryKey: ['screener'], queryFn: api.screen });
 
@@ -67,22 +79,54 @@ export function Screener() {
     [watchlistQ.data],
   );
 
+  // Country code → display name (from the geo rollup) for the country grouping labels.
+  const countryName = useMemo(
+    () => new Map((data?.geo ?? []).map((g) => [g.country, g.name])),
+    [data],
+  );
+
   const filtered = useMemo(() => {
     let rows = data?.rows ?? [];
+    if (mode === 'new') rows = rows.filter(isNewOpportunity); // not held + attractive
     if (sector) rows = rows.filter((r) => r.sector === sector);
+    if (theme) rows = rows.filter((r) => r.theme === theme);
     if (verdict) rows = rows.filter((r) => r.verdict === verdict);
+    rows = [...rows];
+    if (sortBy === 'fresh') {
+      // Freshly attractive first, then biggest price drop, then attractiveness.
+      rows.sort((a, b) =>
+        Number(b.isNew) - Number(a.isNew) ||
+        (a.priceChangePct ?? 0) - (b.priceChangePct ?? 0) ||
+        b.attractiveness - a.attractiveness);
+    } else {
+      rows.sort((a, b) => b.attractiveness - a.attractiveness || (b.marginOfSafety ?? -1) - (a.marginOfSafety ?? -1));
+    }
     return rows;
-  }, [data, sector, verdict]);
+  }, [data, mode, sector, theme, verdict, sortBy]);
+
+  // Names that newly became attractive since the last scan (movers strip).
+  const freshNames = useMemo(() => filtered.filter((r) => r.isNew), [filtered]);
+
+  // The map reflects the mode (not the dropdown filters): all names, or not-yet-owned
+  // attractive names only.
+  const mapRows = useMemo(
+    () => (mode === 'new' ? (data?.rows ?? []).filter(isNewOpportunity) : (data?.rows ?? [])),
+    [data, mode],
+  );
 
   const grouped = useMemo(() => {
-    if (!groupBySector) return null;
+    if (groupBy === 'none') return null;
+    const keyOf = (r: ScreenerRow) =>
+      groupBy === 'sector' ? (r.sector ?? 'Other')
+        : groupBy === 'theme' ? (r.theme ?? 'Other')
+        : (r.country ? (countryName.get(r.country) ?? r.country) : 'Unknown market');
     const m = new Map<string, ScreenerRow[]>();
     for (const r of filtered) {
-      const k = r.sector ?? 'Other';
+      const k = keyOf(r);
       (m.get(k) ?? m.set(k, []).get(k)!).push(r);
     }
-    return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0]));
-  }, [filtered, groupBySector]);
+    return [...m.entries()].sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]));
+  }, [filtered, groupBy, countryName]);
 
   const openRow = (sym: string) => researchSymbolView(sym);
   const openReplay = (symbol: string, name?: string | null) => openModal({ kind: 'replay', symbol, name });
@@ -110,6 +154,9 @@ export function Screener() {
             <Info size={13} />
             <span>
               Scored <span className="text-text">{data.analysedCount}</span> of {data.universeSize} names.
+              {mode === 'new' && (
+                <> <span className="text-gain">{data.rows.filter(isNewOpportunity).length}</span> not-yet-owned opportunities.</>
+              )}
               {data.unanalysedCount > 0 && (
                 <> {data.unanalysedCount} not analysed yet — open any in Research to fetch its fundamentals, then re-run.</>
               )}
@@ -123,11 +170,45 @@ export function Screener() {
             />
           ) : (
             <>
-              {/* World map — where the value is, by market. */}
+              {/* Mode toggle — All names (default, unchanged) vs New opportunities. */}
+              <div className="flex items-center gap-3 mb-4 flex-wrap">
+                <Segmented
+                  options={[{ value: 'all', label: 'All names' }, { value: 'new', label: 'New opportunities' }]}
+                  value={mode}
+                  onChange={(m) => { setMode(m as Mode); if (m === 'new') setSortBy('fresh'); }}
+                />
+                {mode === 'new' && (
+                  <span className="text-[12px] text-text-faint">
+                    Not-yet-owned names that clear the attractiveness bar — held names hidden.
+                  </span>
+                )}
+              </div>
+
+              {/* World map — where the value is, by market (reflects the mode). */}
               {(data.geo?.length ?? 0) > 0 && (
                 <div className="card mb-6">
                   <div className="eyebrow mb-3 flex items-center gap-2"><Globe2 size={13} /> Opportunity map</div>
-                  <DiscoverMap geo={data.geo} rows={data.rows} onOpen={openRow} onReplay={openReplay} />
+                  <DiscoverMap geo={data.geo} rows={mapRows} onOpen={openRow} onReplay={openReplay} />
+                </div>
+              )}
+
+              {/* Freshly-attractive strip in New-opportunities mode. */}
+              {mode === 'new' && freshNames.length > 0 && (
+                <div className="card mb-6 border-l-2 border-l-gain bg-gain/5">
+                  <div className="eyebrow mb-2 flex items-center gap-2"><Sparkles size={13} className="text-gain" /> New opportunities today</div>
+                  <div className="flex flex-wrap gap-2">
+                    {freshNames.map((r) => (
+                      <button key={r.symbol} onClick={() => openRow(r.symbol)}
+                        className="chip !py-1 hover:border-gain/50 transition-colors"
+                        title={`Became attractive · MoS ${r.marginOfSafety != null ? fmtPct(r.marginOfSafety, 0) : '—'}`}>
+                        <span className="w-1.5 h-1.5 rounded-full bg-gain" />
+                        <span className="font-mono text-text ml-1.5">{r.symbol}</span>
+                        {r.priceChangePct != null && r.priceChangePct < 0 && (
+                          <span className="text-loss ml-1.5 tnum">{fmtPctSigned(r.priceChangePct, 0)}</span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               )}
 
@@ -138,15 +219,33 @@ export function Screener() {
                     <option key={s} value={s}>{s}</option>
                   ))}
                 </select>
-                <select className="input w-auto" value={verdict} onChange={(e) => setVerdict(e.target.value)}>
-                  {VERDICT_FILTERS.map((v) => (
-                    <option key={v.value} value={v.value}>{v.label}</option>
+                <select className="input w-auto" value={theme} onChange={(e) => setTheme(e.target.value)}>
+                  <option value="">All industries / themes</option>
+                  {(data.themes ?? []).map((t) => (
+                    <option key={t} value={t}>{t}</option>
                   ))}
                 </select>
-                <label className="flex items-center gap-2 text-[13px] text-text-muted ml-auto cursor-pointer">
-                  <input type="checkbox" checked={groupBySector} onChange={(e) => setGroupBySector(e.target.checked)} />
-                  Group by sector
-                </label>
+                {mode === 'all' && (
+                  <select className="input w-auto" value={verdict} onChange={(e) => setVerdict(e.target.value)}>
+                    {VERDICT_FILTERS.map((v) => (
+                      <option key={v.value} value={v.value}>{v.label}</option>
+                    ))}
+                  </select>
+                )}
+                <div className="flex items-center gap-2 ml-auto">
+                  <label className="text-[12px] text-text-faint">Group</label>
+                  <select className="input w-auto" value={groupBy} onChange={(e) => setGroupBy(e.target.value as GroupBy)}>
+                    <option value="none">No grouping</option>
+                    <option value="sector">Sector</option>
+                    <option value="theme">Industry / theme</option>
+                    <option value="country">Country</option>
+                  </select>
+                  <label className="text-[12px] text-text-faint ml-1">Sort</label>
+                  <select className="input w-auto" value={sortBy} onChange={(e) => setSortBy(e.target.value as SortBy)}>
+                    <option value="attractiveness">Attractiveness</option>
+                    <option value="fresh">Recently attractive / price drop</option>
+                  </select>
+                </div>
               </div>
 
               <div className="card">
@@ -179,7 +278,12 @@ export function Screener() {
                   </table>
                 </div>
                 {filtered.length === 0 && (
-                  <p className="text-sm text-text-faint mt-3">No names match these filters.</p>
+                  <p className="text-sm text-text-faint mt-3">
+                    {mode === 'new'
+                      ? 'No not-yet-owned names clear the bar in this slice yet. '
+                      : 'No names match these filters. '}
+                    Open more companies in Research to fetch their fundamentals, then re-run the screen.
+                  </p>
                 )}
                 <p className="text-[11px] text-text-faint mt-3">
                   Intrinsic value from Graham number / Graham growth / owner-earnings DCF on cached
@@ -212,7 +316,7 @@ function SectorGroup({
   return (
     <>
       <tr>
-        <td colSpan={12} className="pt-4 pb-1 px-3 eyebrow text-gold">{sector} · {rows.length}</td>
+        <td colSpan={11} className="pt-4 pb-1 px-3 eyebrow text-gold">{sector} · {rows.length}</td>
       </tr>
       {rows.map((r) => (
         <Row key={r.symbol} r={r} watched={watched.has(r.symbol)} onOpen={onOpen} onWatch={() => onWatch(r)} onReplay={onReplay} />
@@ -243,7 +347,13 @@ function Row({
           <ArrowUpRight size={12} className="text-text-faint opacity-0 group-hover:opacity-100" />
         </button>
         {r.inPortfolio && <span className="ml-2 text-[10px] uppercase text-gain/80">held</span>}
+        {r.isNew && (
+          <span className="ml-2 chip !py-0 !px-1.5 text-[9px] text-gain border-gain/40" title="Newly became attractive since the last scan">NEW</span>
+        )}
         {r.name && <div className="text-[12px] text-text-muted truncate max-w-[220px]">{r.name}</div>}
+        {r.theme && r.theme !== r.sector && (
+          <div className="text-[10px] text-text-faint uppercase tracking-wide">{r.theme}</div>
+        )}
       </td>
       <td className="td text-text-muted text-[13px]">{r.sector ?? '—'}</td>
       <td className="td text-right font-mono tnum text-text-muted">

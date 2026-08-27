@@ -22,7 +22,35 @@ export function DiscoverMap({
   onOpen: (symbol: string) => void;
   onReplay: (symbol: string, name?: string | null) => void;
 }) {
-  const withCoords = useMemo(() => geo.filter((g) => g.lat != null && g.lng != null && g.density > 0), [geo]);
+  // Density is derived from the ROWS we're given (already filtered to the active mode),
+  // using the backend geo array only as a centroid/name lookup — so the map tracks the
+  // All-names / New-opportunities toggle automatically.
+  const withCoords = useMemo(() => {
+    const coords = new Map(geo.map((g) => [g.country, g]));
+    const byCountry = new Map<string, { attractive: number; total: number; mosSum: number }>();
+    for (const r of rows) {
+      if (!r.country) continue;
+      const b = byCountry.get(r.country) ?? { attractive: 0, total: 0, mosSum: 0 };
+      b.total += 1;
+      if (r.verdict === 'attractive') {
+        b.attractive += 1;
+        if (r.marginOfSafety != null) b.mosSum += Math.max(r.marginOfSafety, 0);
+      }
+      byCountry.set(r.country, b);
+    }
+    const out: GeoDensity[] = [];
+    for (const [cc, b] of byCountry) {
+      const c = coords.get(cc);
+      if (!c || c.lat == null || c.lng == null || b.attractive === 0) continue;
+      const avgMos = b.attractive ? b.mosSum / b.attractive : 0;
+      out.push({
+        country: cc, name: c.name, lat: c.lat, lng: c.lng,
+        attractiveCount: b.attractive, totalCount: b.total,
+        avgMarginOfSafety: avgMos, density: b.attractive * (1 + avgMos), topSymbols: [],
+      });
+    }
+    return out.sort((a, b) => b.density - a.density);
+  }, [geo, rows]);
   const [selected, setSelected] = useState<string | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [dragging, setDragging] = useState(false);

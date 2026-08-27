@@ -7,6 +7,21 @@ import clsx from 'clsx';
 import { api, type ValuationBand, type ValuationBandKey } from '../lib/api';
 import { fmtMoney, fmtDate, fmtPct } from '../lib/format';
 
+/** Recharts stroke/fill props are SVG *presentation attributes*, where `var(--token)` does
+ *  not resolve — and these tokens are Tailwind theme values, not CSS custom properties, so
+ *  no such CSS var exists anyway. Passing `var(--…)` renders black on --bg (invisible), which
+ *  is what left this chart blank. Mirror the tailwind.config hex here and pass literals. */
+const C = {
+  gain: '#31D6A0',
+  loss: '#FF5D6C',
+  warn: '#F0B34A',
+  azure: '#3DA9FC',
+  textFaint: '#5F6E82',
+  hairline: '#243040',
+  surface2: '#1A2331',
+  bg: '#0A0E15',
+} as const;
+
 /** Band → semantic colour + copy. Reuses the reserved gain/loss/warn tokens: a cheap
  *  price is a gain, an expensive one a loss, with gold marking the overvalued step. */
 export const BAND_META: Record<ValuationBandKey, { label: string; text: string; border: string; dot: string }> = {
@@ -92,25 +107,25 @@ export function PriceBandChart({
         <ResponsiveContainer>
           <ComposedChart data={data} margin={{ top: 6, right: 8, bottom: 0, left: 0 }}>
             {/* Zones, cheapest at the bottom. */}
-            {zone(0, band.entryTarget, 'var(--gain)', 0.12, 'buy')}
-            {zone(band.entryTarget, band.overvaluedAt, 'var(--azure)', 0.05, 'fair')}
-            {zone(band.overvaluedAt, band.sellZoneAt, 'var(--warn)', 0.1, 'over')}
-            {zone(band.sellZoneAt, hi * 2, 'var(--loss)', 0.13, 'sell')}
-            <XAxis dataKey="date" tick={{ fontSize: 10, fill: 'var(--text-faint)' }}
+            {zone(0, band.entryTarget, C.gain, 0.12, 'buy')}
+            {zone(band.entryTarget, band.overvaluedAt, C.azure, 0.05, 'fair')}
+            {zone(band.overvaluedAt, band.sellZoneAt, C.warn, 0.1, 'over')}
+            {zone(band.sellZoneAt, hi * 2, C.loss, 0.13, 'sell')}
+            <XAxis dataKey="date" tick={{ fontSize: 10, fill: C.textFaint }}
               tickFormatter={(d) => fmtDate(d).replace(/ \d{4}$/, '')} minTickGap={48}
-              stroke="var(--hairline)" />
-            <YAxis domain={[lo, hi]} tick={{ fontSize: 10, fill: 'var(--text-faint)' }}
-              width={52} stroke="var(--hairline)" tickFormatter={(v) => fmtMoney(v, ccy, false)} />
+              stroke={C.hairline} />
+            <YAxis domain={[lo, hi]} tick={{ fontSize: 10, fill: C.textFaint }}
+              width={52} stroke={C.hairline} tickFormatter={(v) => fmtMoney(v, ccy, false)} />
             <Tooltip
-              contentStyle={{ background: 'var(--surface-2)', border: '1px solid var(--hairline)',
+              contentStyle={{ background: C.surface2, border: `1px solid ${C.hairline}`,
                 borderRadius: 6, fontSize: 12 }}
-              labelStyle={{ color: 'var(--text-faint)' }}
+              labelStyle={{ color: C.textFaint }}
               formatter={(v: number) => [fmtMoney(v, ccy), 'Price']}
               labelFormatter={(d) => fmtDate(d as string)} />
-            <ReferenceLine y={band.entryTarget} stroke="var(--gain)" strokeDasharray="4 3" strokeOpacity={0.8} />
-            <ReferenceLine y={band.fairValue} stroke="var(--text-faint)" strokeDasharray="2 3" />
-            <ReferenceLine y={band.sellZoneAt} stroke="var(--loss)" strokeDasharray="4 3" strokeOpacity={0.8} />
-            <Line type="monotone" dataKey="close" stroke="var(--azure)" strokeWidth={1.6} dot={false}
+            <ReferenceLine y={band.entryTarget} stroke={C.gain} strokeDasharray="4 3" strokeOpacity={0.8} />
+            <ReferenceLine y={band.fairValue} stroke={C.textFaint} strokeDasharray="2 3" />
+            <ReferenceLine y={band.sellZoneAt} stroke={C.loss} strokeDasharray="4 3" strokeOpacity={0.8} />
+            <Line type="monotone" dataKey="close" stroke={C.azure} strokeWidth={1.6} dot={false}
               isAnimationActive={false} />
           </ComposedChart>
         </ResponsiveContainer>

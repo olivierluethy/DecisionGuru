@@ -175,6 +175,14 @@ place a small red badge is allowed, because an unread alert is genuinely actiona
 markers sized by opportunity density; the country rail is the legend and the drill-in
 trigger. No second map metaphor.
 
+**Discover — New-opportunities mode:** the *All names / New opportunities* toggle is a
+standard `Segmented` control; New-opportunities is never the default (All names is, to
+preserve prior behaviour). A freshly-attractive name carries a `--gain` **`NEW`** chip and
+appears in the gain-bordered "New opportunities today" strip (same treatment as the
+sell-signal card, gain side). Grouping (Sector / Industry-theme / Country) reuses the gold
+group-header eyebrow. A screened name's row opens the **OpportunityModal** (reuses
+ValueAnalysis) — detail is a modal, never a redirect.
+
 ## 10. Voice
 
 Plain, factual, instrument-like. State numbers; never advise. "You'd have CHF 4,120

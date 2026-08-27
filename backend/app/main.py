@@ -57,6 +57,7 @@ def create_app() -> FastAPI:
 
     # Routers (mounted under /api to match the frontend contract).
     from .routers import (
+        alerts,
         analysis,
         data,
         decisions,
@@ -89,6 +90,16 @@ def create_app() -> FastAPI:
     app.include_router(data.router, prefix="/api/data", tags=["data"])
     app.include_router(watchlist.router, prefix="/api/watchlist", tags=["watchlist"])
     app.include_router(screener.router, prefix="/api/screener", tags=["screener"])
+    app.include_router(alerts.router, prefix="/api/alerts", tags=["alerts"])
+
+    # Kick off the 6-hourly opportunity scan (maintains fair-value alerts, evaluates
+    # them, surfaces new opportunities). Runs off cached data; never blocks startup.
+    try:
+        from .services.scan import start_scheduler
+
+        start_scheduler()
+    except Exception:  # noqa: BLE001 — the app must start even if the scheduler can't
+        pass
 
     return app
 

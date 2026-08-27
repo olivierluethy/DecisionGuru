@@ -202,6 +202,52 @@ CREATE TABLE IF NOT EXISTS watchlist (
   kind TEXT NOT NULL DEFAULT 'stock',
   addedAt TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- Price alerts driven by computed fair-value targets. A BUY alert fires when the price
+-- falls to/through its attractive entry target (fairValue×(1−MoS)); a SELL alert fires
+-- when a holding's price rises into its sell zone (fairValue×1.40). `reasoning` is the
+-- JSON snapshot captured when the alert was created/last evaluated. `auto` marks alerts
+-- the background scan maintains for watchlist buys / holding sells vs manual ones.
+CREATE TABLE IF NOT EXISTS alerts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  symbol TEXT NOT NULL,
+  name TEXT,
+  kind TEXT NOT NULL,                 -- 'buy' | 'sell'
+  direction TEXT NOT NULL,            -- 'below' (buy) | 'above' (sell)
+  targetPrice REAL,
+  currency TEXT,
+  status TEXT NOT NULL DEFAULT 'active',  -- 'active' | 'triggered' | 'dismissed'
+  auto INTEGER NOT NULL DEFAULT 0,
+  reasoning TEXT,
+  lastPrice REAL,
+  triggeredPrice REAL,
+  triggeredAt TEXT,
+  createdAt TEXT NOT NULL DEFAULT (datetime('now')),
+  updatedAt TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_alerts_symbol ON alerts(symbol);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_alerts_auto ON alerts(symbol, kind) WHERE auto = 1;
+
+-- Notification / alert-centre feed: triggered alerts, newly-attractive opportunities the
+-- background scan surfaced, and scan summaries. `payload` is feature-specific JSON.
+CREATE TABLE IF NOT EXISTS notifications (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  type TEXT NOT NULL,                 -- 'alert' | 'opportunity' | 'scan'
+  title TEXT NOT NULL,
+  body TEXT,
+  symbol TEXT,
+  payload TEXT,
+  readAt TEXT,
+  createdAt TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_notifications_created ON notifications(createdAt);
+
+-- Small key/value store for background-scan state (last run time, summary).
+CREATE TABLE IF NOT EXISTS app_state (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  updatedAt TEXT NOT NULL DEFAULT (datetime('now'))
+);
 """
 
 _lock = threading.RLock()
@@ -311,4 +357,24 @@ def save_settings(value: Any) -> None:
         "INSERT INTO settings (key, value) VALUES (?, ?) "
         "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
         ("app", json.dumps(value)),
+    )
+
+
+# ---- app_state key/value helpers (background-scan bookkeeping) ---------------
+
+def get_state(key: str) -> Any:
+    row = q("SELECT value FROM app_state WHERE key = ?").get((key,))
+    if not row:
+        return None
+    try:
+        return json.loads(row["value"])
+    except Exception:
+        return None
+
+
+def set_state(key: str, value: Any) -> None:
+    execute(
+        "INSERT INTO app_state (key, value, updatedAt) VALUES (?, ?, datetime('now')) "
+        "ON CONFLICT(key) DO UPDATE SET value = excluded.value, updatedAt = datetime('now')",
+        (key, json.dumps(value)),
     )

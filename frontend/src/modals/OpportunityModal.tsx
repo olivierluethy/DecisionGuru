@@ -2,6 +2,7 @@ import { ArrowUpRight, Clock } from 'lucide-react';
 import { useApp } from '../store';
 import { Modal } from '../components/Modal';
 import { ValueAnalysis } from '../components/ValueAnalysis';
+import { researchHref } from '../lib/router';
 
 /**
  * Opportunity detail — the fair-value read for a screened name without leaving Discover.
@@ -17,7 +18,7 @@ export function OpportunityModal({
   price?: number | null;
   currency?: string | null;
 }) {
-  const { closeModal, researchSymbolView, openModal } = useApp();
+  const { closeModal, openModal } = useApp();
   return (
     <Modal
       title={symbol}
@@ -30,9 +31,15 @@ export function OpportunityModal({
             <Clock size={15} /> Point-in-time replay
           </button>
           <button className="btn-secondary" onClick={closeModal}>Close</button>
-          <button className="btn-primary" onClick={() => { closeModal(); researchSymbolView(symbol); }}>
-            <ArrowUpRight size={15} /> Open in Research
-          </button>
+          {/* Research is an addressable route — open the full workup in a new tab. */}
+          <a
+            className="btn-primary"
+            href={researchHref(symbol)}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <ArrowUpRight size={15} /> Open Research
+          </a>
         </>
       }
     >

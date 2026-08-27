@@ -42,6 +42,14 @@ function hashForState(s: ReturnType<typeof useApp.getState>): string {
   }
 }
 
+/** Canonical hash href for an asset's Research page — used to open it in a new tab
+ *  as an addressable deep link (`#/research/<symbol>`). The browser resolves it
+ *  against the current document URL, so a fresh tab boots the app and initRouter()
+ *  adopts the symbol on mount. */
+export function researchHref(symbol: string): string {
+  return `#/research/${encodeURIComponent(symbol)}`;
+}
+
 /** Parse the current location hash into the navigation fields it encodes. */
 function parseHash(): Parsed {
   const raw = window.location.hash.replace(/^#/, '');

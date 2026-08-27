@@ -58,36 +58,77 @@ def _sync_auto_alerts(settings: dict) -> dict:
 
 
 def _detect_new_opportunities(settings: dict) -> dict:
-    """Screen the universe and notify on names that turned attractive since last scan."""
+    """Screen the universe, then diff against the previous scan's snapshot to compute the
+    'freshly attractive / mover' signals for **not-yet-owned** names, persist a new
+    snapshot, and notify on names that just turned attractive."""
     try:
         result = screen_universe(settings)
     except Exception as exc:  # noqa: BLE001 — a scan must never crash on a screen hiccup
         log.warning("screen failed during scan: %s", exc)
         return {"attractive": 0, "new": 0}
 
-    attractive = {r["symbol"]: r for r in result.get("rows", []) if r.get("verdict") == "attractive"}
-    prev = set(get_state("scan.attractive") or [])
-    fresh = [s for s in attractive if s not in prev]
+    rows = result.get("rows", [])
+    now = _now_iso()
+    prev_snapshot = get_state("scan.snapshot") or {}
+    became = dict(get_state("scan.became_attractive") or {})
 
-    for sym in fresh:
-        r = attractive[sym]
-        mos = r.get("marginOfSafety")
-        mos_txt = f"{mos*100:.0f}% below fair value" if mos is not None else "below fair value"
-        alerts_svc.add_notification(
-            "opportunity",
-            title=f"New opportunity: {r.get('name') or sym}",
-            body=(f"{sym} screens as attractive — {mos_txt}, quality "
-                  f"{(r.get('quality') or {}).get('score','?')}/"
-                  f"{(r.get('quality') or {}).get('max','?')}, "
-                  f"attractiveness {r.get('attractiveness')}/100."),
-            symbol=sym,
-            payload={"marginOfSafety": mos, "attractiveness": r.get("attractiveness"),
-                     "entryTarget": r.get("entryTarget"), "sector": r.get("sector"),
-                     "inPortfolio": r.get("inPortfolio")},
-        )
+    movers: dict[str, dict] = {}
+    snapshot: dict[str, dict] = {}
+    fresh: list[str] = []
 
-    set_state("scan.attractive", list(attractive.keys()))
-    return {"attractive": len(attractive), "new": len(fresh),
+    for r in rows:
+        sym = r["symbol"]
+        price = r.get("price")
+        attractive_now = r.get("verdict") == "attractive"
+        owned = bool(r.get("inPortfolio"))
+        snapshot[sym] = {"price": price, "attractive": attractive_now, "owned": owned}
+
+        prev = prev_snapshot.get(sym) or {}
+        prev_attractive = bool(prev.get("attractive"))
+        prev_price = prev.get("price")
+
+        # Track when each name (re)entered the attractive band.
+        if attractive_now:
+            became.setdefault(sym, now)
+        else:
+            became.pop(sym, None)
+
+        # Movers only make sense for names you don't already own.
+        if owned:
+            continue
+        price_change = round(price / prev_price - 1, 4) if (price and prev_price and prev_price > 0) else None
+        is_new = attractive_now and not prev_attractive
+        # Keep an entry when it's attractive (so becameAttractiveAt/isNew are available)
+        # or when there's a notable price drop worth surfacing as a mover.
+        if attractive_now or (price_change is not None and price_change <= -0.03):
+            movers[sym] = {
+                "isNew": is_new,
+                "priceChangePct": price_change,
+                "becameAttractiveAt": became.get(sym),
+            }
+        if is_new:
+            fresh.append(sym)
+            mos = r.get("marginOfSafety")
+            mos_txt = f"{mos*100:.0f}% below fair value" if mos is not None else "below fair value"
+            alerts_svc.add_notification(
+                "opportunity",
+                title=f"New opportunity: {r.get('name') or sym}",
+                body=(f"{sym} screens as attractive — {mos_txt}, quality "
+                      f"{(r.get('quality') or {}).get('score','?')}/"
+                      f"{(r.get('quality') or {}).get('max','?')}, "
+                      f"attractiveness {r.get('attractiveness')}/100."),
+                symbol=sym,
+                payload={"marginOfSafety": mos, "attractiveness": r.get("attractiveness"),
+                         "entryTarget": r.get("entryTarget"), "sector": r.get("sector"),
+                         "theme": r.get("theme"), "inPortfolio": owned},
+            )
+
+    set_state("scan.snapshot", snapshot)
+    set_state("scan.became_attractive", became)
+    set_state("scan.movers", movers)
+
+    attractive_not_owned = sum(1 for r in rows if r.get("verdict") == "attractive" and not r.get("inPortfolio"))
+    return {"attractive": attractive_not_owned, "new": len(fresh),
             "newSymbols": fresh, "analysed": result.get("analysedCount", 0)}
 
 

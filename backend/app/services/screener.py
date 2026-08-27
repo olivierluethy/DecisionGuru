@@ -17,12 +17,14 @@ from __future__ import annotations
 from datetime import date
 
 from . import repo
+from ..core.db import get_state
 from .watchlist import list_watchlist
 from .fundamentals import get_cached_fundamentals
 from .valuation import value_analysis
 from .marketdata import price_on
 from .exposure import portfolio_exposure
 from ..reference import geo
+from ..reference.themes import classify_theme
 from ..reference.universe import UNIVERSE_SEED
 
 
@@ -104,6 +106,8 @@ def screen_universe(settings: dict) -> dict:
             continue
 
         sector = va.get("sector")
+        industry = snap.get("industry")
+        theme = classify_theme(sector, industry)
         if sector:
             sectors_present.add(sector)
         mos = va.get("marginOfSafety")
@@ -118,6 +122,8 @@ def screen_universe(settings: dict) -> dict:
                      or watch.get(sym, {}).get("name")
                      or snap.get("name")),
             "sector": sector,
+            "industry": industry,
+            "theme": theme,
             "price": price,
             "currency": va.get("currency"),
             "marginOfSafety": mos,
@@ -142,12 +148,23 @@ def screen_universe(settings: dict) -> dict:
 
     rows.sort(key=lambda r: (r["attractiveness"], (r["marginOfSafety"] or -1)), reverse=True)
 
+    # Merge the "freshly attractive / mover" flags the last scan persisted (diff vs the
+    # previous scan). Names not in the movers map simply carry no flags.
+    movers = get_state("scan.movers") or {}
+    for r in rows:
+        m = movers.get(r["symbol"])
+        r["isNew"] = bool(m and m.get("isNew"))
+        r["priceChangePct"] = (m or {}).get("priceChangePct")
+        r["becameAttractiveAt"] = (m or {}).get("becameAttractiveAt")
+
+    themes = sorted({r["theme"] for r in rows if r.get("theme")})
     return {
         "universeSize": len(universe),
         "analysedCount": len(rows),
         "unanalysedCount": len(unanalysed),
         "unanalysed": unanalysed,
         "sectors": sorted(sectors_present),
+        "themes": themes,
         "rows": rows,
         "geo": _geo_density(rows),
     }

@@ -47,7 +47,29 @@ async def valuation(
     settings = get_settings()
     if asOf:
         return await run_in_threadpool(_valuation_as_of, symbol, asOf, currency, settings)
-    return await run_in_threadpool(value_analysis, symbol, price, currency, None, settings)
+    return await run_in_threadpool(_valuation_now, symbol, price, currency, settings)
+
+
+def _valuation_now(symbol: str, price: float | None, currency: str | None,
+                   settings: dict) -> dict:
+    """Value at the current price, resolving a real last price server-side when the
+    caller has none. Guarantees the fair-value band, margin-of-safety verdict and the
+    price-zone chart compute for every asset — including closed-market names whose live
+    quote is momentarily 0 — instead of collapsing to a blank band on a null price."""
+    from ..services.marketdata import resolve_price
+
+    freshness = None
+    price_as_of = None
+    if price is None or price <= 0:
+        resolved = resolve_price(symbol, currency)
+        price = resolved["price"]
+        currency = currency or resolved["currency"]
+        freshness, price_as_of = resolved["freshness"], resolved["asOf"]
+    va = value_analysis(symbol, price, currency, None, settings)
+    if freshness is not None:
+        va["priceFreshness"] = freshness
+        va["priceAsOf"] = price_as_of
+    return va
 
 
 def _valuation_as_of(symbol: str, as_of: str, currency: str | None, settings: dict) -> dict:

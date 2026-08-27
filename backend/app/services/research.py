@@ -57,6 +57,7 @@ def research_asset(symbol: str, settings: dict, window_years: float = 5,
     return {
         "symbol": symbol, "name": metrics.get("name"), "kind": kind,
         "currency": metrics.get("currency"), "currentPrice": metrics.get("currentPrice"),
+        "priceAsOf": metrics.get("priceAsOf"), "priceFreshness": metrics.get("priceFreshness"),
         "metrics": metrics,
         "allocation": allocation,
         "movements": movements,

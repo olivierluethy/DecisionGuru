@@ -15,7 +15,7 @@ from . import repo
 from .finance import build_position
 from .finance_math import xirr
 from .history import portfolio_series
-from .marketdata import get_dividends, get_history, get_quote
+from .marketdata import get_dividends, get_history, get_quote, resolve_price
 
 
 def _window_start(years: float) -> str:
@@ -86,13 +86,19 @@ def metrics_for_symbol(symbol: str, name: str | None, kind: str | None,
     m = _series_metrics(hist, "close")
     try:
         quote = get_quote(symbol)
-        price, ccy, qname = quote.get("price"), quote.get("currency"), quote.get("name")
+        qname = quote.get("name")
     except Exception:  # noqa: BLE001
-        price = ccy = qname = None
+        quote, qname = None, None
+    # Window-independent last price: live/last quote → most recent cached close.
+    # Never surfaces 0 for a closed market or a pending first quote, and stays the
+    # same across the 3Y/5Y/10Y windows (the source of the GOOGL-on-5Y symptom).
+    resolved = resolve_price(symbol, quote=quote)
+    price, ccy = resolved["price"], resolved["currency"]
     last_close = hist[-1]["close"] if hist else price
     return {
         "type": "symbol", "symbol": symbol, "name": name or qname or symbol,
         "kind": kind, "currency": ccy, "currentPrice": price,
+        "priceAsOf": resolved["asOf"], "priceFreshness": resolved["freshness"],
         "trailingYield": _trailing_yield(symbol, last_close or 0, start),
         **m,
         "investedCHF": None, "currentValueCHF": None, "xirr": None,

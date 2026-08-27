@@ -174,6 +174,48 @@ def get_quote(symbol: str) -> dict:
             "time": None, "stale": True, "pending": True}
 
 
+def latest_cached_close(symbol: str) -> dict | None:
+    """Most recent positive close in the price cache, with its date.
+
+    Window-independent: it is always the newest close regardless of any lookback,
+    so it is the stable fallback for a display/last price when no live quote is
+    available (market closed, first fetch pending, or a flaky poll returned 0)."""
+    row = db.q(
+        "SELECT date, close FROM price_cache WHERE symbol = ? AND close > 0 "
+        "ORDER BY date DESC LIMIT 1"
+    ).get((symbol,))
+    return {"close": row["close"], "date": row["date"]} if row else None
+
+
+def resolve_price(symbol: str, currency_hint: str | None = None,
+                  quote: dict | None = None) -> dict:
+    """Resolve a real display/last price that never yields 0 where a price exists.
+
+    Fallback chain: fresh/last live quote → most recent cached close → nothing.
+    Decoupled from any chart window, so the header/last price is identical on 3Y,
+    5Y and 10Y. Returns the price, its currency, the date it is 'as of', and a
+    freshness tag the UI qualifies with:
+      - ``live``       a fresh live/last quote
+      - ``delayed``    a cached quote served stale (market closed / between polls)
+      - ``prev-close`` no usable quote; the most recent cached close
+      - ``none``       no price anywhere yet (background backfill still pending)
+    """
+    q = quote if quote is not None else get_quote(symbol)
+    price = q.get("price")
+    ccy = q.get("currency")
+    if price and price > 0 and not q.get("pending"):
+        as_of = (q.get("time") or "")[:10] or None
+        return {"price": price, "currency": ccy or currency_hint,
+                "asOf": as_of, "freshness": "delayed" if q.get("stale") else "live"}
+    close = latest_cached_close(symbol)
+    if close:
+        return {"price": close["close"],
+                "currency": ccy or currency_hint or listing_currency(symbol),
+                "asOf": close["date"], "freshness": "prev-close"}
+    return {"price": None, "currency": ccy or currency_hint,
+            "asOf": None, "freshness": "none"}
+
+
 def listing_currency(symbol: str, fallback: str | None = None) -> str | None:
     """The symbol's quote (listing) currency, normalised to its major unit.
 

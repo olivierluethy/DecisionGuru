@@ -101,6 +101,36 @@ export interface Position {
   accountDividends?: AccountDividend | null;
   /** Share of portfolio market value (0..1). */
   weight?: number;
+  /** Valuation-driven sell/trim signal — present only when (significantly) overvalued. */
+  sellSignal?: SellSignal | null;
+}
+
+/** Valuation-driven sell/trim signal for an owned position (see services/signals.py). */
+export interface SellSignal {
+  instrumentId: number | null;
+  symbol: string;
+  name: string | null;
+  band: 'undervalued' | 'fair' | 'overvalued' | 'significantly-overvalued';
+  bandLabel: string;
+  isSellSignal: boolean;
+  severity: 'sell' | 'trim';
+  price: number | null;
+  currency: string;
+  reasoning: {
+    headline: string;
+    premiumToFairPct: number;
+    fairValue: number | null;
+    sellZoneAt: number | null;
+    marginOfSafetyConsumed: number | null;
+    costBasisCHF: number;
+    currentValueCHF: number;
+    unrealizedGainCHF: number;
+    capitalGainsTaxCHF: number;
+    afterTaxGainIfSoldCHF: number;
+    taxNote: string;
+    qualityScore: { score: number; max: number } | null;
+  };
+  confidence: string | null;
 }
 
 /** An advisory ("harmonize") rebalancing insight for one flagged holding. */

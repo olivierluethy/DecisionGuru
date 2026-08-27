@@ -23,7 +23,9 @@ import type {
   AccountPreviewResponse,
   AccountCommitResponse,
   AdvisoryResponse,
+  SellSignal,
 } from '@decisionguru/shared';
+export type { SellSignal } from '@decisionguru/shared';
 
 const BASE = '/api';
 
@@ -215,10 +217,11 @@ export const api = {
       `/research/fundamentals/${encodeURIComponent(symbol)}${qs ? `?${qs}` : ''}`,
     );
   },
-  valuation: (symbol: string, price?: number | null, currency?: string | null) => {
+  valuation: (symbol: string, price?: number | null, currency?: string | null, asOf?: string | null) => {
     const q = new URLSearchParams();
     if (price != null) q.set('price', String(price));
     if (currency) q.set('currency', currency);
+    if (asOf) q.set('asOf', asOf);
     const qs = q.toString();
     return req<ValuationResult>(
       `/research/valuation/${encodeURIComponent(symbol)}${qs ? `?${qs}` : ''}`,
@@ -254,10 +257,29 @@ export const api = {
 
   // watchlist
   listWatchlist: () => req<WatchlistItem[]>('/watchlist'),
+  watchlistAnalysis: () => req<WatchlistAnalysisItem[]>('/watchlist/analysis'),
   addToWatchlist: (item: { symbol: string; name?: string | null; kind?: string }) =>
     req<WatchlistItem>('/watchlist', { method: 'POST', body: JSON.stringify(item) }),
   removeFromWatchlist: (id: number) =>
     req<{ ok: true }>(`/watchlist/${id}`, { method: 'DELETE' }),
+
+  // alerts + notifications + scan
+  listAlerts: (status?: string) =>
+    req<PriceAlert[]>(`/alerts${status ? `?status=${status}` : ''}`),
+  createAlert: (item: { symbol: string; kind: 'buy' | 'sell'; targetPrice?: number | null; name?: string | null }) =>
+    req<PriceAlert>('/alerts', { method: 'POST', body: JSON.stringify(item) }),
+  deleteAlert: (id: number) => req<{ ok: true }>(`/alerts/${id}`, { method: 'DELETE' }),
+  dismissAlert: (id: number) => req<{ ok: true }>(`/alerts/${id}/dismiss`, { method: 'POST' }),
+  listNotifications: (limit = 50) =>
+    req<{ notifications: AppNotification[]; unreadCount: number }>(`/alerts/notifications?limit=${limit}`),
+  unreadCount: () => req<{ unreadCount: number }>('/alerts/notifications/unread-count'),
+  markNotificationsRead: (id?: number) =>
+    req<{ ok: true }>('/alerts/notifications/read', {
+      method: 'POST',
+      body: JSON.stringify(id != null ? { id } : {}),
+    }),
+  runScan: () => req<ScanSummary>('/alerts/scan', { method: 'POST' }),
+  scanStatus: () => req<{ lastScan: ScanSummary | null; intervalHours: number }>('/alerts/scan/status'),
 
   // scenarios
   listScenarios: () => req<Scenario[]>('/scenarios'),
@@ -309,6 +331,7 @@ export interface PortfolioResponse {
   benchmark: string;
   preTax: boolean;
   positions: Position[];
+  sellSignals?: SellSignal[];
   counterfactuals: Array<{ instrumentId: number; symbol: string; counterfactual: CounterfactualResult }>;
   aggregate: {
     actualValueCHF: number;
@@ -470,6 +493,19 @@ export interface ValuationCheck {
   pass: boolean;
   detail: string;
 }
+export type ValuationBandKey = 'undervalued' | 'fair' | 'overvalued' | 'significantly-overvalued';
+export interface ValuationBand {
+  band: ValuationBandKey;
+  label: string;
+  premiumToFair: number;       // +ve = price above fair value
+  entryTarget: number;         // fairValue × (1 − MoS)
+  fairValue: number;
+  overvaluedAt: number;        // fairValue × 1.20
+  sellZoneAt: number;          // fairValue × 1.40
+  zones: { buy: [number, number]; fair: [number, number]; overvalued: [number, number]; sell: [number, number] };
+  marginOfSafetyPct: number;
+}
+
 export interface ValuationResult {
   symbol: string;
   currency: string | null;
@@ -479,6 +515,15 @@ export interface ValuationResult {
   models: Record<string, number>;
   intrinsic: { low: number | null; mid: number | null; high: number | null };
   marginOfSafety: number | null;
+  fairValue: number | null;
+  entryTarget: number | null;
+  band: ValuationBand | null;
+  // Point-in-time replay (present only when asOf was requested).
+  asOf?: string;
+  asOfPrice?: number | null;
+  currentPrice?: number | null;
+  hypotheticalReturnSince?: number | null;
+  asOfNote?: string;
   impliedGrowth: number | null;
   supportableReturn: number;
   quality: { score: number; max: number; checks: ValuationCheck[] };
@@ -788,6 +833,11 @@ export interface ScreenerRow {
   price: number | null;
   currency: string | null;
   marginOfSafety: number | null;
+  fairValue: number | null;
+  entryTarget: number | null;
+  band: ValuationBandKey | null;
+  bandLabel: string | null;
+  country: string | null;
   intrinsicMid: number | null;
   quality: { score: number; max: number };
   supportableReturn: number | null;
@@ -800,6 +850,17 @@ export interface ScreenerRow {
   inPortfolio: boolean;
   onWatchlist: boolean;
 }
+export interface GeoDensity {
+  country: string;
+  name: string;
+  lat: number | null;
+  lng: number | null;
+  attractiveCount: number;
+  totalCount: number;
+  avgMarginOfSafety: number;
+  density: number;
+  topSymbols: string[];
+}
 export interface ScreenerResult {
   universeSize: number;
   analysedCount: number;
@@ -807,6 +868,7 @@ export interface ScreenerResult {
   unanalysed: string[];
   sectors: string[];
   rows: ScreenerRow[];
+  geo: GeoDensity[];
 }
 export interface WatchlistItem {
   id: number;
@@ -814,6 +876,61 @@ export interface WatchlistItem {
   name: string | null;
   kind: string;
   addedAt: string;
+}
+export interface WatchlistAnalysisItem extends WatchlistItem {
+  price: number | null;
+  currency: string | null;
+  stale: boolean | null;
+  fairValue: number | null;
+  entryTarget: number | null;
+  gapToEntry: number | null;   // +ve = price above the entry target
+  band: ValuationBand | null;
+  marginOfSafety: number | null;
+  quality: { score: number; max: number } | null;
+  confidence: string | null;
+  analysed: boolean;
+}
+
+// ---- Alerts + notifications (SellSignal is re-exported from shared) ------
+export interface PriceAlert {
+  id: number;
+  symbol: string;
+  name: string | null;
+  kind: 'buy' | 'sell';
+  direction: 'below' | 'above';
+  targetPrice: number | null;
+  currency: string | null;
+  status: 'active' | 'triggered' | 'dismissed';
+  auto: boolean;
+  reasoning: Record<string, unknown> | null;
+  lastPrice: number | null;
+  triggeredPrice: number | null;
+  triggeredAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+export interface AppNotification {
+  id: number;
+  type: 'alert' | 'opportunity' | 'scan';
+  title: string;
+  body: string | null;
+  symbol: string | null;
+  payload: Record<string, unknown> | null;
+  read: boolean;
+  readAt: string | null;
+  createdAt: string;
+}
+export interface ScanSummary {
+  trigger: string;
+  finishedAt: string;
+  durationMs: number;
+  alertsFired: number;
+  firedSymbols: string[];
+  autoAlerts: number;
+  attractive: number;
+  new: number;
+  newSymbols?: string[];
+  analysed?: number;
 }
 export interface ProspectiveProjection extends ProjectionResult {
   symbol: string;

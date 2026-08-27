@@ -12,6 +12,8 @@ from ..services import refresh, repo
 from ..services.analytics import aggregate_counterfactuals
 from ..services.counterfactual import compute_counterfactual
 from ..services.finance import build_position
+from ..services.fundamentals import get_cached_fundamentals
+from ..services.signals import sell_signal_for
 from ..services.history import instrument_series, portfolio_series
 from ..services.timeline import build_timeline
 from ..services.projection import benchmark_cagr, compute_break_even, project_hold_vs_etf
@@ -43,6 +45,10 @@ async def position(instrument_id: int, preTax: str = "false") -> dict:
             position["netDividendsCHF"] = position["dividends"]["netAfterTaxCHF"]
     else:
         position["netDividendsCHF"] = position["dividends"]["netAfterTaxCHF"]
+    # Valuation-driven sell signal (None unless it's (significantly) overvalued vs fair value).
+    position["sellSignal"] = sell_signal_for(
+        position, get_cached_fundamentals(inst["symbol"]), settings
+    )
     return position
 
 
@@ -249,6 +255,7 @@ async def portfolio(preTax: str = "false", benchmark: str | None = None) -> dict
         instruments = repo.list_instruments()
         positions = []
         counterfactuals = []
+        sell_signals = []
         total_value = 0.0
         for inst in instruments:
             txs = repo.get_transactions(inst["id"])
@@ -256,6 +263,12 @@ async def portfolio(preTax: str = "false", benchmark: str | None = None) -> dict
                 continue
             built = build_position(inst, txs, settings["tax"], pre_tax)
             p = built["position"]
+            # Cheap valuation overlay off cached fundamentals — flags (significantly)
+            # overvalued holdings without a second rebuild or any provider call.
+            sig = sell_signal_for(p, get_cached_fundamentals(inst["symbol"]), settings)
+            if sig:
+                p["sellSignal"] = sig
+                sell_signals.append(sig)
             # Account statement is the dividend source of truth; fall back to any
             # tx-derived dividends only when no account events exist for this ISIN.
             isin = inst.get("isin")
@@ -294,8 +307,12 @@ async def portfolio(preTax: str = "false", benchmark: str | None = None) -> dict
         priced = [p["priceAsOf"] for p in positions
                   if p["openQuantity"] > 0 and p.get("priceAsOf")]
         quotes_updated_at = min(priced) if priced else None
+        # Genuine sell signals (significantly overvalued) first, then trims.
+        sell_signals.sort(key=lambda s: (s["isSellSignal"],
+                                         s["reasoning"].get("premiumToFairPct") or 0), reverse=True)
         return {"benchmark": bench, "preTax": pre_tax, "positions": positions,
                 "counterfactuals": counterfactuals, "aggregate": aggregate, "totals": totals,
+                "sellSignals": sell_signals,
                 "cash": cash,
                 "accountDividends": sorted(div_by_isin.values(), key=lambda d: -d["netCHF"]),
                 "hasPositions": bool(positions),

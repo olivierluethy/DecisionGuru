@@ -10,6 +10,7 @@ from ..services.fundamentals import fundamentals_bundle
 from ..services.valuation import value_analysis
 from ..services.universal import universal_compare
 from ..services.projection import prospective_projection
+from ..services.competitors import competitors as competitors_service
 
 router = APIRouter()
 
@@ -49,6 +50,13 @@ async def projection(
     return await run_in_threadpool(
         prospective_projection, symbol, benchmark, amount, years, stockCagr, etfCagr
     )
+
+
+@router.get("/competitors/{symbol:path}")
+async def competitors(symbol: str) -> dict:
+    """Same-sector peers (from cached fundamentals) ranked by market cap, so you can see
+    where a company sits by size and valuation within its sector."""
+    return await run_in_threadpool(competitors_service, symbol)
 
 
 @router.post("/claim")

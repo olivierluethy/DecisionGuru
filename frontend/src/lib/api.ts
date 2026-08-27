@@ -239,6 +239,8 @@ export const api = {
       `/research/projection/${encodeURIComponent(symbol)}${qs ? `?${qs}` : ''}`,
     );
   },
+  competitors: (symbol: string) =>
+    req<CompetitorsResult>(`/research/competitors/${encodeURIComponent(symbol)}`),
   validateClaim: (symbol: string, claim: string | ClaimSpec) =>
     req<ClaimResult>('/research/claim', { method: 'POST', body: JSON.stringify({ symbol, claim }) }),
   universalCompare: (entities: CompareEntity[], windowYears = 5) =>
@@ -756,6 +758,27 @@ export interface ResearchAsset {
   allocation: AllocationBreakdown;
   movements: MovementsResponse;
   news: NewsItem[];
+}
+export interface CompetitorPeer {
+  symbol: string;
+  name: string | null;
+  sector: string | null;
+  industry: string | null;
+  marketCap: number | null;
+  currency: string | null;
+  trailingPE: number | null;
+  priceToBook: number | null;
+  profitMargins: number | null;
+  revenueGrowth: number | null;
+  isSubject: boolean;
+}
+export interface CompetitorsResult {
+  symbol: string;
+  sector: string | null;
+  industry?: string | null;
+  peers: CompetitorPeer[];
+  peerCount: number;
+  subjectRank: number | null;
 }
 export type ScreenerVerdict = 'attractive' | 'cheap-only' | 'fair' | 'expensive' | 'unknown';
 export interface ScreenerRow {

@@ -3,7 +3,7 @@ import { Check, X, TrendingDown, TrendingUp, AlertTriangle } from 'lucide-react'
 import { api } from '../lib/api';
 import { Spinner } from './ui';
 import { BandBadge, PriceBandChart } from './ValuationBand';
-import { fmtPct, fmtMoney } from '../lib/format';
+import { fmtPct, fmtMoney, priceFreshnessLabel } from '../lib/format';
 
 const CONF_META: Record<string, { label: string; cls: string }> = {
   high: { label: 'High confidence', cls: 'text-gain' },
@@ -28,6 +28,8 @@ export function ValueAnalysis({
   currency,
   catchUpPct,
   benchmarkSymbol,
+  priceAsOf,
+  priceFreshness,
 }: {
   symbol: string;
   price: number | null;
@@ -35,6 +37,9 @@ export function ValueAnalysis({
   /** How far the stock must climb to draw level with the primary benchmark (fraction). */
   catchUpPct?: number | null;
   benchmarkSymbol?: string | null;
+  /** Freshness of the resolved price, so the verdict can qualify a non-live price. */
+  priceAsOf?: string | null;
+  priceFreshness?: 'live' | 'delayed' | 'prev-close' | 'none' | null;
 }) {
   const { data, isLoading, isError } = useQuery({
     queryKey: ['valuation', symbol, price],
@@ -50,6 +55,12 @@ export function ValueAnalysis({
 
   const ccy = data.currency || currency || '';
   const px = data.price ?? price;
+  // Qualify a non-live price ("prev close · <date>"). Caller-supplied freshness wins;
+  // otherwise use whatever the server attached when it resolved the price itself.
+  const freshLabel = priceFreshnessLabel(
+    priceFreshness ?? data.priceFreshness,
+    priceAsOf ?? data.priceAsOf,
+  );
   const mid = data.intrinsic.mid;
   const mos = data.marginOfSafety; // + = undervalued vs models
   const overvalued = mos != null && mos < 0;
@@ -111,7 +122,10 @@ export function ValueAnalysis({
               {lowConf && <span className="text-text-faint font-normal"> · indicative only</span>}
             </div>
           )}
-          <div className="text-[11px] text-text-faint mt-1">at {px != null ? fmtMoney(px, ccy) : '—'} today</div>
+          <div className="text-[11px] text-text-faint mt-1">
+            at {px != null ? fmtMoney(px, ccy) : '—'} today
+            {freshLabel && <span className="ml-1">· {freshLabel}</span>}
+          </div>
           {data.entryTarget != null && (
             <div className="mt-2 pt-2 border-t border-hairline text-[12px] text-text-muted">
               Attractive entry price{' '}

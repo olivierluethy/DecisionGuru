@@ -524,6 +524,9 @@ export interface ValuationResult {
   fairValue: number | null;
   entryTarget: number | null;
   band: ValuationBand | null;
+  // Price-freshness qualifier (present when the server resolved a last price itself).
+  priceFreshness?: 'live' | 'delayed' | 'prev-close' | 'none' | null;
+  priceAsOf?: string | null;
   // Point-in-time replay (present only when asOf was requested).
   asOf?: string;
   asOfPrice?: number | null;
@@ -782,6 +785,10 @@ export interface AssetMetrics {
   kind: string | null;
   currency: string | null;
   currentPrice: number | null;
+  /** How the last price was resolved: fresh quote, stale quote, or a cached close. */
+  priceFreshness?: 'live' | 'delayed' | 'prev-close' | 'none' | null;
+  /** Date the resolved price is 'as of' (YYYY-MM-DD), when not a live quote. */
+  priceAsOf?: string | null;
   trailingYield: number | null;
   cagr: number | null;
   totalReturnPct: number | null;
@@ -805,6 +812,8 @@ export interface ResearchAsset {
   kind: string;
   currency: string | null;
   currentPrice: number | null;
+  priceFreshness?: 'live' | 'delayed' | 'prev-close' | 'none' | null;
+  priceAsOf?: string | null;
   metrics: AssetMetrics;
   allocation: AllocationBreakdown;
   movements: MovementsResponse;

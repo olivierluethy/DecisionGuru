@@ -16,7 +16,7 @@ import { NewsFeed } from '../components/NewsFeed';
 import { Globe } from '../components/Globe';
 import { MarketStatusChip } from '../components/MarketStatusChip';
 import { Stat, Spinner, Segmented, EmptyState, KindBadge } from '../components/ui';
-import { fmtCHF, fmtCHFSigned, fmtPct, fmtPctSigned, fmtNum, plClass } from '../lib/format';
+import { fmtCHF, fmtCHFSigned, fmtPct, fmtPctSigned, fmtNum, plClass, priceFreshnessLabel } from '../lib/format';
 
 const WINDOWS = [
   { value: '3', label: '3Y' },
@@ -350,8 +350,17 @@ function AssetView({ symbol, onReset }: { symbol: string; onReset: () => void })
             {hours && <MarketStatusChip hours={hours} label="name" />}
           </div>
           <p className="text-sm text-text-muted mt-1">{data.name}</p>
-          {data.currentPrice != null && (
-            <p className="font-mono text-sm text-text mt-1">{data.currency} {fmtNum(data.currentPrice)}</p>
+          {data.currentPrice != null && data.currentPrice > 0 ? (
+            <p className="font-mono text-sm text-text mt-1">
+              {data.currency} {fmtNum(data.currentPrice)}
+              {priceFreshnessLabel(data.priceFreshness, data.priceAsOf) && (
+                <span className="text-text-faint ml-2 text-[12px] font-sans">
+                  {priceFreshnessLabel(data.priceFreshness, data.priceAsOf)}
+                </span>
+              )}
+            </p>
+          ) : (
+            <p className="text-[12px] text-text-faint mt-1">No price data yet — fetching…</p>
           )}
         </div>
         <div className="flex items-center gap-3">
@@ -400,7 +409,8 @@ function AssetView({ symbol, onReset }: { symbol: string; onReset: () => void })
       {data.kind === 'stock' && (
         <div className="card">
           <div className="eyebrow mb-3">Value analysis · what {data.symbol} is really worth</div>
-          <ValueAnalysis symbol={data.symbol} price={data.currentPrice ?? null} currency={data.currency} />
+          <ValueAnalysis symbol={data.symbol} price={data.currentPrice ?? null} currency={data.currency}
+            priceAsOf={data.priceAsOf} priceFreshness={data.priceFreshness} />
         </div>
       )}
 

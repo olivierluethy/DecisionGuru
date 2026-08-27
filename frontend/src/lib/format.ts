@@ -108,6 +108,25 @@ export function fmtDate(d: string | null | undefined): string {
   return new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).format(date);
 }
 
+/**
+ * Faint qualifier for a resolved price that isn't a fresh live quote — e.g.
+ * `prev close · 26 Aug 2026` for a cached close, `delayed` for a stale quote.
+ * Returns null for a live quote (no qualifier needed) or when there's nothing to say.
+ */
+export function priceFreshnessLabel(
+  freshness: 'live' | 'delayed' | 'prev-close' | 'none' | null | undefined,
+  asOf?: string | null,
+): string | null {
+  switch (freshness) {
+    case 'prev-close':
+      return asOf ? `prev close · ${fmtDate(asOf)}` : 'prev close';
+    case 'delayed':
+      return asOf ? `delayed · ${fmtDate(asOf)}` : 'delayed';
+    default:
+      return null;
+  }
+}
+
 /** Tailwind text-colour class for a signed value. */
 export function plClass(v: number | null | undefined): string {
   if (v == null || !Number.isFinite(v) || v === 0) return 'text-text-muted';

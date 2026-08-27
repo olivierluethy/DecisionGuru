@@ -40,7 +40,7 @@ export function PriceBandChart({
   currency?: string | null;
   height?: number;
 }) {
-  const { data: history } = useQuery({
+  const { data: history, isLoading } = useQuery({
     queryKey: ['marketHistory', symbol],
     queryFn: () => api.marketHistory(symbol),
     staleTime: 60 * 60_000,
@@ -49,6 +49,30 @@ export function PriceBandChart({
 
   const ccy = currency || '';
   const closes = (history ?? []).map((h) => h.close).filter((c) => c > 0);
+
+  // No price path to draw yet — show a labelled placeholder instead of an empty chart.
+  // (The backfill runs in the background; the line lands on a later poll.)
+  if (closes.length < 2) {
+    return (
+      <div>
+        <div
+          className="flex items-center justify-center text-[12px] text-text-faint border border-dashed border-hairline rounded"
+          style={{ height }}
+        >
+          {isLoading ? 'Loading price history…' : 'Price history not cached yet — the zones will fill in shortly.'}
+        </div>
+        <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-[11px] text-text-faint">
+          <LegendDot cls="bg-gain" label={`Buy ≤ ${fmtMoney(band.entryTarget, ccy)}`} />
+          <LegendDot cls="bg-azure/40" label="Fair range" />
+          <LegendDot cls="bg-warn" label={`Overvalued ≥ ${fmtMoney(band.overvaluedAt, ccy)}`} />
+          <LegendDot cls="bg-loss" label={`Sell zone ≥ ${fmtMoney(band.sellZoneAt, ccy)}`} />
+          <span className="ml-auto">
+            fair value {fmtMoney(band.fairValue, ccy)} · MoS {fmtPct(band.marginOfSafetyPct, 0)}
+          </span>
+        </div>
+      </div>
+    );
+  }
   const lastPrice = closes.length ? closes[closes.length - 1] : band.fairValue;
 
   // Y-domain wraps both the price path and every zone edge so the shading is visible.

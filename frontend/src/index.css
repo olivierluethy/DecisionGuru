@@ -59,6 +59,13 @@ body {
   .eyebrow {
     @apply text-eyebrow uppercase text-text-faint font-semibold tracking-[0.12em];
   }
+  /* Hide the scrollbar on horizontally-scrolling rails (e.g. the section nav). */
+  .no-scrollbar {
+    scrollbar-width: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
   .card {
     @apply bg-surface border border-hairline rounded p-5;
   }

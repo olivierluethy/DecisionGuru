@@ -31,10 +31,16 @@ export function Globe({ allocation, size = 300, autoRotate = true }: Props) {
     location: [c.lat as number, c.lng as number] as [number, number],
     size: Math.max(0.04, Math.min(0.14, Math.sqrt(c.weight) * 0.14)),
   }));
-  // Heaviest country decides the opening orientation.
+  // Heaviest country decides the opening orientation. Uses cobe's canonical
+  // location→angles mapping so the primary marker sits dead-centre on the disc
+  // (the earlier 0.6-scaled/clamped theta left it above centre, needing a drag).
   const primary = marked.slice().sort((a, b) => b.weight - a.weight)[0];
-  const initialPhi = primary ? ((-(primary.lng as number) * Math.PI) / 180 + TWO_PI) % TWO_PI : 0;
-  const initialTheta = primary ? Math.max(-0.5, Math.min(0.6, ((primary.lat as number) * Math.PI) / 180 * 0.6)) : 0.25;
+  const lat = (primary?.lat as number) ?? 0;
+  const lng = (primary?.lng as number) ?? 0;
+  const initialPhi = primary
+    ? ((Math.PI - ((lng * Math.PI) / 180 - Math.PI / 2)) % TWO_PI + TWO_PI) % TWO_PI
+    : 0;
+  const initialTheta = primary ? (lat * Math.PI) / 180 : 0.2;
 
   // Refs so the render loop reads live values without re-creating the globe.
   const phi = useRef(initialPhi);

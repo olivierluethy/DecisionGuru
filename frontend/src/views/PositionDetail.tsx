@@ -39,6 +39,7 @@ import { Segmented, Spinner, Stat, KindBadge, StaleDot, DataStatusBadge } from '
 import { BenchmarkSelect } from '../components/BenchmarkSelect';
 import { NotesPanel } from '../components/NotesPanel';
 import { MarketStatusChip } from '../components/MarketStatusChip';
+import { SectionNav, type NavSection } from '../components/SectionNav';
 import { buildPositionExport } from '../lib/exporters';
 
 // Distinct, dark-legible colours for comparison overlays. Azure is the subject stock and
@@ -161,6 +162,22 @@ export function PositionDetail() {
     await downloadExport(kind, payload, `${inst.symbol}-vs-${c.benchmarkSymbol}`);
   };
 
+  const isStock = inst.kind === 'stock';
+  const hasHistory = !delisted && (history.data?.length ?? 0) > 1;
+  const navSections: NavSection[] = [
+    { id: 'sec-opportunity', label: 'Opportunity cost' },
+    { id: 'sec-alternatives', label: 'Alternatives' },
+    ...(hasHistory ? [{ id: 'sec-history', label: 'Price history' }] : []),
+    ...(!delisted && isStock ? [{ id: 'sec-fundamentals', label: 'Fundamentals' }] : []),
+    ...(!delisted && isStock ? [{ id: 'sec-value', label: 'Value' }] : []),
+    ...(!delisted ? [{ id: 'sec-returns', label: 'Returns' }] : []),
+    { id: 'sec-projection', label: 'Projection' },
+    { id: 'sec-whatif', label: 'What-if sale' },
+    { id: 'sec-transactions', label: 'Transactions' },
+    ...(!delisted ? [{ id: 'sec-news', label: 'News' }] : []),
+    { id: 'sec-notes', label: 'Notes' },
+  ];
+
   return (
     <div className="p-6 max-w-[1400px] mx-auto">
       <button className="btn-ghost !px-2 mb-3 -ml-2" onClick={() => setView('dashboard')}>
@@ -246,6 +263,8 @@ export function PositionDetail() {
         </div>
       </header>
 
+      <SectionNav sections={navSections} />
+
       {p.dataStatus?.state === 'data-issue' && (
         <section className="card mb-6 border-l-2 border-l-loss bg-loss/5">
           <div className="flex items-start gap-3">
@@ -265,7 +284,7 @@ export function PositionDetail() {
       )}
 
       {/* Decision panel — opportunity cost crown */}
-      <section className={`card mb-6 border-l-2 ${aheadOfEtf ? 'border-l-gain' : 'border-l-loss'}`}>
+      <section id="sec-opportunity" className={`card mb-6 scroll-mt-24 border-l-2 ${aheadOfEtf ? 'border-l-gain' : 'border-l-loss'}`}>
         <div className="grid lg:grid-cols-[minmax(300px,1fr)_2fr] gap-6">
           <div className="flex flex-col justify-center">
             <div className="eyebrow mb-2">
@@ -346,19 +365,23 @@ export function PositionDetail() {
         </div>
       </section>
 
-      {/* Opportunity cost against every configured ETF — not just the selected one. */}
-      {benchmarkChoices.length > 1 && (
-        <section className="card mb-6">
-          <div className="eyebrow mb-3">
-            Opportunity cost vs each ETF · {preTax ? 'pre-tax' : 'after-tax'} · CHF
-          </div>
-          <MultiEtfOpportunityCost id={id!} preTax={preTax} benchmarks={benchmarkChoices} current={c.benchmarkSymbol} />
-        </section>
-      )}
+      {/* Opportunity cost against any alternative — configured ETFs and any stock you add. */}
+      <section id="sec-alternatives" className="card mb-6 scroll-mt-24">
+        <div className="eyebrow mb-3">
+          Opportunity cost vs alternatives · {preTax ? 'pre-tax' : 'after-tax'} · CHF
+        </div>
+        <OpportunityCostVsAlternatives
+          id={id!}
+          subject={inst.symbol}
+          preTax={preTax}
+          initialSymbols={Array.from(new Set([c.benchmarkSymbol, ...benchmarkChoices]))}
+          current={c.benchmarkSymbol}
+        />
+      </section>
 
       {/* Full-history price with rebased comparison overlays + stagnation markers */}
       {!delisted && (history.data?.length ?? 0) > 1 && (
-        <section className="card mb-6">
+        <section id="sec-history" className="card mb-6 scroll-mt-24">
           <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
             <div className="eyebrow">Full price history · {inst.symbol}</div>
             <div className="flex items-center gap-3 text-[11px] text-text-faint flex-wrap">
@@ -486,7 +509,7 @@ export function PositionDetail() {
 
       {/* Company fundamentals — valuation, profitability, multi-year figures, index weight */}
       {!delisted && inst.kind === 'stock' && (
-        <section className="card mb-6">
+        <section id="sec-fundamentals" className="card mb-6 scroll-mt-24">
           <div className="eyebrow mb-3">Company fundamentals · {inst.symbol}</div>
           <Fundamentals symbol={inst.symbol} domicile={inst.domicile} name={inst.name} currency={inst.currency} />
         </section>
@@ -494,7 +517,7 @@ export function PositionDetail() {
 
       {/* Value-investing analysis — intrinsic value, quality, ETF-realism verdict */}
       {!delisted && inst.kind === 'stock' && (
-        <section className="card mb-6">
+        <section id="sec-value" className="card mb-6 scroll-mt-24">
           <div className="eyebrow mb-3">Value analysis · what {inst.symbol} is really worth</div>
           <ValueAnalysis
             symbol={inst.symbol}
@@ -507,7 +530,7 @@ export function PositionDetail() {
       )}
 
       {!delisted && (
-        <section className="card mb-6">
+        <section id="sec-returns" className="card mb-6 scroll-mt-24">
           <PeriodReturns
             symbol={inst.symbol}
             entry={txs.data?.reduce<string | undefined>((m, t) => (!m || t.date < m ? t.date : m), undefined)}
@@ -515,28 +538,28 @@ export function PositionDetail() {
         </section>
       )}
 
-      <div className="grid lg:grid-cols-2 gap-6">
+      <div id="sec-projection" className="grid lg:grid-cols-2 gap-6 scroll-mt-24">
         <ProjectionSection id={id} benchmark={benchmark} />
         <DividendShockSection id={id} />
       </div>
 
-      <div className="mt-6">
+      <div id="sec-whatif" className="mt-6 scroll-mt-24">
         <WhatIfSaleSection id={id} benchmark={benchmark} preTax={preTax} currency={inst.currency} />
       </div>
 
-      <div className="grid lg:grid-cols-[1fr_360px] gap-6 mt-6">
+      <div id="sec-transactions" className="grid lg:grid-cols-[1fr_360px] gap-6 mt-6 scroll-mt-24">
         <TransactionsCard txs={txs.data ?? []} onDelete={(txId) => removeTx.mutate(txId)} currency={inst.currency} />
         <AllocationCard instrumentId={id} />
       </div>
 
       {!delisted && (
-        <section className="card mt-6">
+        <section id="sec-news" className="card mt-6 scroll-mt-24">
           <h3 className="font-display text-base font-semibold mb-3">Latest headlines</h3>
           <NewsFeed symbol={inst.symbol} limit={6} />
         </section>
       )}
 
-      <section className="card mt-6">
+      <section id="sec-notes" className="card mt-6 scroll-mt-24">
         <h3 className="font-display text-base font-semibold mb-3">Notes</h3>
         <NotesPanel target="instrument" targetId={id} />
       </section>
@@ -544,76 +567,122 @@ export function PositionDetail() {
   );
 }
 
-// ---- Opportunity cost vs multiple ETFs ----------------------------------
+// ---- Opportunity cost vs any alternative (ETFs + stocks) ----------------
 /**
- * After-tax opportunity cost of this holding measured against every configured
- * benchmark ETF at once, so the comparison isn't limited to a single ETF. Reuses the
- * per-benchmark counterfactual endpoint; best-for-you (stock ahead) sorted first.
+ * After-tax opportunity cost of this holding measured against any alternative — the
+ * configured benchmark ETFs and any individual stock you add. Reuses the per-benchmark
+ * counterfactual endpoint (which accepts any symbol), best-for-you (subject ahead) first.
  */
-function MultiEtfOpportunityCost({
+function OpportunityCostVsAlternatives({
   id,
+  subject,
   preTax,
-  benchmarks,
+  initialSymbols,
   current,
 }: {
   id: number;
+  subject: string;
   preTax: boolean;
-  benchmarks: string[];
+  initialSymbols: string[];
   current: string;
 }) {
+  const [symbols, setSymbols] = useState<string[]>(initialSymbols);
+  const [showAdd, setShowAdd] = useState(false);
+
   const results = useQueries({
-    queries: benchmarks.map((sym) => ({
+    queries: symbols.map((sym) => ({
       queryKey: ['counterfactual', id, sym, preTax],
       queryFn: () => api.counterfactual(id, sym, preTax),
     })),
   });
 
   const rows = results
-    .map((r, i) => ({ sym: benchmarks[i], data: r.data }))
-    .filter((r): r is { sym: string; data: NonNullable<typeof r.data> } => !!r.data)
-    .map((r) => ({ sym: r.sym, name: r.data.benchmarkName, delta: r.data.deltaCHF, xirr: r.data.benchmarkXirr }))
-    .sort((a, b) => b.delta - a.delta);
+    .map((r, i) => ({
+      sym: symbols[i],
+      name: r.data?.benchmarkName ?? null,
+      delta: r.data?.deltaCHF ?? null,
+      xirr: r.data?.benchmarkXirr ?? null,
+      loading: r.isLoading,
+      failed: r.isError,
+    }))
+    .sort((a, b) => (b.delta ?? -Infinity) - (a.delta ?? -Infinity));
 
-  if (rows.length === 0) return <Spinner label="Comparing against your ETFs…" />;
+  const add = (sym: string) => {
+    setSymbols((prev) => (prev.includes(sym) ? prev : [...prev, sym]));
+    setShowAdd(false);
+  };
+  const remove = (sym: string) => setSymbols((prev) => prev.filter((s) => s !== sym));
 
   return (
-    <div className="overflow-x-auto -mx-5">
-      <table className="w-full text-sm">
-        <thead>
-          <tr>
-            <th className="th">ETF</th>
-            <th className="th text-right">ETF XIRR</th>
-            <th className="th text-right">Opportunity cost</th>
-            <th className="th">Verdict</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r) => {
-            const ahead = r.delta >= 0;
-            return (
-              <tr key={r.sym} className={clsx('hover:bg-surface-2', r.sym === current && 'bg-azure/5')}>
-                <td className="td">
-                  <span className="font-mono text-gold">{r.sym}</span>
-                  <span className="text-text-muted ml-2 text-[13px]">{r.name}</span>
-                  {r.sym === current && <span className="ml-2 text-[10px] uppercase text-azure">selected</span>}
-                </td>
-                <td className="td text-right font-mono tnum text-gold">{fmtPctSigned(r.xirr)}</td>
-                <td className={clsx('td text-right font-mono tnum', plClass(r.delta))}>{fmtCHFSigned(r.delta)}</td>
-                <td className="td">
-                  <span className={clsx('text-[13px]', ahead ? 'text-gain' : 'text-loss')}>
-                    {ahead ? 'stock ahead' : 'ETF ahead'}
-                  </span>
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+    <>
+      <div className="overflow-x-auto -mx-5">
+        <table className="w-full text-sm">
+          <thead>
+            <tr>
+              <th className="th">Alternative</th>
+              <th className="th text-right">Its XIRR</th>
+              <th className="th text-right">Opportunity cost</th>
+              <th className="th">Verdict</th>
+              <th className="th w-8"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => {
+              const ahead = (r.delta ?? 0) >= 0;
+              return (
+                <tr key={r.sym} className={clsx('hover:bg-surface-2', r.sym === current && 'bg-azure/5')}>
+                  <td className="td">
+                    <span className="font-mono text-gold">{r.sym}</span>
+                    {r.name && <span className="text-text-muted ml-2 text-[13px]">{r.name}</span>}
+                    {r.sym === current && <span className="ml-2 text-[10px] uppercase text-azure">selected</span>}
+                  </td>
+                  {r.loading ? (
+                    <td className="td text-right text-text-faint text-[13px]" colSpan={3}>calculating…</td>
+                  ) : r.failed || r.delta == null ? (
+                    <td className="td text-right text-text-faint text-[13px]" colSpan={3}>no history</td>
+                  ) : (
+                    <>
+                      <td className="td text-right font-mono tnum text-gold">{fmtPctSigned(r.xirr)}</td>
+                      <td className={clsx('td text-right font-mono tnum', plClass(r.delta))}>{fmtCHFSigned(r.delta)}</td>
+                      <td className="td">
+                        <span className={clsx('text-[13px]', ahead ? 'text-gain' : 'text-loss')}>
+                          {ahead ? `${subject} ahead` : `${r.sym} ahead`}
+                        </span>
+                      </td>
+                    </>
+                  )}
+                  <td className="td text-right">
+                    <button
+                      className="text-text-faint hover:text-loss transition-colors"
+                      title="Remove"
+                      onClick={() => remove(r.sym)}
+                    >
+                      <X size={13} />
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="flex items-center gap-2 mt-3">
+        <button className="chip cursor-pointer" onClick={() => setShowAdd((v) => !v)}>
+          <Plus size={12} /> Add stock / ETF
+        </button>
+      </div>
+      {showAdd && (
+        <div className="mt-2 max-w-md">
+          <SymbolSearch onPick={(pick) => add(pick.symbol)} />
+        </div>
+      )}
       <p className="text-[11px] text-text-faint mt-3">
-        Positive = {`your stock is ahead of that ETF after tax`}; negative = the money would have done
-        better in the ETF. Same Swiss-tax basis as the headline figure.
+        Positive = {subject} is ahead of that alternative after tax; negative = the money would have
+        done better there. Add any individual stock, not just ETFs — same Swiss-tax basis as the
+        headline figure.
       </p>
-    </div>
+    </>
   );
 }
 

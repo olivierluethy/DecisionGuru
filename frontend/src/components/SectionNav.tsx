@@ -6,14 +6,32 @@ export interface NavSection {
   label: string;
 }
 
+// Height (px) to leave clear above a target section so it isn't hidden under the
+// sticky rail after a jump.
+const SCROLL_OFFSET = 84;
+
+/** Nearest scrollable ancestor, or null to fall back to the window. */
+function getScrollParent(node: HTMLElement | null): HTMLElement | null {
+  let el = node?.parentElement ?? null;
+  while (el) {
+    const oy = getComputedStyle(el).overflowY;
+    if ((oy === 'auto' || oy === 'scroll') && el.scrollHeight > el.clientHeight) return el;
+    el = el.parentElement;
+  }
+  return null;
+}
+
 /**
  * Sticky "on this page" rail with scroll-spy. Gives a long detail view a table of
- * contents so a first-time viewer can see every chapter at a glance and jump between
+ * contents so a first-time viewer sees every chapter at a glance and can jump between
  * them without scrolling. Highlights the section currently in view; clicking a pill
- * smooth-scrolls to it (sections carry scroll-mt so they clear the sticky rail).
+ * scrolls to it inside the real scroll container (computed, not scrollIntoView — a
+ * sticky element's scrollIntoView snaps the page back to its unstuck position).
  */
 export function SectionNav({ sections }: { sections: NavSection[] }) {
   const [active, setActive] = useState(sections[0]?.id ?? '');
+  const navRef = useRef<HTMLElement>(null);
+  const railRef = useRef<HTMLDivElement>(null);
   const pillRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const ids = sections.map((s) => s.id).join(',');
 
@@ -38,14 +56,35 @@ export function SectionNav({ sections }: { sections: NavSection[] }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ids]);
 
-  // Keep the active pill in view within the rail's own horizontal scroll (mobile).
+  // Keep the active pill in view by nudging ONLY the rail's horizontal scroll — never
+  // scrollIntoView, which would also move the vertical page scroll.
   useEffect(() => {
-    pillRefs.current[active]?.scrollIntoView({ inline: 'center', block: 'nearest' });
+    const pill = pillRefs.current[active];
+    const rail = railRef.current;
+    if (!pill || !rail) return;
+    const pr = pill.getBoundingClientRect();
+    const rr = rail.getBoundingClientRect();
+    rail.scrollLeft += pr.left - rr.left - (rr.width / 2 - pr.width / 2);
   }, [active]);
 
   const go = (id: string) => {
-    const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-    document.getElementById(id)?.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
+    const target = document.getElementById(id);
+    if (!target) return;
+    const behavior: ScrollBehavior = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+      ? 'auto'
+      : 'smooth';
+    const container = getScrollParent(navRef.current);
+    if (container) {
+      const top =
+        target.getBoundingClientRect().top -
+        container.getBoundingClientRect().top +
+        container.scrollTop -
+        SCROLL_OFFSET;
+      container.scrollTo({ top, behavior });
+    } else {
+      const top = target.getBoundingClientRect().top + window.scrollY - SCROLL_OFFSET;
+      window.scrollTo({ top, behavior });
+    }
     setActive(id);
   };
 
@@ -53,18 +92,21 @@ export function SectionNav({ sections }: { sections: NavSection[] }) {
 
   return (
     <nav
+      ref={navRef}
       aria-label="On this page"
       className="sticky top-0 z-20 -mx-6 mb-6 px-6 py-2.5 bg-bg/85 backdrop-blur-md border-b border-hairline"
     >
       <div className="flex items-center gap-2">
         <span className="eyebrow shrink-0 hidden sm:block">On this page</span>
-        <div className="flex items-center gap-1 overflow-x-auto no-scrollbar">
+        <div ref={railRef} className="flex items-center gap-1 overflow-x-auto no-scrollbar">
           {sections.map((s) => {
             const on = active === s.id;
             return (
               <button
                 key={s.id}
-                ref={(el) => (pillRefs.current[s.id] = el)}
+                ref={(el) => {
+                  pillRefs.current[s.id] = el;
+                }}
                 onClick={() => go(s.id)}
                 aria-current={on ? 'true' : undefined}
                 className={clsx(

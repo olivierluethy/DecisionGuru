@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Check, X, TrendingDown, TrendingUp, AlertTriangle } from 'lucide-react';
 import { api } from '../lib/api';
 import { Spinner } from './ui';
+import { BandBadge, PriceBandChart } from './ValuationBand';
 import { fmtPct, fmtMoney } from '../lib/format';
 
 const CONF_META: Record<string, { label: string; cls: string }> = {
@@ -88,7 +89,10 @@ export function ValueAnalysis({
       {/* Verdict headline: intrinsic value vs price */}
       <div className="grid sm:grid-cols-[minmax(200px,1fr)_2fr] gap-5">
         <div className={`card !p-4 border-l-2 ${overvalued ? 'border-l-loss' : 'border-l-gain'}`}>
-          <div className="eyebrow mb-1">Fair value (est.)</div>
+          <div className="flex items-center justify-between mb-1">
+            <div className="eyebrow">Fair value (est.)</div>
+            {data.band && <BandBadge band={data.band.band} />}
+          </div>
           <div className="font-mono text-2xl font-semibold tnum">
             {mid != null ? fmtMoney(mid, ccy) : '—'}
           </div>
@@ -108,6 +112,13 @@ export function ValueAnalysis({
             </div>
           )}
           <div className="text-[11px] text-text-faint mt-1">at {px != null ? fmtMoney(px, ccy) : '—'} today</div>
+          {data.entryTarget != null && (
+            <div className="mt-2 pt-2 border-t border-hairline text-[12px] text-text-muted">
+              Attractive entry price{' '}
+              <span className="font-mono text-gain tnum">{fmtMoney(data.entryTarget, ccy)}</span>
+              <span className="text-text-faint"> · fair value less a {fmtPct(data.band?.marginOfSafetyPct ?? 0, 0)} margin of safety</span>
+            </div>
+          )}
         </div>
 
         <div className="text-sm text-text-muted leading-relaxed">
@@ -132,6 +143,14 @@ export function ValueAnalysis({
           </p>
         </div>
       </div>
+
+      {/* Price history with shaded buy / fair / overvalued / sell zones */}
+      {data.band && (
+        <div className="card !p-4">
+          <div className="eyebrow mb-2">Price vs fair-value zones</div>
+          <PriceBandChart symbol={symbol} band={data.band} currency={ccy} />
+        </div>
+      )}
 
       {/* Can it compete with the ETF? */}
       {requiredCagr != null && benchmarkSymbol && (

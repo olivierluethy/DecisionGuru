@@ -42,6 +42,7 @@ import { PriceMovementChart } from '../components/PriceMovementChart';
 import { SymbolSearch } from '../components/SymbolSearch';
 import { Fundamentals } from '../components/Fundamentals';
 import { ValueAnalysis } from '../components/ValueAnalysis';
+import { SellSignalPanel } from '../components/SellSignalPanel';
 import { catchUp } from '../lib/rebase';
 import { PeriodReturns } from '../components/PeriodReturns';
 import { NewsFeed } from '../components/NewsFeed';
@@ -292,6 +293,13 @@ export function PositionDetail() {
             </button>
           </div>
         </section>
+      )}
+
+      {/* Valuation-driven sell/trim signal — surfaced above the fold when overvalued. */}
+      {p.sellSignal && (
+        <div className="mb-6">
+          <SellSignalPanel signal={p.sellSignal} />
+        </div>
       )}
 
       {/* Decision panel — opportunity cost crown */}

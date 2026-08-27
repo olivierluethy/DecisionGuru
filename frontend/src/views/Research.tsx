@@ -8,6 +8,8 @@ import { SymbolSearch } from '../components/SymbolSearch';
 import { PriceMovementChart } from '../components/PriceMovementChart';
 import { ExposureBars } from '../components/ExposureBars';
 import { PeriodReturns } from '../components/PeriodReturns';
+import { Fundamentals } from '../components/Fundamentals';
+import { ValueAnalysis } from '../components/ValueAnalysis';
 import { NewsFeed } from '../components/NewsFeed';
 import { Globe } from '../components/Globe';
 import { MarketStatusChip } from '../components/MarketStatusChip';
@@ -180,6 +182,23 @@ function AssetView({ symbol, onReset }: { symbol: string; onReset: () => void })
       <div className="card">
         <PeriodReturns symbol={data.symbol} />
       </div>
+
+      {/* Company fundamentals — same panel the Overview position detail shows (market cap,
+          P/E, margins, revenue history, analyst view). Stock-only, matching Overview. */}
+      {data.kind === 'stock' && (
+        <div className="card">
+          <div className="eyebrow mb-3">Company fundamentals · {data.symbol}</div>
+          <Fundamentals symbol={data.symbol} name={data.name} currency={data.currency} />
+        </div>
+      )}
+
+      {/* Value-investing analysis — intrinsic value, margin of safety, Buffett quality. */}
+      {data.kind === 'stock' && (
+        <div className="card">
+          <div className="eyebrow mb-3">Value analysis · what {data.symbol} is really worth</div>
+          <ValueAnalysis symbol={data.symbol} price={data.currentPrice ?? null} currency={data.currency} />
+        </div>
+      )}
 
       <div className="grid lg:grid-cols-[1fr_360px] gap-6">
         <div className="card">

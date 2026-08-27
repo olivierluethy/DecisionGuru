@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
-import { ArrowUpRight, Eye, Info } from 'lucide-react';
+import { ArrowUpRight, Eye, Info, Clock, Globe2 } from 'lucide-react';
 import { api, type ScreenerRow, type ScreenerVerdict } from '../lib/api';
 import { useApp } from '../store';
 import { Spinner, EmptyState } from '../components/ui';
+import { DiscoverMap } from '../components/DiscoverMap';
 import { fmtPct, fmtPctSigned, fmtNum, plClass } from '../lib/format';
 
 const VERDICT_META: Record<ScreenerVerdict, { label: string; cls: string }> = {
@@ -46,6 +47,7 @@ function AttractivenessBar({ value }: { value: number }) {
 export function Screener() {
   const qc = useQueryClient();
   const researchSymbolView = useApp((s) => s.researchSymbolView);
+  const openModal = useApp((s) => s.openModal);
   const [sector, setSector] = useState('');
   const [verdict, setVerdict] = useState('');
   const [groupBySector, setGroupBySector] = useState(false);
@@ -83,17 +85,18 @@ export function Screener() {
   }, [filtered, groupBySector]);
 
   const openRow = (sym: string) => researchSymbolView(sym);
+  const openReplay = (symbol: string, name?: string | null) => openModal({ kind: 'replay', symbol, name });
 
   return (
     <div className="p-6 max-w-[1280px] mx-auto">
       <header className="mb-4">
-        <div className="eyebrow mb-1">Discovery</div>
-        <h1 className="font-display text-2xl font-semibold">Undervalued screener</h1>
+        <div className="eyebrow mb-1">Discover</div>
+        <h1 className="font-display text-2xl font-semibold">Undervalued opportunities</h1>
         <p className="text-sm text-text-muted mt-1 max-w-3xl">
-          Ranks the universe by an attractiveness score blending Graham/Buffett intrinsic value,
-          margin of safety, quality, supportable return and how it fits your portfolio. Being cheap
-          is not enough — a low-quality bargain is flagged <span className="text-warn">cheap only</span>,
-          not attractive.
+          Screens the global universe for value, maps where the opportunities are, and ranks each
+          name by an attractiveness score blending Graham/Buffett intrinsic value, margin of safety,
+          quality, supportable return and portfolio fit. Being cheap is not enough — a low-quality
+          bargain is flagged <span className="text-warn">cheap only</span>, not attractive.
         </p>
       </header>
 
@@ -120,6 +123,14 @@ export function Screener() {
             />
           ) : (
             <>
+              {/* World map — where the value is, by market. */}
+              {(data.geo?.length ?? 0) > 0 && (
+                <div className="card mb-6">
+                  <div className="eyebrow mb-3 flex items-center gap-2"><Globe2 size={13} /> Opportunity map</div>
+                  <DiscoverMap geo={data.geo} rows={data.rows} onOpen={openRow} onReplay={openReplay} />
+                </div>
+              )}
+
               <div className="flex items-center gap-3 mb-4 flex-wrap">
                 <select className="input w-auto" value={sector} onChange={(e) => setSector(e.target.value)}>
                   <option value="">All sectors</option>
@@ -159,10 +170,10 @@ export function Screener() {
                     <tbody>
                       {grouped
                         ? grouped.map(([sec, rows]) => (
-                            <SectorGroup key={sec} sector={sec} rows={rows} watched={watchedSymbols} onOpen={openRow} onWatch={(r) => addWatch.mutate(r)} />
+                            <SectorGroup key={sec} sector={sec} rows={rows} watched={watchedSymbols} onOpen={openRow} onWatch={(r) => addWatch.mutate(r)} onReplay={openReplay} />
                           ))
                         : filtered.map((r) => (
-                            <Row key={r.symbol} r={r} watched={watchedSymbols.has(r.symbol)} onOpen={openRow} onWatch={() => addWatch.mutate(r)} />
+                            <Row key={r.symbol} r={r} watched={watchedSymbols.has(r.symbol)} onOpen={openRow} onWatch={() => addWatch.mutate(r)} onReplay={openReplay} />
                           ))}
                     </tbody>
                   </table>
@@ -189,20 +200,22 @@ function SectorGroup({
   watched,
   onOpen,
   onWatch,
+  onReplay,
 }: {
   sector: string;
   rows: ScreenerRow[];
   watched: Set<string>;
   onOpen: (s: string) => void;
   onWatch: (r: ScreenerRow) => void;
+  onReplay: (s: string, name?: string | null) => void;
 }) {
   return (
     <>
       <tr>
-        <td colSpan={11} className="pt-4 pb-1 px-3 eyebrow text-gold">{sector} · {rows.length}</td>
+        <td colSpan={12} className="pt-4 pb-1 px-3 eyebrow text-gold">{sector} · {rows.length}</td>
       </tr>
       {rows.map((r) => (
-        <Row key={r.symbol} r={r} watched={watched.has(r.symbol)} onOpen={onOpen} onWatch={() => onWatch(r)} />
+        <Row key={r.symbol} r={r} watched={watched.has(r.symbol)} onOpen={onOpen} onWatch={() => onWatch(r)} onReplay={onReplay} />
       ))}
     </>
   );
@@ -213,11 +226,13 @@ function Row({
   watched,
   onOpen,
   onWatch,
+  onReplay,
 }: {
   r: ScreenerRow;
   watched: boolean;
   onOpen: (s: string) => void;
   onWatch: () => void;
+  onReplay: (s: string, name?: string | null) => void;
 }) {
   const v = VERDICT_META[r.verdict];
   return (
@@ -248,14 +263,23 @@ function Row({
         <span className={clsx('inline-block px-2 py-0.5 rounded border text-[11px] font-medium', v.cls)}>{v.label}</span>
       </td>
       <td className="td text-right">
-        <button
-          className={clsx('transition-colors', watched ? 'text-azure' : 'text-text-faint hover:text-azure')}
-          title={watched ? 'On your watchlist' : 'Add to watchlist'}
-          onClick={onWatch}
-          disabled={watched}
-        >
-          <Eye size={14} />
-        </button>
+        <div className="flex items-center justify-end gap-2">
+          <button
+            className="text-text-faint hover:text-azure transition-colors"
+            title="Point-in-time replay — was it attractive at a past date?"
+            onClick={() => onReplay(r.symbol, r.name)}
+          >
+            <Clock size={14} />
+          </button>
+          <button
+            className={clsx('transition-colors', watched ? 'text-azure' : 'text-text-faint hover:text-azure')}
+            title={watched ? 'On your watchlist' : 'Add to watchlist'}
+            onClick={onWatch}
+            disabled={watched}
+          >
+            <Eye size={14} />
+          </button>
+        </div>
       </td>
     </tr>
   );

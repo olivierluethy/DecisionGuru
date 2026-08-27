@@ -183,6 +183,30 @@ sell-signal card, gain side). Grouping (Sector / Industry-theme / Country) reuse
 group-header eyebrow. A screened name's row opens the **OpportunityModal** (reuses
 ValueAnalysis) — detail is a modal, never a redirect.
 
+**Discover — sortable table:** every column header in the results table is a sort
+control, not a static label. A header is a full-width `button` inheriting the `.th`
+type (no restyle of the cell); the **active** column shows a small chevron
+(`--text` when active, hidden otherwise) — up for ascending, down for descending.
+Click a header to sort by it; click the active header again to flip direction.
+Numeric columns (Price, Margin of safety, Quality, Supportable, Yield, Portfolio fit,
+Attractiveness) sort numerically with nulls always last; text columns (Company, Sector,
+Verdict) sort alphabetically. First click on a numeric column is **descending** (biggest
+first), on a text column **ascending** — because that is the useful default in each case.
+The table defaults to **Attractiveness descending**; sorting composes with the filters,
+the mode toggle and grouping (rows sort within each group when grouped).
+
+**Price freshness:** a price is never shown as `0.00`. When the value is not a fresh
+live quote it carries a faint qualifier in `--text-faint` (`prev close · <date>` for a
+cached close, `delayed` for a stale quote). The number stays in the normal price
+style; only the qualifier is faint. If no price exists anywhere, show an explicit
+"no price data" rather than a zero.
+
+**External / new-tab links:** in-app navigation stays a store transition (no reload).
+The one exception is **Open Research**, which opens the addressable
+`#/research/<symbol>` route in a **new tab** — a real `<a target="_blank"
+rel="noopener noreferrer">` styled as the primary button (`.btn-primary`), with the
+`ArrowUpRight` glyph marking it as leaving the current tab.
+
 ## 10. Voice
 
 Plain, factual, instrument-like. State numbers; never advise. "You'd have CHF 4,120

@@ -89,7 +89,9 @@ export function SectionNav({ sections }: { sections: NavSection[] }) {
                     : 'text-text-muted hover:text-text hover:bg-surface-2',
                 )}
               >
-                {Icon && <Icon size={14} className={on ? 'text-azure' : 'text-text-faint'} />}
+                {/* Inherit the pill's currentColor so the icon is exactly as legible as
+                    its label (azure when active, muted otherwise). */}
+                {Icon && <Icon size={15} className="shrink-0" />}
                 {s.label}
               </button>
             );

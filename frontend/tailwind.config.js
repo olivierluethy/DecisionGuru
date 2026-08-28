@@ -50,10 +50,21 @@ export default {
           '100%': { opacity: '1', transform: 'translateY(0)' },
         },
         'fade-in': { '0%': { opacity: '0' }, '100%': { opacity: '1' } },
+        // Section-level entrance: a small lift + fade, used to orchestrate a
+        // quiet page-load sequence. `both` fill-mode means that even when the
+        // reduced-motion override collapses the duration, it lands at opacity 1.
+        'fade-up': {
+          '0%': { opacity: '0', transform: 'translateY(8px)' },
+          '100%': { opacity: '1', transform: 'translateY(0)' },
+        },
+        // Skeleton loading sweep.
+        shimmer: { '100%': { transform: 'translateX(100%)' } },
       },
       animation: {
         'modal-in': 'modal-in 140ms ease-out',
         'fade-in': 'fade-in 120ms ease-out',
+        'fade-up': 'fade-up 420ms cubic-bezier(0.22, 1, 0.36, 1) both',
+        shimmer: 'shimmer 1.6s ease-in-out infinite',
       },
     },
   },

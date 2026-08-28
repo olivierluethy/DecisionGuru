@@ -71,6 +71,11 @@ body {
   .card {
     @apply bg-surface border border-hairline rounded p-5;
   }
+  /* A card that responds to the pointer — a whisper of elevation, never a jump. */
+  .card-interactive {
+    @apply transition-colors duration-200 hover:border-hairline-strong hover:bg-surface-2/30
+      focus-visible:border-azure cursor-pointer;
+  }
   .hairline {
     @apply border-hairline;
   }

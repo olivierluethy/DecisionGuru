@@ -288,7 +288,7 @@ export function ValueAnalysis({
       {data.band && (
         <div className="card !p-4">
           <div className="eyebrow mb-2">Price vs fair-value zones</div>
-          <PriceBandChart symbol={symbol} band={data.band} currency={ccy} />
+          <PriceBandChart symbol={symbol} band={data.band} currency={ccy} rate={fxRate} displayCurrency={dc?.code ?? null} />
         </div>
       )}
 

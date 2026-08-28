@@ -48,12 +48,14 @@ export function BandBadge({ band, className }: { band: ValuationBandKey; classNa
  * abstract "band" in the security's actual price path. Native price units.
  */
 export function PriceBandChart({
-  symbol, band, currency, height = 220,
+  symbol, band, currency, height = 220, rate = null, displayCurrency = null,
 }: {
   symbol: string;
   band: ValuationBand;
   currency?: string | null;
   height?: number;
+  rate?: number | null;
+  displayCurrency?: string | null;
 }) {
   const { data: history, isLoading } = useQuery({
     queryKey: ['marketHistory', symbol],
@@ -62,8 +64,16 @@ export function PriceBandChart({
     retry: 1,
   });
 
-  const ccy = currency || '';
-  const closes = (history ?? []).map((h) => h.close).filter((c) => c > 0);
+  // Convert every monetary figure by the same scalar FX rate so the chart matches the
+  // CHF headline; a scalar multiply preserves the zone shape and all relationships. When
+  // no rate is supplied the chart stays in the native currency (unchanged behavior).
+  const k = rate != null ? rate : 1;
+  const ccy = ((rate != null && displayCurrency) ? displayCurrency : currency) || '';
+  const entryTarget = band.entryTarget * k;
+  const overvaluedAt = band.overvaluedAt * k;
+  const sellZoneAt = band.sellZoneAt * k;
+  const fairValue = band.fairValue * k;
+  const closes = (history ?? []).map((h) => h.close * k).filter((c) => c > 0);
 
   // No price path to draw yet — show a labelled placeholder instead of an empty chart.
   // (The backfill runs in the background; the line lands on a later poll.)
@@ -77,24 +87,24 @@ export function PriceBandChart({
           {isLoading ? 'Loading price history…' : 'Price history not cached yet — the zones will fill in shortly.'}
         </div>
         <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-[11px] text-text-faint">
-          <LegendDot cls="bg-gain" label={`Buy ≤ ${fmtMoney(band.entryTarget, ccy)}`} />
+          <LegendDot cls="bg-gain" label={`Buy ≤ ${fmtMoney(entryTarget, ccy)}`} />
           <LegendDot cls="bg-azure/40" label="Fair range" />
-          <LegendDot cls="bg-warn" label={`Overvalued ≥ ${fmtMoney(band.overvaluedAt, ccy)}`} />
-          <LegendDot cls="bg-loss" label={`Sell zone ≥ ${fmtMoney(band.sellZoneAt, ccy)}`} />
+          <LegendDot cls="bg-warn" label={`Overvalued ≥ ${fmtMoney(overvaluedAt, ccy)}`} />
+          <LegendDot cls="bg-loss" label={`Sell zone ≥ ${fmtMoney(sellZoneAt, ccy)}`} />
           <span className="ml-auto">
-            fair value {fmtMoney(band.fairValue, ccy)} · MoS {fmtPct(band.marginOfSafetyPct, 0)}
+            fair value {fmtMoney(fairValue, ccy)} · MoS {fmtPct(band.marginOfSafetyPct, 0)}
           </span>
         </div>
       </div>
     );
   }
-  const lastPrice = closes.length ? closes[closes.length - 1] : band.fairValue;
+  const lastPrice = closes.length ? closes[closes.length - 1] : fairValue;
 
   // Y-domain wraps both the price path and every zone edge so the shading is visible.
-  const candidates = [...closes, band.entryTarget, band.fairValue, band.overvaluedAt, band.sellZoneAt, lastPrice];
+  const candidates = [...closes, entryTarget, fairValue, overvaluedAt, sellZoneAt, lastPrice];
   const lo = Math.min(...candidates) * 0.92;
   const hi = Math.max(...candidates) * 1.06;
-  const data = (history ?? []).map((h) => ({ date: h.date, close: h.close }));
+  const data = (history ?? []).map((h) => ({ date: h.date, close: h.close * k }));
   const lastDate = data.length ? data[data.length - 1].date : undefined;
 
   const zone = (y1: number, y2: number, fill: string, opacity: number, key: string) => (
@@ -110,10 +120,10 @@ export function PriceBandChart({
             {/* Subtle horizontal grid, kept behind the bands so it never competes. */}
             <CartesianGrid stroke={C.hairline} strokeDasharray="2 4" strokeOpacity={0.5} vertical={false} />
             {/* Zones, cheapest at the bottom. */}
-            {zone(0, band.entryTarget, C.gain, 0.15, 'buy')}
-            {zone(band.entryTarget, band.overvaluedAt, C.azure, 0.08, 'fair')}
-            {zone(band.overvaluedAt, band.sellZoneAt, C.warn, 0.14, 'over')}
-            {zone(band.sellZoneAt, hi * 2, C.loss, 0.18, 'sell')}
+            {zone(0, entryTarget, C.gain, 0.15, 'buy')}
+            {zone(entryTarget, overvaluedAt, C.azure, 0.08, 'fair')}
+            {zone(overvaluedAt, sellZoneAt, C.warn, 0.14, 'over')}
+            {zone(sellZoneAt, hi * 2, C.loss, 0.18, 'sell')}
             <XAxis dataKey="date" tick={{ fontSize: 10, fill: C.textFaint }}
               tickFormatter={(d) => fmtDate(d).replace(/ \d{4}$/, '')} minTickGap={48}
               stroke={C.hairline} />
@@ -126,12 +136,12 @@ export function PriceBandChart({
               formatter={(v: number) => [fmtMoney(v, ccy), 'Price']}
               labelFormatter={(d) => fmtDate(d as string)} />
             {/* Band-boundary dividers at entry / overvalued / sell thresholds. */}
-            <ReferenceLine y={band.entryTarget} stroke={C.gain} strokeDasharray="4 3" strokeOpacity={0.8} />
-            <ReferenceLine y={band.overvaluedAt} stroke={C.warn} strokeDasharray="4 3" strokeOpacity={0.7} />
-            <ReferenceLine y={band.sellZoneAt} stroke={C.loss} strokeDasharray="4 3" strokeOpacity={0.8} />
+            <ReferenceLine y={entryTarget} stroke={C.gain} strokeDasharray="4 3" strokeOpacity={0.8} />
+            <ReferenceLine y={overvaluedAt} stroke={C.warn} strokeDasharray="4 3" strokeOpacity={0.7} />
+            <ReferenceLine y={sellZoneAt} stroke={C.loss} strokeDasharray="4 3" strokeOpacity={0.8} />
             {/* Fair value: distinct dashed reference, labelled with its value. */}
-            <ReferenceLine y={band.fairValue} stroke={C.textFaint} strokeDasharray="2 3"
-              label={{ value: `Fair ${fmtMoney(band.fairValue, ccy, false)}`, position: 'insideTopLeft',
+            <ReferenceLine y={fairValue} stroke={C.textFaint} strokeDasharray="2 3"
+              label={{ value: `Fair ${fmtMoney(fairValue, ccy, false)}`, position: 'insideTopLeft',
                 fill: C.textFaint, fontSize: 10 }} />
             <Line type="monotone" dataKey="close" stroke={C.azure} strokeWidth={2.2} dot={false}
               isAnimationActive={false} />
@@ -144,12 +154,12 @@ export function PriceBandChart({
         </ResponsiveContainer>
       </div>
       <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-[11px] text-text-faint">
-        <LegendDot cls="bg-gain" label={`Buy ≤ ${fmtMoney(band.entryTarget, ccy)}`} />
+        <LegendDot cls="bg-gain" label={`Buy ≤ ${fmtMoney(entryTarget, ccy)}`} />
         <LegendDot cls="bg-azure/40" label="Fair range" />
-        <LegendDot cls="bg-warn" label={`Overvalued ≥ ${fmtMoney(band.overvaluedAt, ccy)}`} />
-        <LegendDot cls="bg-loss" label={`Sell zone ≥ ${fmtMoney(band.sellZoneAt, ccy)}`} />
+        <LegendDot cls="bg-warn" label={`Overvalued ≥ ${fmtMoney(overvaluedAt, ccy)}`} />
+        <LegendDot cls="bg-loss" label={`Sell zone ≥ ${fmtMoney(sellZoneAt, ccy)}`} />
         <span className="ml-auto">
-          fair value {fmtMoney(band.fairValue, ccy)} · MoS {fmtPct(band.marginOfSafetyPct, 0)}
+          fair value {fmtMoney(fairValue, ccy)} · MoS {fmtPct(band.marginOfSafetyPct, 0)}
         </span>
       </div>
     </div>

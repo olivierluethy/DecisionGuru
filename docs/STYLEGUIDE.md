@@ -221,6 +221,49 @@ The one exception is **Open Research**, which opens the addressable
 rel="noopener noreferrer">` styled as the primary button (`.btn-primary`), with the
 `ArrowUpRight` glyph marking it as leaving the current tab.
 
+## 9c. Unified verdict (single recommendation engine)
+
+Every surface that recommends an action — Overview, Decisions, Advisory, Discover,
+Watchlist and the per-position detail page — renders **one** verdict produced by the
+shared engine (`services/verdict.py`). No view computes its own buy/sell/hold logic, and
+the **same asset shows the identical verdict, confidence and rationale everywhere**; views
+differ only in presentation density.
+
+**Canonical verdict set** — exactly three, each mapped onto the reserved semantic tokens
+(never a new colour):
+| Verdict | Meaning | Colour role | Token |
+|---|---|---|---|
+| **Buy more** | Undervalued with a real margin of safety and sound fundamentals | gain | `--gain` |
+| **Hold** | Fairly valued, or overvalued-but-sound (with a trim note), or a value-trap caution | neutral | `--text-muted` / `--hairline-strong` |
+| **Sell** | In the sell zone (≥ fair × 1.40) — realise it (tax-free for a private investor) | loss | `--loss` |
+
+- **`VerdictBadge`** is the canonical chip (dot + label), same shape as `BandBadge`:
+  `chip` + 6px status dot + sentence-case label. Buy more = `--gain`, Hold =
+  `--text-muted` (dot `--text-faint`), Sell = `--loss`. Reuse it everywhere a verdict is
+  shown — never fork a per-view badge. An optional faint `conf` suffix (`--text-faint`,
+  11px) shows the confidence (`high` / `medium` / `low`) when space allows.
+- **Rationale line.** One factual sentence in the product voice listing the driving
+  factors — valuation band, margin of safety %, upside to fair value, quality score,
+  performance vs the benchmark — then the resolved verdict. `--text-muted`, 13px, tabular
+  figures for the numbers. Never advisory phrasing beyond the verdict word itself.
+- **Conflict note.** When the verdict overrides a signal — underperforming the benchmark
+  yet **Buy more**, or beating it yet **Sell** — a one-line note explains why valuation
+  won, prefixed with a small `↔` connector in `--text-faint`. This is the core of the
+  feature: benchmark underperformance alone **never** yields Sell. Style: `--text-faint`,
+  11–12px, sits directly under the rationale.
+- **Trim note.** Overvalued-but-not-sell-zone and concentration flags surface as a
+  `--warn` "consider trimming" note on a **Hold** verdict — they never escalate the badge.
+- **Value-trap caution.** Undervalued but weak/deteriorating fundamentals resolves to
+  **Hold** with a `--warn` value-trap note — never auto-**Buy more**, never **Sell** for
+  lagging the benchmark.
+- **Underperformance cause.** The rationale states which case applies: *fundamentals-driven*
+  (weak/falling quality, declining earnings — a genuine concern) vs *temporary discount*
+  (a sound, undervalued name that simply lags). Never colour the cause; it lives in the
+  rationale/conflict text.
+- **Sell framing.** A Sell verdict reuses the existing after-tax framing (`SellSignalPanel`):
+  the crown figure is the after-tax gain if sold now, gain-coloured, with the plain Swiss
+  tax fact. The badge says the verdict; the panel carries the numbers.
+
 ## 10. Voice
 
 Plain, factual, instrument-like. State numbers; never advise. "You'd have CHF 4,120

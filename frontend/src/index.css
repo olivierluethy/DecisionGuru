@@ -108,6 +108,42 @@ body {
     @apply text-left text-[12px] font-medium text-text-muted uppercase tracking-wide
       px-3 py-2 bg-surface-2;
   }
+  /* Dual-thumb range slider (Discover numeric filters, §9d). Two overlaid range inputs
+     with transparent tracks sit over a shared track+fill; only the thumbs take pointer
+     events so both are grabbable. */
+  .dg-range {
+    @apply absolute inset-0 w-full h-1.5 bg-transparent m-0 p-0;
+    -webkit-appearance: none;
+    appearance: none;
+    pointer-events: none;
+  }
+  .dg-range::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    pointer-events: auto;
+    width: 14px;
+    height: 14px;
+    border-radius: 9999px;
+    background: #3da9fc;
+    border: 1px solid #0a0e15;
+    box-shadow: 0 0 0 1px #0a0e15;
+    cursor: pointer;
+  }
+  .dg-range::-moz-range-thumb {
+    pointer-events: auto;
+    width: 14px;
+    height: 14px;
+    border: 1px solid #0a0e15;
+    border-radius: 9999px;
+    background: #3da9fc;
+    cursor: pointer;
+  }
+  .dg-range:focus-visible::-webkit-slider-thumb {
+    box-shadow: 0 0 0 2px rgba(61, 169, 252, 0.5);
+  }
+  .dg-range:focus-visible::-moz-range-thumb {
+    box-shadow: 0 0 0 2px rgba(61, 169, 252, 0.5);
+  }
   .td {
     @apply px-3 py-2 text-sm border-t border-hairline;
   }

@@ -1,4 +1,4 @@
-import type { PortfolioResponse } from './api';
+import type { PortfolioResponse, PortfolioFit } from './api';
 import { api } from './api';
 import type { AppSettings, CounterfactualResult, Position, Transaction } from '@decisionguru/shared';
 import { fmtCHF, fmtPct } from './format';
@@ -99,6 +99,33 @@ function taxRows(s: AppSettings): (string | number)[][] {
   ];
 }
 
+function recommendationRows(p: Position): (string | number)[][] {
+  const v = p.verdict;
+  if (!v) return [['Recommendation', 'Not available']];
+  const rows: (string | number)[][] = [
+    ['Recommendation', v.action?.label ?? v.label],
+    ['Owned', v.action?.owned ? 'Yes' : 'No'],
+    ['Confidence', v.confidence],
+    ['Rationale', v.rationale],
+  ];
+  if (v.conflictNote) rows.push(['Note', v.conflictNote]);
+  return rows;
+}
+
+function fitRows(fit: PortfolioFit | null): (string | number)[][] {
+  if (!fit) return [['Portfolio fit', 'Unavailable']];
+  const ind = fit.indirect.available ? pct(fit.indirect.weight) : 'unavailable';
+  const rows: (string | number)[][] = [
+    ['Owned', fit.owned ? 'Yes' : 'No'],
+    ['Direct exposure', fit.owned ? pct(fit.directWeight) : '0%'],
+    ['Indirect ETF exposure', ind],
+    ['Effective exposure', fit.effectiveExposure != null ? pct(fit.effectiveExposure) : '—'],
+    ['Diversification', fit.diversification.note],
+  ];
+  if (fit.concentrationNote) rows.push(['Concentration', fit.concentrationNote]);
+  return rows;
+}
+
 export async function buildPortfolioExport(data: PortfolioResponse, kind: 'excel' | 'pdf') {
   const cfById = new Map(data.counterfactuals.map((c) => [c.instrumentId, c.counterfactual]));
   const rows = data.positions.map((p) => positionRow(p, cfById.get(p.instrument.id)));
@@ -149,7 +176,7 @@ export async function buildPortfolioExport(data: PortfolioResponse, kind: 'excel
 export async function buildPositionExport(
   position: Position,
   cf: CounterfactualResult,
-  kind: 'excel' | 'pdf',
+  kind: 'excel' | 'pdf' | 'docx',
   notes: string[] = [],
 ) {
   const p = position;
@@ -171,15 +198,18 @@ export async function buildPositionExport(
     ['ETF XIRR', pct(cf.benchmarkXirr)],
   ];
 
-  const [settings, transactions] = await Promise.all([
+  const [settings, transactions, fit] = await Promise.all([
     api.getSettings().catch(() => null),
     api.getTransactions(p.instrument.id).catch(() => [] as Transaction[]),
+    api.fit(p.instrument.symbol).catch(() => null),
   ]);
   const txTable = { headers: TX_HEADERS, rows: txRows(p.instrument.symbol, transactions) };
 
   if (kind === 'excel') {
     const sheets = [
       { name: 'Analysis', table: { headers: ['Metric', 'Value'], rows: summaryRows } },
+      { name: 'Recommendation', table: { headers: ['Field', 'Value'], rows: recommendationRows(p) } },
+      { name: 'Portfolio fit', table: { headers: ['Field', 'Value'], rows: fitRows(fit) } },
       { name: 'Transactions', table: txTable },
     ];
     if (settings) sheets.push({ name: 'Tax assumptions', table: { headers: ['Assumption', 'Value'], rows: taxRows(settings) } });
@@ -188,6 +218,8 @@ export async function buildPositionExport(
   const chartImage = await captureChart('position-chart');
   const tables = [
     { title: 'Analysis', headers: ['Metric', 'Value'], rows: summaryRows },
+    { title: 'Recommendation', headers: ['Field', 'Value'], rows: recommendationRows(p) },
+    { title: 'Portfolio fit', headers: ['Field', 'Value'], rows: fitRows(fit) },
     { title: 'Transactions', headers: TX_HEADERS, rows: txTable.rows },
   ];
   if (settings) tables.push({ title: 'Tax assumptions', headers: ['Assumption', 'Value'], rows: taxRows(settings) });

@@ -19,7 +19,7 @@ export type ModalKind =
   | { kind: 'edit-instrument'; instrumentId: number }
   | { kind: 'settings' }
   | { kind: 'scenario'; scenarioId?: number }
-  | { kind: 'export'; context: 'portfolio' | 'position'; instrumentId?: number }
+  | { kind: 'export'; context: 'portfolio' | 'position' | 'symbol'; instrumentId?: number; symbol?: string; name?: string | null }
   | { kind: 'compare'; instrumentIds: number[] }
   | { kind: 'cash-detail' }
   | { kind: 'timeline' }

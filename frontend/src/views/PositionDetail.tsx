@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useQuery, useQueries, useQueryClient, useMutation } from '@tanstack/react-query';
 import {
   ArrowLeft,
-  Download,
+  Share2,
   Pencil,
   Plus,
   Trash2,
@@ -24,7 +24,7 @@ import {
   StickyNote,
 } from 'lucide-react';
 import clsx from 'clsx';
-import { api, downloadExport } from '../lib/api';
+import { api } from '../lib/api';
 import { useApp } from '../store';
 import {
   fmtCHF,
@@ -55,7 +55,6 @@ import { BenchmarkSelect } from '../components/BenchmarkSelect';
 import { NotesPanel } from '../components/NotesPanel';
 import { MarketStatusChip } from '../components/MarketStatusChip';
 import { SectionNav, type NavSection } from '../components/SectionNav';
-import { buildPositionExport } from '../lib/exporters';
 
 // Distinct, dark-legible colours for comparison overlays. Azure is the subject stock and
 // green/red mark surge/drop, so those hues are deliberately excluded here.
@@ -171,12 +170,6 @@ export function PositionDetail() {
     ? { fromDate: catchups[0].cu.behindSince, label: `behind ${catchups[0].symbol}` }
     : undefined;
 
-  const doExport = async (kind: 'excel' | 'pdf') => {
-    const notesList = await api.listNotes('instrument', id);
-    const payload = await buildPositionExport(p, c, kind, notesList.map((n) => n.body));
-    await downloadExport(kind, payload, `${inst.symbol}-vs-${c.benchmarkSymbol}`);
-  };
-
   const isStock = inst.kind === 'stock';
   const hasHistory = !delisted && (history.data?.length ?? 0) > 1;
   const navSections: NavSection[] = [
@@ -269,11 +262,8 @@ export function PositionDetail() {
           <button className="btn-secondary" onClick={() => openModal({ kind: 'edit-instrument', instrumentId: id })}>
             <Pencil size={15} /> Edit
           </button>
-          <button className="btn-secondary" onClick={() => doExport('pdf')}>
-            <Download size={15} /> PDF
-          </button>
-          <button className="btn-secondary" onClick={() => doExport('excel')}>
-            <Download size={15} /> XLS
+          <button className="btn-secondary" onClick={() => openModal({ kind: 'export', context: 'position', instrumentId: id })}>
+            <Share2 size={15} /> Share
           </button>
         </div>
       </header>

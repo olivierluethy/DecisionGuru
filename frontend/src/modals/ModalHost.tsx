@@ -11,6 +11,7 @@ import { CreatePlanModal } from './CreatePlanModal';
 import { TimelineModal } from './TimelineModal';
 import { ReplayModal } from './ReplayModal';
 import { OpportunityModal } from './OpportunityModal';
+import { ShareModal } from './ShareModal';
 
 export function ModalHost() {
   const modal = useApp((s) => s.modal);
@@ -40,6 +41,8 @@ export function ModalHost() {
       return <ReplayModal symbol={modal.symbol} name={modal.name} />;
     case 'opportunity':
       return <OpportunityModal symbol={modal.symbol} name={modal.name} price={modal.price} currency={modal.currency} />;
+    case 'export':
+      return <ShareModal context={modal.context} instrumentId={modal.instrumentId} symbol={modal.symbol} name={modal.name} />;
     default:
       return null;
   }

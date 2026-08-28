@@ -1,4 +1,4 @@
-import { ArrowUpRight, Clock } from 'lucide-react';
+import { ArrowUpRight, Clock, Share2 } from 'lucide-react';
 import { useApp } from '../store';
 import { Modal } from '../components/Modal';
 import { ValueAnalysis } from '../components/ValueAnalysis';
@@ -32,6 +32,9 @@ export function OpportunityModal({
         <>
           <button className="btn-ghost mr-auto" onClick={() => openModal({ kind: 'replay', symbol, name })}>
             <Clock size={15} /> Point-in-time replay
+          </button>
+          <button className="btn-secondary" onClick={() => openModal({ kind: 'export', context: 'symbol', symbol, name })}>
+            <Share2 size={15} /> Share
           </button>
           <button className="btn-secondary" onClick={closeModal}>Close</button>
           {/* Research is an addressable route — open the full workup in a new tab. */}

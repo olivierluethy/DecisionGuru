@@ -15,7 +15,7 @@ from .fundamentals import get_cached_fundamentals
 from .marketdata import ensure_history, resolve_price
 from .valuation import value_analysis
 from .fx import get_fx_rate
-from ..reference.sector_etfs import sector_etf_for, BROAD_BENCHMARKS, MARKET_ANALYSIS_SYMBOLS
+from ..reference.sector_etfs import sector_etf_for, BROAD_BENCHMARKS
 
 # (key, months) — the horizons the UI offers.
 WINDOWS: list[tuple[str, int]] = [

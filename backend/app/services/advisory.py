@@ -13,6 +13,8 @@ from . import repo
 from .counterfactual import compute_counterfactual
 from .finance import build_position
 from .finance_math import years_between
+from .fundamentals import get_cached_fundamentals
+from .verdict import verdict_for, performance_from_counterfactual
 
 # A holding is flagged when the best alternative ETF beat it by at least this much
 # over the shared horizon (fraction of invested capital) — filters out noise.
@@ -35,6 +37,7 @@ def _rationale(name: str, invested: float, since: str, hold_pct: float | None,
 def build_advisory(settings: dict, include_handled: bool = False) -> list[dict]:
     today = pd.Timestamp.utcnow().strftime("%Y-%m-%d")
     benchmarks = settings.get("benchmarks") or []
+    default_bench = settings["defaultBenchmarkSymbol"]
     handled = set(settings.get("advisoryHandled") or [])
 
     insights: list[dict] = []
@@ -75,6 +78,17 @@ def build_advisory(settings: dict, include_handled: bool = False) -> list[dict]:
         hold_pct = ((best["actualValueCHF"] - invested) / invested) if invested > 0 else None
         etf_pct = ((best["counterfactualValueCHF"] - invested) / invested) if invested > 0 else None
 
+        # The unified verdict — same engine and same (default) benchmark as Decisions and
+        # the Overview, so a holding never shows "reallocate" here while reading Buy more
+        # elsewhere. An undervalued, sound name that merely lags resolves to Hold/Buy more
+        # with a conflict note; the reallocation figure stays as factual context, not a sell.
+        cf_default = (best if best["benchmarkSymbol"] == default_bench
+                      else compute_counterfactual(inst, txs, default_bench, settings, False))
+        verdict = verdict_for(
+            inst["symbol"], pos.get("currentPrice"), inst.get("currency"),
+            get_cached_fundamentals(inst["symbol"]), settings,
+            performance=performance_from_counterfactual(cf_default), held=True, position=pos)
+
         insights.append({
             "instrumentId": inst["id"],
             "symbol": inst["symbol"],
@@ -92,6 +106,7 @@ def build_advisory(settings: dict, include_handled: bool = False) -> list[dict]:
             "lagPct": lag_pct,
             "series": best["series"],
             "handled": is_handled,
+            "verdict": verdict,
             "rationale": _rationale(inst["name"], invested, since, hold_pct,
                                     best["benchmarkSymbol"], etf_pct, realloc_gain),
         })

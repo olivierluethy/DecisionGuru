@@ -43,7 +43,7 @@ import { SymbolSearch } from '../components/SymbolSearch';
 import { Fundamentals } from '../components/Fundamentals';
 import { ValueAnalysis } from '../components/ValueAnalysis';
 import { PortfolioFit } from '../components/PortfolioFit';
-import { yahooUrl, googleUrl } from '../lib/externalLinks';
+import { yahooUrl, googleUrl, finanzenUrl } from '../lib/externalLinks';
 import { SellSignalPanel } from '../components/SellSignalPanel';
 import { VerdictBadge, VerdictRationale, VERDICT_META } from '../components/Verdict';
 import { catchUp } from '../lib/rebase';
@@ -556,7 +556,8 @@ export function PositionDetail() {
         {(() => {
           const y = yahooUrl(inst.symbol);
           const g = googleUrl(inst.symbol);
-          if (!y && !g) return null;
+          const f = finanzenUrl(inst.symbol, inst.isin);
+          if (!y && !g && !f) return null;
           return (
             <div className="mt-5 pt-4 border-t border-hairline">
               <p className="eyebrow mb-2">Want to learn more about this investment?</p>
@@ -569,6 +570,11 @@ export function PositionDetail() {
                 {y && (
                   <a className="btn-secondary" href={y} target="_blank" rel="noopener noreferrer">
                     Open in Yahoo Finance
+                  </a>
+                )}
+                {f && (
+                  <a className="btn-secondary" href={f} target="_blank" rel="noopener noreferrer">
+                    Open in finanzen.net
                   </a>
                 )}
               </div>

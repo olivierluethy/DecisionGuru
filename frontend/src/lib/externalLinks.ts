@@ -24,3 +24,12 @@ export function googleUrl(symbol?: string | null): string | null {
   if (!base || !exch) return null;
   return `https://www.google.com/finance/quote/${encodeURIComponent(base)}:${exch}`;
 }
+
+// finanzen.net is ISIN-centric, so search by ISIN when we have it (the unambiguous match);
+// otherwise fall back to the base ticker (Yahoo suffix stripped). Its search page resolves
+// either to the instrument's fundamentals page. Null only when we have no identifier.
+export function finanzenUrl(symbol?: string | null, isin?: string | null): string | null {
+  const query = isin || (symbol ? symbol.split('.')[0] : '');
+  if (!query) return null;
+  return `https://www.finanzen.net/suchergebnis.asp?_search=${encodeURIComponent(query)}`;
+}

@@ -5,7 +5,7 @@ import { ValueAnalysis } from '../components/ValueAnalysis';
 import { ListingRecommendation } from '../components/ListingRecommendation';
 import { PortfolioFit } from '../components/PortfolioFit';
 import { researchHref } from '../lib/router';
-import { yahooUrl, googleUrl } from '../lib/externalLinks';
+import { yahooUrl, googleUrl, finanzenUrl } from '../lib/externalLinks';
 
 /**
  * Opportunity detail — the fair-value read for a screened name without leaving Discover.
@@ -65,7 +65,8 @@ export function OpportunityModal({
       {(() => {
         const y = yahooUrl(symbol);
         const g = googleUrl(symbol);
-        if (!y && !g) return null;
+        const f = finanzenUrl(symbol);
+        if (!y && !g && !f) return null;
         return (
           <div className="mt-6 pt-5 border-t border-hairline">
             <p className="eyebrow mb-2">Want to learn more about this investment?</p>
@@ -78,6 +79,11 @@ export function OpportunityModal({
               {y && (
                 <a className="btn-secondary" href={y} target="_blank" rel="noopener noreferrer">
                   Open in Yahoo Finance
+                </a>
+              )}
+              {f && (
+                <a className="btn-secondary" href={f} target="_blank" rel="noopener noreferrer">
+                  Open in finanzen.net
                 </a>
               )}
             </div>

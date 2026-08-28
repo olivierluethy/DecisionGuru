@@ -24,6 +24,8 @@ body,
 body {
   @apply bg-bg text-text font-sans antialiased;
   font-feature-settings: 'cv05' 1, 'ss01' 1;
+  /* Wide content scrolls inside its own container — never the page itself. */
+  overflow-x: hidden;
 }
 
 /* Numeric alignment everywhere financial figures live */

@@ -1,8 +1,9 @@
 import { useQuery } from '@tanstack/react-query';
 import { Check, X, TrendingDown, TrendingUp, AlertTriangle } from 'lucide-react';
-import { api } from '../lib/api';
+import { api, type Verdict } from '../lib/api';
 import { Spinner } from './ui';
 import { BandBadge, PriceBandChart } from './ValuationBand';
+import { VerdictBadge, VerdictRationale } from './Verdict';
 import { fmtPct, fmtMoney, priceFreshnessLabel } from '../lib/format';
 
 const CONF_META: Record<string, { label: string; cls: string }> = {
@@ -30,6 +31,7 @@ export function ValueAnalysis({
   benchmarkSymbol,
   priceAsOf,
   priceFreshness,
+  verdict,
 }: {
   symbol: string;
   price: number | null;
@@ -40,6 +42,9 @@ export function ValueAnalysis({
   /** Freshness of the resolved price, so the verdict can qualify a non-live price. */
   priceAsOf?: string | null;
   priceFreshness?: 'live' | 'delayed' | 'prev-close' | 'none' | null;
+  /** Held-position verdict to show instead of the valuation-only one (same verdict key,
+   *  but carries the benchmark conflict note) — passed by the per-position detail page. */
+  verdict?: Verdict | null;
 }) {
   const { data, isLoading, isError } = useQuery({
     queryKey: ['valuation', symbol, price],
@@ -74,9 +79,19 @@ export function ValueAnalysis({
     data.impliedGrowth != null && data.growthRaw != null && data.impliedGrowth > data.growthRaw + 0.02;
   const lowConf = data.confidence !== 'high';
   const conf = CONF_META[data.confidence] ?? CONF_META.low;
+  // The one canonical verdict: a held-position verdict wins (it carries the benchmark
+  // conflict note); otherwise the valuation-only verdict the endpoint attached.
+  const rec = verdict ?? data.recommendation ?? null;
 
   return (
     <div className="space-y-5">
+      {/* The unified verdict — same badge and rationale every surface renders. */}
+      {rec && (
+        <div className="card !p-4 flex items-start gap-3 flex-wrap">
+          <VerdictBadge verdict={rec.verdict} confidence={rec.confidence} withIcon />
+          <VerdictRationale verdict={rec} className="flex-1 min-w-[220px]" />
+        </div>
+      )}
       {/* Confidence + why the estimate may not be trustworthy */}
       <div className="flex items-center gap-2 text-[11px]">
         <span className="eyebrow">Estimate reliability</span>

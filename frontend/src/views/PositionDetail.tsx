@@ -43,6 +43,7 @@ import { SymbolSearch } from '../components/SymbolSearch';
 import { Fundamentals } from '../components/Fundamentals';
 import { ValueAnalysis } from '../components/ValueAnalysis';
 import { SellSignalPanel } from '../components/SellSignalPanel';
+import { VerdictBadge, VerdictRationale, VERDICT_META } from '../components/Verdict';
 import { catchUp } from '../lib/rebase';
 import { PeriodReturns } from '../components/PeriodReturns';
 import { NewsFeed } from '../components/NewsFeed';
@@ -295,7 +296,15 @@ export function PositionDetail() {
         </section>
       )}
 
-      {/* Valuation-driven sell/trim signal — surfaced above the fold when overvalued. */}
+      {/* The unified verdict — the single recommendation every view shares, above the fold. */}
+      {p.verdict && (
+        <section className={`card mb-6 flex items-start gap-3 flex-wrap border-l-2 ${VERDICT_META[p.verdict.verdict].border}`}>
+          <VerdictBadge verdict={p.verdict.verdict} confidence={p.verdict.confidence} withIcon />
+          <VerdictRationale verdict={p.verdict} className="flex-1 min-w-[260px]" />
+        </section>
+      )}
+
+      {/* Valuation-driven sell/trim signal — the after-tax numbers behind a Sell/overvalued. */}
       {p.sellSignal && (
         <div className="mb-6">
           <SellSignalPanel signal={p.sellSignal} />
@@ -544,6 +553,7 @@ export function PositionDetail() {
             currency={inst.currency}
             catchUpPct={catchups[0]?.cu.catchUpPct ?? null}
             benchmarkSymbol={catchups[0]?.symbol ?? null}
+            verdict={p.verdict}
           />
         </section>
       )}

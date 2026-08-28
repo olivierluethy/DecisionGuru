@@ -7,6 +7,8 @@ import { useApp } from '../store';
 import { Spinner, EmptyState, Segmented } from '../components/ui';
 import { DiscoverMap } from '../components/DiscoverMap';
 import { VerdictBadge, VERDICT_META } from '../components/Verdict';
+import { DiscoverFilterBar, computeDomains, passesRanges, type Ranges } from '../components/DiscoverFilters';
+import { useDebounced } from '../lib/useDebounced';
 import { fmtPct, fmtPctSigned, fmtNum, plClass } from '../lib/format';
 
 const FIT_CLS: Record<string, string> = {
@@ -122,6 +124,10 @@ export function Screener() {
   const [sector, setSector] = useState('');
   const [theme, setTheme] = useState('');
   const [verdict, setVerdict] = useState('');
+  // Numeric range filters (yield, MoS, quality, supportable, price). Debounced so dragging
+  // a slider stays smooth; they compose by AND with the dropdowns and the mode toggle.
+  const [ranges, setRanges] = useState<Ranges>({});
+  const debouncedRanges = useDebounced(ranges, 100);
   const [groupBy, setGroupBy] = useState<GroupBy>('none');
   const [sortCol, setSortCol] = useState<SortCol>('attractiveness');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
@@ -170,12 +176,17 @@ export function Screener() {
     [data],
   );
 
+  // Slider bounds come from the whole scored set, so they stay stable as other filters and
+  // the mode change — the ends are always reachable.
+  const domains = useMemo(() => computeDomains(data?.rows ?? []), [data]);
+
   const filtered = useMemo(() => {
     let rows = data?.rows ?? [];
     if (mode === 'new') rows = rows.filter(isNewOpportunity); // not held + attractive
     if (sector) rows = rows.filter((r) => r.sector === sector);
     if (theme) rows = rows.filter((r) => r.theme === theme);
     if (verdict) rows = rows.filter((r) => r.verdict === verdict);
+    rows = rows.filter((r) => passesRanges(r, debouncedRanges, domains));
     rows = [...rows];
     const dir = sortDir === 'asc' ? 1 : -1;
     rows.sort((a, b) => {
@@ -200,17 +211,17 @@ export function Screener() {
       return primary || b.attractiveness - a.attractiveness;
     });
     return rows;
-  }, [data, mode, sector, theme, verdict, sortCol, sortDir]);
+  }, [data, mode, sector, theme, verdict, debouncedRanges, domains, sortCol, sortDir]);
 
   // Names that newly became attractive since the last scan (movers strip).
   const freshNames = useMemo(() => filtered.filter((r) => r.isNew), [filtered]);
 
-  // The map reflects the mode (not the dropdown filters): all names, or not-yet-owned
-  // attractive names only.
-  const mapRows = useMemo(
-    () => (mode === 'new' ? (data?.rows ?? []).filter(isNewOpportunity) : (data?.rows ?? [])),
-    [data, mode],
-  );
+  // The map reflects the mode and the numeric value filters (so density recomputes live as
+  // you refine), but not the categorical dropdowns — those have the country drill-in.
+  const mapRows = useMemo(() => {
+    const base = mode === 'new' ? (data?.rows ?? []).filter(isNewOpportunity) : (data?.rows ?? []);
+    return base.filter((r) => passesRanges(r, debouncedRanges, domains));
+  }, [data, mode, debouncedRanges, domains]);
 
   const grouped = useMemo(() => {
     if (groupBy === 'none') return null;
@@ -260,6 +271,7 @@ export function Screener() {
               {mode === 'new' && (
                 <> <span className="text-gain">{data.rows.filter(isNewOpportunity).length}</span> not-yet-owned opportunities.</>
               )}
+              {' '}Showing <span className="text-text tnum">{filtered.length}</span>.
             </span>
           </div>
 
@@ -396,6 +408,16 @@ export function Screener() {
                   </button>
                 </div>
               </div>
+
+              {/* Numeric range filters — compose by AND with the dropdowns above and the
+                  mode toggle; recompute the table, count and map live. */}
+              <DiscoverFilterBar
+                rows={data.rows}
+                ranges={ranges}
+                onRanges={setRanges}
+                otherActiveCount={(sector ? 1 : 0) + (theme ? 1 : 0) + (verdict ? 1 : 0)}
+                onClearAll={() => { setRanges({}); setSector(''); setTheme(''); setVerdict(''); }}
+              />
 
               <div className="card">
                 <div className="overflow-x-auto -mx-5">

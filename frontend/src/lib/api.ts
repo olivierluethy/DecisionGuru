@@ -521,6 +521,30 @@ export interface ValuationBand {
   marginOfSafetyPct: number;
 }
 
+export interface ValuationScenario {
+  assumptions: { growth: number; discountRate: number; terminalGrowth: number };
+  intrinsicValue: number | null;
+  marginOfSafety: number | null;
+}
+export interface QualityAssessment {
+  roic: { value: number | null; rating: string; detail?: string };
+  fcfConversion: { value: number | null; rating: string; detail?: string };
+  interestCoverage: { value: number | null; rating: string; detail?: string };
+  consistency: Record<string, { cv: number | null; rating: string }>;
+  dilution: { sharesChangePct: number | null; rating: string; detail?: string };
+  moat: { signal: string; evidence: string[]; detail?: string };
+}
+export interface FinancialStrength {
+  debtState: string;
+  rating: string;
+  netDebtToEbitda: number | null;
+  debtToFcf: number | null;
+  interestCoverage: number | null;
+  interestCoverageRating?: string;
+  currentRatio: number | null;
+  cashPosition: number | null;
+}
+
 export interface ValuationResult {
   symbol: string;
   currency: string | null;
@@ -559,6 +583,16 @@ export interface ValuationResult {
   roe: number | null;
   dividendYield: number | null;
   hasData: boolean;
+  // ---- Engine 2.0 (all optional / additive) ----
+  scenarios?: { bear: ValuationScenario; base: ValuationScenario; bull: ValuationScenario } | null;
+  valuationRange?: { low: number | null; base: number | null; high: number | null; spread: number | null } | null;
+  valuationUncertainty?: 'low' | 'moderate' | 'high' | null;
+  fcfPerShare?: number | null;
+  normalizedFcfPerShare?: number | null;
+  ownerEarningsPerShare?: number | null;
+  fcfYield?: number | null;
+  qualityAssessment?: QualityAssessment | null;
+  financialStrength?: FinancialStrength | null;
 }
 
 // ---- Market hours --------------------------------------------------------
@@ -876,6 +910,13 @@ export interface PortfolioFit {
     | { available: false; note: string };
   effectiveExposure: number | null;
   diversification: { status: string; sectorWeight: number | null; note: string };
+  /** Engine 2.0: the portfolio-fit action, distinct from the asset's own merit. */
+  fitDecision?: {
+    status: 'improves' | 'neutral' | 'concentrates' | 'prefer-etf' | string;
+    preferEtf: boolean;
+    effective: number | null;
+    note: string;
+  } | null;
   concentrationNote: string | null;
 }
 

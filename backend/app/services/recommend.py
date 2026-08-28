@@ -47,6 +47,13 @@ def _chf(v: float) -> str:
     return f"CHF {v:,.0f}".replace(",", "'")
 
 
+def freed_capital_chf(current_value_chf: float | None, capital_gains_tax_chf: float | None = 0.0) -> float:
+    """Capital freed by selling a position = its current value minus any tax due (≈ proceeds
+    you can redeploy). NOT the after-tax gain — selling a CHF 10'000 winner frees ~CHF 10'000,
+    not just its gain (register #15)."""
+    return round((current_value_chf or 0.0) - (capital_gains_tax_chf or 0.0), 2)
+
+
 def _recovery_months(shortfall_ratio: float, etf_cagr: float | None) -> float | None:
     if not etf_cagr or etf_cagr <= 0 or shortfall_ratio <= 1:
         return None
@@ -212,7 +219,11 @@ def build_recommendations(settings: dict) -> dict:
         "cashSignal": cash_signal,
         "summary": {
             "counts": counts,
-            "reallocatableCHF": sum(r["impactCHF"] for r in recs if r["action"] == "sell"),
+            # Capital freed by acting on Sell verdicts = proceeds (value − tax), not the gain.
+            "reallocatableCHF": round(sum(
+                freed_capital_chf(r["currentValueCHF"],
+                                  (r["verdict"].get("afterTax") or {}).get("capitalGainsTaxCHF"))
+                for r in recs if r["action"] == "sell"), 2),
             "totalOpportunityCostCHF": total_opp,
             "portfolioValueCHF": total_value,
             "idleCashCHF": cash,

@@ -118,15 +118,28 @@ def _after_tax_frame(position: dict | None, settings: dict | None) -> dict | Non
 
 
 def resolve_verdict(va: dict | None, *, performance: dict | None = None, held: bool = False,
-                    position: dict | None = None, settings: dict | None = None) -> dict:
-    """Blend valuation + fundamentals + benchmark performance into one verdict.
+                    position: dict | None = None, settings: dict | None = None,
+                    fit: dict | None = None, quality_assessment: dict | None = None,
+                    financial_strength: dict | None = None) -> dict:
+    """Blend valuation + fundamentals + benchmark performance into one verdict, and (Engine
+    2.0, Phase 5) fuse the separate decision layers into a multi-dimensional read.
 
     `va`          — a `valuation.value_analysis` payload (or None when it can't be valued).
     `performance` — {deltaPct, benchmarkSymbol, benchmarkName, opportunityCostCHF} or None.
     `held`        — whether this is an owned position (benchmark perf only applies then).
-    Returns {verdict, label, confidence, drivers, rationale, conflictNote, trimNote,
-             underperformanceCause, valueTrap, afterTax?}.
+    `fit`         — a `portfolio_intel.fit_decision` payload (drives the PREFER ETF outcome).
+    `quality_assessment` / `financial_strength` — the Phase-3 structured reads (dimensions).
+    Returns the historical keys PLUS {dimensions, dataSufficient}. The canonical `verdict`
+    stays in {buy-more, hold, sell}; the `action.label` may become 'Prefer ETF' or
+    'Insufficient data'.
     """
+    # The Phase-3 structured reads travel inside the va payload — use them for the
+    # dimensions unless a caller passes them explicitly, so every surface benefits.
+    if quality_assessment is None:
+        quality_assessment = (va or {}).get("qualityAssessment")
+    if financial_strength is None:
+        financial_strength = (va or {}).get("financialStrength")
+
     band_obj = (va or {}).get("band") if va else None
     band = band_obj.get("band") if band_obj else None
     band_label = band_obj.get("label") if band_obj else None
@@ -142,6 +155,14 @@ def resolve_verdict(va: dict | None, *, performance: dict | None = None, held: b
     strong_fund = (q_frac is not None and q_frac >= STRONG_QUALITY_FRAC and trend != "deteriorating")
     weak_fund = (q_frac is not None) and not strong_fund
 
+    # Confidence floor for a categorical Sell (F-11): realising a position on a fair value
+    # we cannot stand behind is the costliest error. Require at least medium confidence AND
+    # at least two agreeing valuation models; otherwise a sell-zone price trims, never sells.
+    va_conf = (va or {}).get("confidence") or "low"
+    model_count = len((va or {}).get("models") or {})
+    low_conf_sell = _CONF_ORDER.get(va_conf, 0) < _CONF_ORDER["medium"]
+    sell_supported = (not low_conf_sell) and model_count >= 2
+
     delta_pct = (performance or {}).get("deltaPct") if (held and performance) else None
     perf = classify_performance(delta_pct)
     lag_pct = (-delta_pct) if delta_pct is not None else None    # +ve = behind benchmark
@@ -155,8 +176,17 @@ def resolve_verdict(va: dict | None, *, performance: dict | None = None, held: b
 
     # --- Valuation & fundamentals gate the verdict (rules 1–5) ---
     if band == "significantly-overvalued":
-        # Rule 1: in the sell zone there is no remaining upside → Sell.
-        verdict = "sell"
+        if sell_supported:
+            # Rule 1: in the sell zone there is no remaining upside → Sell.
+            verdict = "sell"
+        else:
+            # Confidence floor not met → trim, don't force a hard sell (F-11).
+            verdict = "hold"
+            reason = "low-confidence" if low_conf_sell else "single-model"
+            trim_note = (
+                f"Screens in the sell zone, but the fair-value estimate is {reason} — "
+                "trimming rather than a full sell until the valuation is corroborated."
+            )
     elif band == "overvalued":
         # Rule 2: above fair value but not the sell zone → Hold with a trim note. Price
         # alone never forces a sell when the business is still sound.
@@ -200,10 +230,25 @@ def resolve_verdict(va: dict | None, *, performance: dict | None = None, held: b
 
     after_tax = _after_tax_frame(position, settings) if verdict == "sell" else None
 
+    # --- Engine 2.0 (Phase 5): dimensions + new outcomes -------------------------
+    data_sufficient = bool(va and va.get("band"))
+    dimensions = _dimensions(va, fit, quality_assessment, financial_strength,
+                             performance if held else None, conf)
+    action = _action_for(verdict, held=held, trim=bool(trim_note))
+    if not data_sufficient:
+        # Honest abstention — no reliable valuation to act on (brief §34).
+        action = {**action, "label": "Insufficient data"}
+    elif verdict == "buy-more" and fit and fit.get("preferEtf"):
+        # Excellent asset, but the book already owns it heavily via ETFs → the fund is the
+        # better expression. Only ever overrides a BUY, never a Sell/Reduce.
+        action = {**action, "label": "Prefer ETF"}
+
     return {
         "verdict": verdict,
         "label": LABELS[verdict],
-        "action": _action_for(verdict, held=held, trim=bool(trim_note)),
+        "action": action,
+        "dataSufficient": data_sufficient,
+        "dimensions": dimensions,
         "confidence": conf,
         "drivers": {
             "band": band,
@@ -230,10 +275,11 @@ def resolve_verdict(va: dict | None, *, performance: dict | None = None, held: b
 
 def verdict_for(symbol: str, price: float | None, currency: str | None, cached: dict | None,
                 settings: dict | None, *, performance: dict | None = None, held: bool = False,
-                position: dict | None = None) -> dict:
+                position: dict | None = None, fit: dict | None = None) -> dict:
     """Convenience: value a symbol off *cached* fundamentals (no provider call) and resolve
     its verdict in one shot. Used by the portfolio/position endpoints, which have the cached
-    fundamentals and (optionally) a benchmark counterfactual already to hand."""
+    fundamentals and (optionally) a benchmark counterfactual already to hand. `fit` (a
+    `portfolio_intel.fit_decision`) enables the PREFER ETF outcome."""
     from .valuation import value_analysis  # lazy — avoids import order coupling
 
     snap = (cached or {}).get("snapshot") if cached else None
@@ -242,7 +288,7 @@ def verdict_for(symbol: str, price: float | None, currency: str | None, cached: 
         va = value_analysis(symbol, price, currency or snap.get("currency"),
                             data=cached, settings=settings)
     return resolve_verdict(va, performance=performance, held=held, position=position,
-                           settings=settings)
+                           settings=settings, fit=fit)
 
 
 def performance_from_counterfactual(cf: dict | None) -> dict | None:
@@ -254,6 +300,69 @@ def performance_from_counterfactual(cf: dict | None) -> dict | None:
         "benchmarkSymbol": cf.get("benchmarkSymbol"),
         "benchmarkName": cf.get("benchmarkName"),
         "opportunityCostCHF": (cf.get("counterfactualValueCHF") or 0) - (cf.get("actualValueCHF") or 0),
+    }
+
+
+def _quality_rating(qa: dict | None, va: dict | None) -> str:
+    """Overall business-quality read: prefer the Phase-3 structured assessment (ROIC / cash
+    conversion / moat); fall back to the 6-check scorecard fraction."""
+    if qa:
+        roic = (qa.get("roic") or {}).get("rating")
+        fcf = (qa.get("fcfConversion") or {}).get("rating")
+        moat = (qa.get("moat") or {}).get("signal")
+        if not (roic in (None, "unknown") and fcf in (None, "unknown")):
+            strong = sum(x == "strong" for x in (roic, fcf)) + (1 if moat == "measurable-strong" else 0)
+            weak = sum(x == "weak" for x in (roic, fcf))
+            if strong >= 2:
+                return "strong"
+            if weak >= 1 and strong == 0:
+                return "weak"
+            return "adequate"
+    q = (va or {}).get("quality") or {}
+    frac = (q["score"] / q["max"]) if q.get("max") else None
+    if frac is None:
+        return "unknown"
+    return "strong" if frac >= 0.66 else "adequate" if frac >= 0.5 else "weak"
+
+
+def _risk_rating(va: dict | None, fs: dict | None, conf: str | None) -> str:
+    flags = 0
+    if (va or {}).get("valuationUncertainty") == "high":
+        flags += 1
+    if (fs or {}).get("rating") == "stretched":
+        flags += 1
+    if conf == "low":
+        flags += 1
+    return "elevated" if flags >= 2 else "moderate" if flags else "low"
+
+
+def _dimensions(va: dict | None, fit: dict | None, qa: dict | None, fs: dict | None,
+                performance: dict | None, conf: str | None) -> dict:
+    """The distinct decision dimensions, kept separate rather than blended into one score —
+    a good business, an attractive price, and a good portfolio fit are different questions."""
+    va = va or {}
+    band = (va.get("band") or {}).get("band")
+    mos = va.get("marginOfSafety")
+    sr = va.get("supportableReturn")
+    er_rating = ("attractive" if (sr is not None and sr >= 0.10)
+                 else "modest" if sr is not None else "unknown")
+    delta = (performance or {}).get("deltaPct")
+    return {
+        "valuation": {"rating": band or "unknown", "marginOfSafety": mos},
+        "quality": {"rating": _quality_rating(qa, va),
+                    "moat": (qa or {}).get("moat", {}).get("signal") if qa else None},
+        "financialStrength": {"rating": (fs or {}).get("rating") or "unknown",
+                              "debtState": (fs or {}).get("debtState")},
+        "expectedReturn": {"rating": er_rating, "value": sr},
+        "portfolioFit": {"rating": (fit or {}).get("status") or "unknown",
+                         "preferEtf": bool((fit or {}).get("preferEtf")),
+                         "effectiveExposure": (fit or {}).get("effective")},
+        "opportunityCost": {"rating": ("behind" if (delta is not None and delta < -0.04)
+                                       else "ahead" if (delta is not None and delta > 0.04)
+                                       else "inline" if delta is not None else "n/a"),
+                            "deltaPct": delta},
+        "dataConfidence": {"rating": conf or "low"},
+        "risk": {"rating": _risk_rating(va, fs, conf)},
     }
 
 

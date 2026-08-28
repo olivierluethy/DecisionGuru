@@ -4,6 +4,8 @@
 weekends/holidays, then to the latest rate, then to 1 (graceful degrade)."""
 from __future__ import annotations
 
+from typing import NamedTuple
+
 import httpx
 import pandas as pd
 
@@ -76,32 +78,41 @@ def ensure_fx_range(currencies: list[str], from_date: str, to: str) -> None:
             pass
 
 
-def get_fx_rate(from_cur: str, to: str, date: str) -> float:
+class FxResult(NamedTuple):
+    """A resolved rate plus HOW it was resolved, so callers can flag data quality.
+
+    `rate is None` (source 'unresolved') means no rate could be found — the caller must
+    decide whether to degrade or abstain, rather than a silent 1:1 being assumed for it."""
+    rate: float | None
+    source: str  # 'same' | 'cache' | 'nearest' | 'range' | 'latest' | 'unresolved'
+
+
+def resolve_fx(from_cur: str, to: str, date: str) -> FxResult:
+    """Resolve `from`→`to` on `date`, reporting the resolution stage. Never fabricates a
+    rate: an unresolvable pair returns (None, 'unresolved') — see AUDIT §3 F-3."""
     if from_cur == to:
-        return 1.0
+        return FxResult(1.0, "same")
     iso = pd.Timestamp(date).strftime("%Y-%m-%d")
     cached = _cache_get(from_cur, to, iso)
     if cached is not None:
-        return cached
+        return FxResult(cached, "cache")
     near = _cache_get_nearest(from_cur, to, iso)
     if near is not None:
         _put(from_cur, to, iso, near)
-        return near
+        return FxResult(near, "nearest")
 
     start = (pd.Timestamp(iso) - pd.Timedelta(days=7)).strftime("%Y-%m-%d")
     try:
         with _client() as client:
             res = client.get(f"{BASE_URL}/{start}..{iso}", params={"from": from_cur, "to": to})
         if res.status_code == 200:
-            data = res.json()
-            rates = data.get("rates") or {}
+            rates = (res.json().get("rates") or {})
             dates = sorted(rates.keys())
             if dates:
-                last = dates[-1]
-                rate = rates[last].get(to)
+                rate = rates[dates[-1]].get(to)
                 if isinstance(rate, (int, float)):
                     _put(from_cur, to, iso, rate)
-                    return rate
+                    return FxResult(rate, "range")
     except Exception:  # noqa: BLE001
         pass
 
@@ -112,11 +123,26 @@ def get_fx_rate(from_cur: str, to: str, date: str) -> float:
             rate = (res.json().get("rates") or {}).get(to)
             if isinstance(rate, (int, float)):
                 _put(from_cur, to, iso, rate)
-                return rate
+                return FxResult(rate, "latest")
     except Exception:  # noqa: BLE001
         pass
 
-    return 1.0  # unknown FX: degrade gracefully (flagged stale upstream)
+    return FxResult(None, "unresolved")
+
+
+def get_fx_rate(from_cur: str, to: str, date: str, *, strict: bool = False) -> float | None:
+    """Resolved FX rate. On an unresolvable pair this **warns** (never silent) and returns
+    None in ``strict`` mode, or 1.0 as a flagged graceful degrade otherwise. Existing
+    callers pass no ``strict`` and keep the historical float contract; new/critical callers
+    pass ``strict=True`` to abstain instead of mis-valuing on a fabricated 1:1 (AUDIT §3 F-3)."""
+    r = resolve_fx(from_cur, to, date)
+    if r.rate is not None:
+        return r.rate
+    log.warning(
+        "FX unresolved for %s→%s on %s — no rate available%s",
+        from_cur, to, date, "" if strict else " (degrading to 1.0)",
+    )
+    return None if strict else 1.0
 
 
 def to_chf(amount: float, currency: str, date: str) -> float:

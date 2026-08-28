@@ -59,6 +59,38 @@ def owned_symbol_set() -> set[str]:
     return {r["symbol"] for r in rows if (r["net"] or 0) > 1e-9}
 
 
+def owned_isin_set() -> set[str]:
+    """ISINs currently held — net open quantity > 0 — so ownership is recognised by the
+    ECONOMIC ENTITY, not just the ticker string. A company held on one listing (NESN.SW) is
+    then still 'owned' when met as another listing (NSRGY) that shares the ISIN
+    (VALUE_INVESTING_AUDIT §3 F-12)."""
+    rows = db.q(
+        """SELECT i.isin AS isin,
+                  SUM(CASE t.action WHEN 'buy' THEN t.quantity
+                                    WHEN 'sell' THEN -t.quantity ELSE 0 END) AS net
+             FROM instruments i JOIN transactions t ON t.instrumentId = i.id
+            WHERE i.isin IS NOT NULL
+            GROUP BY i.isin"""
+    ).all()
+    return {r["isin"] for r in rows if (r["net"] or 0) > 1e-9}
+
+
+def is_owned(symbol: str | None = None, isin: str | None = None,
+             owned_symbols: set[str] | None = None, owned_isins: set[str] | None = None) -> bool:
+    """Ownership by company identity: owned if the symbol is held OR the ISIN (economic
+    entity) is held on any listing. Callers in hot loops may pass precomputed sets to avoid
+    per-call queries; otherwise they are fetched once here."""
+    if symbol:
+        syms = owned_symbols if owned_symbols is not None else owned_symbol_set()
+        if symbol in syms:
+            return True
+    if isin:
+        isins = owned_isins if owned_isins is not None else owned_isin_set()
+        if isin in isins:
+            return True
+    return False
+
+
 def all_transactions() -> list[dict]:
     return [dict(r) for r in db.q("SELECT * FROM transactions ORDER BY date, id").all()]
 

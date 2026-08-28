@@ -1,12 +1,16 @@
 """Portfolio-fit read for a candidate symbol: does buying it actually improve THIS
-portfolio? Reuses the existing exposure/allocation engines — no new data source, and it
-never fabricates a percentage. Indirect exposure is limited to the provider's top-holdings
-slice (all we have); a name outside every owned ETF's top holdings is reported as
-'indirect unavailable', not zero-with-false-confidence.
+portfolio? Reuses the exposure/allocation engines and the pure `portfolio_intel` decision
+layer — no new data source, and it never fabricates a percentage. Indirect exposure is
+limited to the provider's top-holdings slice (all we have); a name outside every owned ETF's
+top holdings is reported as 'indirect unavailable', not zero-with-false-confidence.
+
+Asset quality/valuation and portfolio fit are kept DISTINCT (AUDIT §3 F-13): this module
+answers only "does it fit?"; whether the asset itself is attractive is a separate input.
 """
 from __future__ import annotations
 
 from . import repo
+from . import portfolio_intel as pi
 from .exposure import portfolio_exposure
 from .allocation import build_allocation
 from .fundamentals import get_cached_fundamentals
@@ -19,34 +23,49 @@ def _sector_of(symbol: str) -> str | None:
     return snap.get("sector")
 
 
-def portfolio_fit(symbol: str, settings: dict) -> dict:
-    owned = repo.owned_symbol_set()
+def _is_attractive(symbol: str, settings: dict) -> bool:
+    """Cheap attractiveness read from cached fundamentals only (no provider call): a positive
+    margin of safety and non-weak quality. Used to gate the 'prefer ETF' fit decision."""
+    cached = get_cached_fundamentals(symbol)
+    if not cached or not (cached.get("snapshot")):
+        return False
+    from .valuation import value_analysis  # lazy — avoids import cycle
+    va = value_analysis(symbol, None, (cached.get("snapshot") or {}).get("currency"),
+                        data=cached, settings=settings)
+    mos = va.get("marginOfSafety")
+    q = va.get("quality") or {}
+    q_ok = bool(q.get("max")) and (q["score"] / q["max"]) >= 0.5
+    return bool(mos is not None and mos > 0 and q_ok)
+
+
+def portfolio_fit(symbol: str, settings: dict, asset_attractive: bool | None = None) -> dict:
+    owned_syms = repo.owned_symbol_set()
+    owned_isins = repo.owned_isin_set()
     exposure = portfolio_exposure(settings)            # value-weighted, held only
     holdings = exposure.get("holdings", [])            # [{instrumentId,symbol,name,weight,valueCHF}]
     weight_by_symbol = {h["symbol"]: h.get("weight", 0.0) for h in holdings}
+    instruments = {i["symbol"]: i for i in repo.list_instruments() if i.get("symbol")}
 
-    is_owned = symbol in owned
+    cand_isin = (instruments.get(symbol) or {}).get("isin")
+    is_owned = repo.is_owned(symbol, isin=cand_isin, owned_symbols=owned_syms, owned_isins=owned_isins)
     direct_weight = weight_by_symbol.get(symbol, 0.0) if is_owned else 0.0
 
-    # Indirect: for each owned ETF, does the candidate appear in its top holdings?
-    instruments = {i["symbol"]: i for i in repo.list_instruments() if i.get("symbol")}
-    contributors: list[dict] = []
+    # Through-ETF exposure: each owned ETF's portfolio weight × the candidate's holding weight
+    # inside it (top holdings only). Delegated to the pure, tested decision layer.
+    owned_etfs: list[dict] = []
     for h in holdings:
         inst = instruments.get(h["symbol"])
         if not inst or inst.get("kind") != "etf":
             continue
-        alloc = build_allocation(inst)                 # cached fund summary → topHoldings
-        for top in alloc.get("topHoldings", []):
-            if top.get("symbol") and top["symbol"] == symbol:
-                contrib = (top.get("weight") or 0.0) * (h.get("weight") or 0.0)
-                if contrib > 0:
-                    contributors.append({
-                        "etfSymbol": h["symbol"], "etfName": h.get("name"),
-                        "viaWeight": round(contrib, 4),
-                    })
-    indirect_available = bool(contributors)
-    indirect_weight = round(sum(c["viaWeight"] for c in contributors), 4) if indirect_available else None
-    effective = round(direct_weight + (indirect_weight or 0.0), 4) if indirect_available else direct_weight
+        alloc = build_allocation(inst)
+        tops = [{"symbol": t.get("symbol"), "weight": t.get("weight")}
+                for t in alloc.get("topHoldings", []) if t.get("symbol")]
+        owned_etfs.append({"symbol": h["symbol"], "name": h.get("name"),
+                           "weight": h.get("weight") or 0.0, "topHoldings": tops})
+
+    indirect = pi.indirect_exposure(symbol, owned_etfs)
+    indirect_weight = indirect["weight"]
+    effective = pi.effective_exposure(direct_weight, indirect_weight)
 
     # Diversification: candidate sector vs the portfolio's sector rollup.
     cand_sector = _sector_of(symbol)
@@ -61,10 +80,18 @@ def portfolio_fit(symbol: str, settings: dict) -> dict:
     else:
         div_status, div_note = "concentrates", f"Already heavy in {cand_sector} ({sector_weight * 100:.0f}%)."
 
+    if asset_attractive is None:
+        asset_attractive = _is_attractive(symbol, settings)
+    decision = pi.fit_decision(
+        asset_attractive=asset_attractive, direct_weight=direct_weight,
+        indirect_weight=indirect_weight, effective=effective,
+        sector_weight=sector_weight, indirect_available=indirect["available"],
+    )
+
     high = effective is not None and effective >= 0.15
     concentration_note = (
         f"Effective exposure is already ~{effective * 100:.0f}% — buying more raises concentration."
-        if (high and (is_owned or indirect_available)) else None
+        if (high and (is_owned or indirect["available"])) else None
     )
 
     return {
@@ -75,13 +102,12 @@ def portfolio_fit(symbol: str, settings: dict) -> dict:
         "sector": cand_sector,
         "indirect": (
             {"available": True, "weight": indirect_weight, "coverage": "top-holdings-only",
-             "note": "From each owned ETF's top holdings only — may understate.",
-             "contributors": contributors}
-            if indirect_available else
-            {"available": False,
-             "note": "Not among any owned ETF's top holdings; broader constituents unavailable."}
+             "note": indirect["note"], "contributors": indirect["contributors"]}
+            if indirect["available"] else
+            {"available": False, "note": indirect["note"]}
         ),
         "effectiveExposure": effective,
         "diversification": {"status": div_status, "sectorWeight": sector_weight, "note": div_note},
+        "fitDecision": decision,   # the distinct portfolio-fit action (improves/neutral/concentrates/prefer-etf)
         "concentrationNote": concentration_note,
     }

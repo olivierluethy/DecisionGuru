@@ -1,14 +1,88 @@
 # DecisionGuru — Complete Application & Investment-Logic Overview
 
-> **Status:** forensic audit baseline, 2026-08-28. This document describes the **current implementation** of DecisionGuru as read from the source, distinguishing throughout between **[CURRENT]** behaviour and **[RECOMMENDED]** change. It is written so that a financial expert who has never seen the app can understand what it does, how the numbers are produced, and where they can mislead.
+> **Status:** forensic audit baseline (2026-08-28), **now partly superseded** by the
+> Value-Investing Engine 2.0 redesign of the same date. **§0 below is the authoritative
+> current state** of the valuation/quality/portfolio/recommendation engine; the companion
+> **`VALUE_INVESTING_AUDIT.md`** is the authoritative methodology spec (every new formula,
+> assumption, test, and per-fix rationale). §§1–32 remain the original forensic baseline of
+> the **pre-redesign** implementation — accurate as history and for the parts untouched
+> (portfolio/tax/counterfactual/XIRR/exports), but where §0 and §28's ✅ marks contradict a
+> later section, **§0 wins**.
 >
-> **Method:** every formula, threshold, and issue below was transcribed from the code with `file:line` references. Nothing is assumed correct because it "looks right." Issues are tagged **[Technical]** (implementation/mathematical correctness) vs **[Financial]** (soundness of the assumption), and prioritised **P0–P3**:
-> - **P0** — can materially produce misleading investment conclusions or corrupt headline numbers.
-> - **P1** — wrong under common conditions / systematic bias.
-> - **P2** — conditional, edge-case, or UX/consistency.
-> - **P3** — latent, cosmetic, or minor.
->
-> This is an audit baseline, **not** a change log. No behaviour was modified while producing it.
+> **Method (baseline sections):** every formula, threshold, and issue was transcribed from
+> the code with `file:line` references, tagged **[Technical]** vs **[Financial]** and
+> prioritised **P0–P3** (P0 = can corrupt a headline / flip a conclusion … P3 = cosmetic).
+
+---
+
+## 0. Value-Investing Engine 2.0 — current state (authoritative)
+
+The valuation, quality, portfolio-fit and recommendation engine was redesigned in six
+test-driven phases (**82 pytest tests**, `backend/tests/`, run `cd backend && .venv/bin/python
+-m pytest`). Full methodology, formulas and per-fix rationale: **`VALUE_INVESTING_AUDIT.md`**.
+What changed vs the baseline below:
+
+**Data integrity (Phase 1).** Debt-free now **passes** the leverage check (unknown debt =
+n/a, excluded from the score); FX no longer silently returns 1.0 — `fx.resolve_fx()` reports
+the resolution source and `get_fx_rate(strict=True)` returns None on an unresolvable pair;
+EPS/currency minor-unit normalised by the snapshot's own currency; `dividendYield` always ÷100
+(verified percent in yfinance 1.6.0); fair-value midpoint is the **true median**, not the
+index-max.
+
+**Valuation to a range (Phase 2).** The DCF is a two-stage taper (growth fades g₀→terminal,
+finite for any g₀ — no more clipping high growers to r−0.001); reverse DCF returns "no
+solution" outside a plausible bracket instead of saturating to 40%; a **cash lane** adds
+FCF/share, median-normalised FCF, owner earnings (NI+D&A−capex) and an FCF-based DCF model;
+**bear/base/bull scenarios** produce a `valuationRange` + `valuationUncertainty` (wide spread
+lowers confidence); a **Sell now requires ≥ medium confidence AND ≥ 2 agreeing models**, else
+it trims.
+
+**Business quality & strength (Phase 3).** New `services/quality.py`: ROIC (NOPAT/invested
+capital), FCF conversion, interest coverage, revenue/margin/FCF consistency, dilution, and a
+**moat signal that is measurable-or-unknown** (never fabricated); a financial-strength module
+with **distinct debt states** (debt-free / low / moderate / high / unknown). The provider now
+also fetches the cash-flow and balance-sheet statements (+ income interest/pretax/tax), cached
+7 days. Exposed as `qualityAssessment` + `financialStrength` on the valuation payload.
+
+**Portfolio intelligence (Phase 4).** New `services/portfolio_intel.py`: through-ETF indirect
+exposure (holding% × ETF weight), effective exposure, and a **fit decision kept distinct from
+asset merit** (improves / neutral / concentrates / **prefer-etf**). Ownership is recognised by
+**ISIN/economic entity** (`repo.owned_isin_set()` / `is_owned(symbol, isin)`), not just the
+ticker string. Overlap stays honestly "top-holdings-only".
+
+**Recommendation Engine 2.0 (Phase 5).** The single shared `verdict.resolve_verdict` now emits
+a multi-dimensional `dimensions` block (valuation, quality, financial strength, expected
+return, portfolio fit, opportunity cost, data confidence, risk) kept separate rather than
+blended, plus two new ownership-aware outcomes: **PREFER ETF** (an attractive buy already held
+heavily via ETFs) and **INSUFFICIENT DATA** (no reliable valuation). Canonical verdict key
+stays {buy-more, hold, sell}.
+
+**Discover (Phase 6).** Attractiveness now scales by **data confidence** and sinks
+INSUFFICIENT-DATA names, so a shaky 50% margin of safety no longer outranks a robust 30%
+(`screener.discover_attractiveness`). Ranking is ownership-independent — ownership only rewords
+the action.
+
+**Wired end-to-end (API + UI):** the Research and Position endpoints pass `fit` + ISIN
+ownership into `resolve_verdict`, so **PREFER ETF** and the fit layer surface (dimensions /
+INSUFFICIENT-DATA flow on every verdict, auto-pulled from the va payload). The frontend renders
+the new outputs: the **bear/base/bull valuation range** + uncertainty, **owner earnings / FCF**,
+a **business-quality & financial-strength panel** (ROIC, cash conversion, interest coverage,
+moat, debt state) in `ValueAnalysis`, and the **fit decision** (incl. Prefer ETF) in
+`PortfolioFit`; the verdict badge shows the new action labels automatically (`tsc` clean, build
+passes). Follow-on backend fixes: `benchmark_cagr` is **total-return** (#10); Discover values at
+the same resolved price as Decisions (#14); `reallocatableCHF` is **freed capital**, not gain
+(#15); `prospective_projection` returns a bear/base/bull `holdRange` (#11).
+
+**EPS currency — verified non-issue:** a live probe (NSRGY trades USD/reports CHF; BABA
+USD/CNY) confirmed yfinance returns `trailingEps` in the **trading** currency (`trailingEps ==
+price/PE` exactly), so the prior audit's feared "EPS reporting-ccy vs price" P0 (#5) needs **no
+FX conversion** — minor-unit normalisation is the complete fix.
+
+**Genuinely open (documented):** split adjustment (#4) — deferred as **data-dependent and
+risky** (adjusting prices without the matching share-count convention from DEGIRO could corrupt
+correct positions; the counterfactual's cash-mirroring is already split-agnostic); a real
+**full-ETF-constituent source** (needs an external data feed — overlap stays honest top-10);
+band-edge price hysteresis (minor). The §28 register is annotated below.
 
 ---
 
@@ -480,7 +554,26 @@ Deduplicated across all subsystems, most severe first. Tags: **[T]** technical, 
 | 31 | P2 | T | Plans reprice targets with hardcoded USD fallback | `plans.py:70,145` |
 | 32 | P3 | — | Many: geo-density formula, sell-zone 1.6 constant, MoS denominator naming, day-count 365 vs 365.25, stamp duty absent from opportunity-cost paths, reclaim time-value unmodeled, Google URL exchange for NYSE/`BRK.B`, shareImage locale, dead modal kinds (`scenario`/`plan-compare`), listings TTL doc mismatch, `build_position` CAGR start = gross buys | see subsystem sections |
 
-**Items requiring live verification** (not determinable from code): the yfinance `dividendYield`/`holdingPercent` units in the pinned version; whether `.L` benchmarks actually cache in pence; whether the importer emits non-buy acquisition actions; whether Swiss income-tax-on-gross-without-foreign-WHT-credit matches intended treatment.
+**Resolution status (Engine 2.0, 2026-08-28)** — see §0 and `VALUE_INVESTING_AUDIT.md`:
+- ✅ **Resolved:** #1 (debt-free leverage), #3 (FX silent 1.0 → `resolve_fx`/`strict`),
+  #6 (median-picks-max), #7 (DCF cliff), #8 (reverse-DCF saturation), #9 (dividend-yield unit,
+  verified percent), #12 (cross-listing ownership → ISIN), #13 (low-confidence Sell floor).
+- ◑ **Partially resolved:** #2 (history path already normalised; fundamentals **EPS** now
+  minor-unit normalised — other display price fields still raw); #5 (minor-unit part done;
+  reporting↔trading FX **deferred**, semantics unverified); #16 (indirect exposure now honest
+  "top-holdings-only" + a distinct fit layer, but still bounded by top-10 — a real constituent
+  source is still needed).
+- ✅ **Also resolved:** #10 (total-return forward CAGR), #11 (`prospective_projection` now
+  returns a bear/base/bull `holdRange`), #14 (Discover values at the same resolved price as
+  Decisions), #15 (`reallocatableCHF` = freed capital, not gain), and #5 (**verified non-issue**
+  — EPS is in trading currency; no FX needed).
+- ○ **Still open:** #4 (split adjustment — deferred, data-dependent/risky), the full-ETF
+  constituent source behind #16, band-edge hysteresis, and the P2/P3 tail.
+
+**Items verified live during the redesign:** yfinance 1.6.0 `dividendYield` is a **percent**
+(÷100); `funds_data` `holdingPercent` is a **fraction**; cash-flow/balance-sheet row labels
+confirmed. Still requiring verification: whether `.L` fundamentals arrive in pence, and whether
+the importer emits non-buy acquisition actions.
 
 ---
 

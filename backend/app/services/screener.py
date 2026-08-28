@@ -26,7 +26,7 @@ from .watchlist import list_watchlist
 from .fundamentals import get_cached_fundamentals
 from .valuation import value_analysis
 from .verdict import resolve_verdict
-from .marketdata import price_on
+from .marketdata import price_on, resolve_price
 from .exposure import portfolio_exposure
 from ..reference import geo
 from ..reference.themes import classify_theme
@@ -52,18 +52,32 @@ def _fit(sector: str | None, pf_sectors: dict[str, float]) -> tuple[str, float, 
     return "concentrates", w, 0.0
 
 
-def _attractiveness(mos: float | None, quality_frac: float, supportable: float | None,
-                    fit_bonus: float) -> int:
-    """Blend valuation, quality, supportable return and portfolio fit into 0..100."""
-    # Valuation: margin of safety mapped from [-50%, +50%] → [0, 1].
-    val_score = (_clamp(mos, -0.5, 0.5) + 0.5) if mos is not None else 0.3
-    ret_score = _clamp((supportable or 0.0) / 0.15, 0.0, 1.0)  # 15%+ supportable = full marks
-    score = 0.45 * val_score + 0.30 * quality_frac + 0.20 * ret_score + 0.05 * fit_bonus
-    return round(_clamp(score, 0.0, 1.0) * 100)
+_QUALITY_WEIGHT = {"strong": 1.0, "adequate": 0.6, "weak": 0.2, "unknown": 0.4}
+_CONF_FACTOR = {"high": 1.0, "medium": 0.85, "low": 0.6}
+
+
+def discover_attractiveness(*, margin_of_safety: float | None, quality_rating: str | None,
+                            expected_return: float | None, fit_bonus: float | None,
+                            confidence: str | None, data_sufficient: bool) -> int:
+    """Rank an opportunity 0..100 on merit ONLY — valuation, business quality, expected
+    return and portfolio-diversification fit — then SCALE by data confidence so a deep
+    discount on unreliable data cannot outrank a moderate discount on robust data (brief
+    §22, §30 Phase 6). An INSUFFICIENT-DATA name is sunk. Ownership is deliberately not an
+    input: it only rewords the action elsewhere, never the score."""
+    val = (_clamp(margin_of_safety, -0.5, 0.5) + 0.5) if margin_of_safety is not None else 0.3
+    q = _QUALITY_WEIGHT.get(quality_rating or "unknown", 0.4)
+    ret = _clamp((expected_return or 0.0) / 0.15, 0.0, 1.0)   # 15%+ supportable = full marks
+    fit = _clamp(fit_bonus or 0.0, 0.0, 1.0)
+    blend = 0.40 * val + 0.30 * q + 0.20 * ret + 0.10 * fit
+    conf_factor = _CONF_FACTOR.get(confidence or "low", 0.6)
+    if not data_sufficient:
+        conf_factor = min(conf_factor, 0.30)   # no reliable valuation → sink it
+    return round(_clamp(blend * conf_factor, 0.0, 1.0) * 100)
 
 
 def screen_universe(settings: dict) -> dict:
     owned = repo.owned_symbol_set()
+    owned_isins = repo.owned_isin_set()   # company-identity ownership across listings (F-12)
     holdings = {i["symbol"]: i for i in repo.list_instruments() if i.get("symbol")}
     watch = {w["symbol"]: w for w in list_watchlist() if w.get("symbol")}
 
@@ -89,7 +103,9 @@ def screen_universe(settings: dict) -> dict:
             unanalysed.append(sym)
             continue
 
-        price = price_on(sym, today)
+        # Value at the SAME resolved live/last price the position detail uses, so Discover and
+        # Decisions can't straddle a fair-value band edge on two different prices (register #14).
+        price = resolve_price(sym, snap.get("currency")).get("price") or price_on(sym, today)
         va = value_analysis(sym, price, snap.get("currency"), data=cached, settings=settings)
         if not va.get("hasData"):
             unanalysed.append(sym)
@@ -102,13 +118,14 @@ def screen_universe(settings: dict) -> dict:
             sectors_present.add(sector)
         mos = va.get("marginOfSafety")
         quality = va.get("quality") or {"score": 0, "max": 1}
-        quality_frac = (quality["score"] / quality["max"]) if quality.get("max") else 0.0
         supportable = va.get("supportableReturn")
         fit_status, fit_weight, fit_bonus = _fit(sector, pf_sectors)
         # One canonical verdict from the shared engine. `held` drives ownership-aware
         # wording (owned → Buy more; not owned → Buy) — valuation-only either way, since a
         # candidate carries no benchmark performance. Discover shows this, never a fork.
-        rec = resolve_verdict(va, held=(sym in owned))
+        held = repo.is_owned(sym, isin=(holdings.get(sym, {}) or {}).get("isin"),
+                             owned_symbols=owned, owned_isins=owned_isins)
+        rec = resolve_verdict(va, held=held)
 
         rows.append({
             "symbol": sym,
@@ -132,12 +149,16 @@ def screen_universe(settings: dict) -> dict:
             "supportableReturn": supportable,
             "dividendYield": va.get("dividendYield"),
             "impliedGrowth": va.get("impliedGrowth"),
-            "confidence": va.get("confidence"),
-            "attractiveness": _attractiveness(mos, quality_frac, supportable, fit_bonus),
+            "confidence": rec.get("confidence"),
+            "attractiveness": discover_attractiveness(
+                margin_of_safety=mos,
+                quality_rating=(rec.get("dimensions") or {}).get("quality", {}).get("rating"),
+                expected_return=supportable, fit_bonus=fit_bonus,
+                confidence=rec.get("confidence"), data_sufficient=rec.get("dataSufficient", True)),
             "verdict": rec["verdict"],          # canonical: 'buy-more' | 'hold' | 'sell'
             "recommendation": rec,              # full engine output (rationale, drivers, …)
             "portfolioFit": {"status": fit_status, "sectorWeight": fit_weight},
-            "inPortfolio": sym in owned,
+            "inPortfolio": held,
             "onWatchlist": sym in watch,
         })
 

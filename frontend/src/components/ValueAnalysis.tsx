@@ -15,8 +15,26 @@ const CONF_META: Record<string, { label: string; cls: string }> = {
 const MODEL_LABELS: Record<string, string> = {
   grahamNumber: 'Graham number',
   grahamGrowth: 'Graham (growth)',
-  dcf: 'DCF · owner earnings',
+  dcf: 'DCF · earnings',
+  fcf: 'DCF · free cash flow',
 };
+
+const RATING_CLS: Record<string, string> = {
+  strong: 'text-gain', adequate: 'text-text', weak: 'text-loss', stretched: 'text-loss',
+  high: 'text-loss', moderate: 'text-warn', low: 'text-gain', unknown: 'text-text-faint',
+  'debt-free': 'text-gain', 'prefer-etf': 'text-warn',
+};
+const ratingCls = (r?: string | null) => RATING_CLS[r ?? 'unknown'] ?? 'text-text';
+
+function Metric({ label, rating, detail }: { label: string; rating: string; detail: string }) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-text-muted">{label}</span>
+      <span className={`ml-auto font-medium capitalize ${ratingCls(rating)}`}>{rating}</span>
+      <span className="font-mono text-text-faint tnum">{detail}</span>
+    </div>
+  );
+}
 
 /**
  * Value-investing verdict for a single stock: intrinsic-value range vs price, margin of
@@ -173,6 +191,73 @@ export function ValueAnalysis({
         </div>
       </div>
 
+      {/* Bear / base / bull valuation range — no single "magic" fair value (Engine 2.0) */}
+      {data.scenarios && data.valuationRange && (
+        <div className="card !p-4">
+          <div className="flex items-center justify-between mb-3">
+            <div className="eyebrow">Valuation range · bear / base / bull</div>
+            {data.valuationUncertainty && (
+              <span
+                className={`text-[11px] font-medium ${
+                  data.valuationUncertainty === 'high'
+                    ? 'text-loss'
+                    : data.valuationUncertainty === 'moderate'
+                      ? 'text-warn'
+                      : 'text-gain'
+                }`}
+              >
+                {data.valuationUncertainty} uncertainty
+              </span>
+            )}
+          </div>
+          <div className="grid grid-cols-3 gap-3 text-center">
+            {(['bear', 'base', 'bull'] as const).map((k) => {
+              const sc = data.scenarios![k];
+              return (
+                <div key={k}>
+                  <div className="eyebrow mb-0.5 capitalize">{k}</div>
+                  <div className="font-mono text-lg tnum text-text">
+                    {sc.intrinsicValue != null ? fmtMoney(sc.intrinsicValue, ccy) : '—'}
+                  </div>
+                  <div
+                    className={`text-[11px] ${sc.marginOfSafety != null && sc.marginOfSafety >= 0 ? 'text-gain' : 'text-loss'}`}
+                  >
+                    {sc.marginOfSafety != null ? `${fmtPct(sc.marginOfSafety, 0)} MoS` : ''}
+                  </div>
+                  <div className="text-[10px] text-text-faint mt-0.5">
+                    g {fmtPct(sc.assumptions.growth, 0)} · r {fmtPct(sc.assumptions.discountRate, 0)}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Cash economics — owner earnings / free cash flow, not just accounting EPS */}
+      {(data.ownerEarningsPerShare != null || data.fcfPerShare != null) && (
+        <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm">
+          {data.ownerEarningsPerShare != null && (
+            <div>
+              <div className="eyebrow mb-0.5">Owner earnings / sh</div>
+              <div className="font-mono text-text tnum">{fmtMoney(data.ownerEarningsPerShare, ccy)}</div>
+            </div>
+          )}
+          {data.fcfPerShare != null && (
+            <div>
+              <div className="eyebrow mb-0.5">FCF / sh</div>
+              <div className="font-mono text-text tnum">{fmtMoney(data.fcfPerShare, ccy)}</div>
+            </div>
+          )}
+          {data.fcfYield != null && (
+            <div>
+              <div className="eyebrow mb-0.5">FCF yield</div>
+              <div className="font-mono text-text tnum">{fmtPct(data.fcfYield, 1)}</div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Price history with shaded buy / fair / overvalued / sell zones */}
       {data.band && (
         <div className="card !p-4">
@@ -227,6 +312,55 @@ export function ValueAnalysis({
           ))}
         </div>
       </div>
+
+      {/* Business quality & financial strength — Buffett-grade, measurable-or-unknown */}
+      {(data.qualityAssessment || data.financialStrength) && (
+        <div className="card !p-4 space-y-2">
+          <div className="eyebrow mb-1">Business quality & financial strength</div>
+          <div className="grid sm:grid-cols-2 gap-x-6 gap-y-1.5 text-[13px]">
+            {data.qualityAssessment && (
+              <>
+                <Metric
+                  label="Return on invested capital"
+                  rating={data.qualityAssessment.roic.rating}
+                  detail={data.qualityAssessment.roic.value != null ? fmtPct(data.qualityAssessment.roic.value, 0) : 'n/a'}
+                />
+                <Metric
+                  label="Cash conversion (FCF/NI)"
+                  rating={data.qualityAssessment.fcfConversion.rating}
+                  detail={data.qualityAssessment.fcfConversion.value != null ? fmtPct(data.qualityAssessment.fcfConversion.value, 0) : 'n/a'}
+                />
+                <Metric
+                  label="Interest coverage"
+                  rating={data.qualityAssessment.interestCoverage.rating}
+                  detail={data.qualityAssessment.interestCoverage.value != null ? `${data.qualityAssessment.interestCoverage.value.toFixed(1)}×` : 'n/a'}
+                />
+                <Metric
+                  label="Economic moat"
+                  rating={data.qualityAssessment.moat.signal}
+                  detail={data.qualityAssessment.moat.signal.replace('measurable-', '').replace('-', ' ')}
+                />
+              </>
+            )}
+            {data.financialStrength && (
+              <Metric
+                label="Balance sheet"
+                rating={data.financialStrength.debtState}
+                detail={
+                  data.financialStrength.netDebtToEbitda != null
+                    ? `net debt ${data.financialStrength.netDebtToEbitda.toFixed(1)}× EBITDA`
+                    : data.financialStrength.debtState
+                }
+              />
+            )}
+          </div>
+          {data.qualityAssessment?.moat.evidence?.length ? (
+            <div className="text-[11px] text-text-faint">
+              Moat signals: {data.qualityAssessment.moat.evidence.join(' · ')}
+            </div>
+          ) : null}
+        </div>
+      )}
 
       <p className="text-[11px] text-text-faint">
         Estimates from cached fundamentals — DCF at {fmtPct(data.assumptions.discountRate, 0)} discount,{' '}

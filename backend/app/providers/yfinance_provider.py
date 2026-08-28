@@ -265,6 +265,7 @@ class YFinanceProvider(MarketDataProvider):
             }
 
             history: list[dict] = []
+            income_years: list[dict] = []
             try:
                 fin = t.income_stmt
                 if fin is not None and not fin.empty:
@@ -272,6 +273,8 @@ class YFinanceProvider(MarketDataProvider):
                         return fin.loc[label] if label in fin.index else None
                     rev_r, ni_r = row("Total Revenue"), row("Net Income")
                     gp_r, oi_r = row("Gross Profit"), row("Operating Income")
+                    # For ROIC / interest coverage (quality lane).
+                    int_r, pre_r, tax_r = row("Interest Expense"), row("Pretax Income"), row("Tax Provision")
 
                     def cell(r, col):
                         try:
@@ -296,13 +299,104 @@ class YFinanceProvider(MarketDataProvider):
                             "grossMargin": (gp / rev) if ok(gp) else None,
                             "operatingMargin": (oi / rev) if ok(oi) else None,
                         })
+                        income_years.append({
+                            "year": int(yr), "operatingIncome": oi,
+                            "interestExpense": cell(int_r, col),
+                            "pretaxIncome": cell(pre_r, col),
+                            "taxProvision": cell(tax_r, col),
+                        })
                     history.sort(key=lambda h: h["year"])
+                    income_years.sort(key=lambda h: h["year"])
             except Exception:  # noqa: BLE001
-                history = []
+                history, income_years = [], []
+
+            # Cash-flow lane (owner earnings / FCF valuation). Absolute reporting-currency
+            # figures; capex is a negative outflow so FCF = OCF + capex.
+            cashflow: dict = {"sharesOutstanding": snapshot.get("sharesOutstanding"), "years": []}
+            try:
+                cfdf = t.cashflow
+                if cfdf is not None and not cfdf.empty:
+                    def crow(label):
+                        return cfdf.loc[label] if label in cfdf.index else None
+
+                    ocf_r, capex_r = crow("Operating Cash Flow"), crow("Capital Expenditure")
+                    fcf_r, dna_r = crow("Free Cash Flow"), crow("Depreciation And Amortization")
+                    ni_r = crow("Net Income From Continuing Operations")
+
+                    def ccell(r, col):
+                        try:
+                            v = r[col] if r is not None else None
+                            if v is None or (isinstance(v, float) and _m.isnan(v)):
+                                return None
+                            return float(v)
+                        except Exception:  # noqa: BLE001
+                            return None
+
+                    years_cf: list[dict] = []
+                    for col in cfdf.columns:
+                        yr = getattr(col, "year", None)
+                        if yr is None:
+                            continue
+                        ocf, capex = ccell(ocf_r, col), ccell(capex_r, col)
+                        fcf = ccell(fcf_r, col)
+                        if fcf is None and ocf is not None and capex is not None:
+                            fcf = ocf + capex
+                        years_cf.append({
+                            "year": int(yr), "operatingCashFlow": ocf, "capex": capex,
+                            "freeCashFlow": fcf, "dna": ccell(dna_r, col),
+                            "netIncome": ccell(ni_r, col),
+                        })
+                    years_cf.sort(key=lambda y: y["year"])
+                    cashflow["years"] = years_cf
+            except Exception:  # noqa: BLE001
+                cashflow = {"sharesOutstanding": snapshot.get("sharesOutstanding"), "years": []}
+
+            # Balance-sheet lane (ROIC invested capital, financial strength, dilution).
+            balance: dict = {"years": []}
+            try:
+                bsdf = t.balance_sheet
+                if bsdf is not None and not bsdf.empty:
+                    def brow(label):
+                        return bsdf.loc[label] if label in bsdf.index else None
+
+                    ic_r, td_r = brow("Invested Capital"), brow("Total Debt")
+                    cash_r, se_r = brow("Cash And Cash Equivalents"), brow("Stockholders Equity")
+                    ca_r, cl_r = brow("Current Assets"), brow("Current Liabilities")
+                    sh_r = brow("Ordinary Shares Number")
+
+                    def bcell(r, col):
+                        try:
+                            v = r[col] if r is not None else None
+                            if v is None or (isinstance(v, float) and _m.isnan(v)):
+                                return None
+                            return float(v)
+                        except Exception:  # noqa: BLE001
+                            return None
+
+                    byears: list[dict] = []
+                    for col in bsdf.columns:
+                        yr = getattr(col, "year", None)
+                        if yr is None:
+                            continue
+                        byears.append({
+                            "year": int(yr), "investedCapital": bcell(ic_r, col),
+                            "totalDebt": bcell(td_r, col), "cash": bcell(cash_r, col),
+                            "stockholdersEquity": bcell(se_r, col),
+                            "currentAssets": bcell(ca_r, col),
+                            "currentLiabilities": bcell(cl_r, col),
+                            "sharesOutstanding": bcell(sh_r, col),
+                        })
+                    byears.sort(key=lambda y: y["year"])
+                    balance["years"] = byears
+            except Exception:  # noqa: BLE001
+                balance = {"years": []}
 
             return {
                 "snapshot": snapshot,
                 "history": history,
+                "cashflow": cashflow,
+                "income": {"years": income_years},
+                "balance": balance,
                 "financialCurrency": info.get("financialCurrency") or info.get("currency"),
             }
 

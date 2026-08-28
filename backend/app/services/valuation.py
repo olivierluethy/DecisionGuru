@@ -8,13 +8,18 @@ nothing here is investment advice."""
 from __future__ import annotations
 
 import math
+import statistics
 
 from . import fundamentals as fund
+from . import quality as quality_mod
+from ..providers.base import normalize_minor_currency
 
 DISCOUNT_RATE = 0.09
 TERMINAL_GROWTH = 0.025
 DCF_YEARS = 10
 GROWTH_CAP = 0.15
+
+_CONF_RANK = {"high": 2, "medium": 1, "low": 0}
 
 # Default band multipliers (overridable per-user via settings["valuation"]).
 DEFAULT_MOS = 0.30
@@ -77,6 +82,14 @@ def _clamp(v: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, v))
 
 
+def _median(vals: list[float]) -> float:
+    """Robust midpoint of the surviving model values. For an even count this is the
+    average of the two middle values (so two models {100, 200} → 150), NOT the higher
+    of the two as an index-median (`vals[len//2]`) would wrongly pick — that bias
+    inflated fair value and suppressed sell signals (see VALUE_INVESTING_AUDIT §3 T-4)."""
+    return statistics.median(vals)
+
+
 def _pct(v: float | None) -> str:
     return f"{v * 100:.1f}%" if v is not None else "n/a"
 
@@ -93,15 +106,22 @@ def _hist_income_cagr(hist: list[dict]) -> float | None:
 
 def _dcf(eps0: float | None, g: float, r: float = DISCOUNT_RATE, years: int = DCF_YEARS,
          tg: float = TERMINAL_GROWTH, cap: bool = True) -> float | None:
+    """Two-stage owner-earnings DCF. Growth FADES linearly from the initial rate ``g`` (year
+    1) to the terminal rate ``tg`` (final year), then a Gordon perpetuity at ``tg``.
+
+    A finite explicit horizon converges for any initial growth — including g > r — so a
+    high-quality compounder is no longer clipped to r−0.001 (the old cliff, AUDIT §3 F-5).
+    The only true singularity is the terminal: it requires r > tg, else we cannot value it."""
     if eps0 is None or eps0 <= 0:
         return None
-    if cap:
-        g = _clamp(g, 0.0, GROWTH_CAP)
-    if g >= r:
-        g = r - 0.001  # keep the terminal value finite
+    if r <= tg:
+        return None  # Gordon terminal undefined/negative when discount ≤ terminal growth
+    g0 = _clamp(g, 0.0, GROWTH_CAP) if cap else g
     pv, e = 0.0, eps0
     for yr in range(1, years + 1):
-        e *= (1 + g)
+        frac = (yr - 1) / (years - 1) if years > 1 else 1.0
+        g_yr = g0 + (tg - g0) * frac          # g0 at yr 1 … tg at the final year
+        e *= (1 + g_yr)
         pv += e / ((1 + r) ** yr)
     terminal = e * (1 + tg) / (r - tg)
     return pv + terminal / ((1 + r) ** years)
@@ -123,8 +143,7 @@ def _pick_growth(snap: dict, hist: list[dict]) -> tuple[float, float | None]:
         candidates.append(raw_eg)
     if not candidates:
         return 0.0, raw_eg
-    candidates.sort()
-    return candidates[len(candidates) // 2], raw_eg
+    return _median(candidates), raw_eg
 
 
 def _confidence(snap: dict, models: dict, price: float | None) -> tuple[str, list[str]]:
@@ -165,10 +184,19 @@ def _confidence(snap: dict, models: dict, price: float | None) -> tuple[str, lis
 
 
 def _implied_growth(eps0: float | None, price: float | None, r: float = DISCOUNT_RATE) -> float | None:
-    """Reverse DCF: the constant growth rate that makes the DCF equal today's price."""
+    """Reverse DCF: the initial growth rate that makes the two-stage DCF equal today's price.
+
+    Returns None — an honest "no economic solution" — when the price sits outside the value
+    the plausible growth bracket [-10%, +40%] can produce, instead of the old saturation to
+    ~0.40 for any richly-valued name (AUDIT §3 T-6)."""
     if not eps0 or eps0 <= 0 or not price or price <= 0:
         return None
     lo, hi = -0.10, 0.40
+    v_lo, v_hi = _dcf(eps0, lo, r=r, cap=False), _dcf(eps0, hi, r=r, cap=False)
+    if v_lo is None or v_hi is None:
+        return None
+    if price <= v_lo or price >= v_hi:
+        return None  # market implies growth beyond the plausible band → no reliable solution
     for _ in range(64):
         mid = (lo + hi) / 2
         v = _dcf(eps0, mid, r=r, cap=False)
@@ -190,12 +218,25 @@ def value_analysis(symbol: str, price: float | None, currency: str | None = None
     data = data if data is not None else (fund.get_fundamentals(symbol) or {})
     snap = data.get("snapshot") or {}
     hist = data.get("history") or []
-    ccy = currency or snap.get("currency")
+    # Normalise minor units (GBp→GBP ÷100) so the earnings models run on the same major
+    # unit the (already-normalised) price uses — never ~100× off for a pence-quoted line
+    # (VALUE_INVESTING_AUDIT §3 F-1). EPS is normalised by the SNAPSHOT's own currency
+    # (its source unit), not the price currency, which the caller may already have
+    # normalised to the major unit.
+    snap_ccy = snap.get("currency")
+    _, major_ccy = normalize_minor_currency(1.0, currency or snap_ccy)
+    ccy = major_ccy or currency or snap_ccy
 
-    eps, fwd_eps = snap.get("trailingEps"), snap.get("forwardEps")
+    def _norm_px(v: float | None) -> float | None:
+        return normalize_minor_currency(v, snap_ccy)[0] if v is not None else None
+
+    eps, fwd_eps = _norm_px(snap.get("trailingEps")), _norm_px(snap.get("forwardEps"))
     p2b, roe, margins = snap.get("priceToBook"), snap.get("returnOnEquity"), snap.get("profitMargins")
     dy = snap.get("dividendYield")
-    dy = (dy / 100) if (dy and dy > 1) else dy
+    # yfinance (pinned 1.6.0) reports dividendYield as a PERCENT (e.g. 2.38 → 2.38%),
+    # verified live against trailingAnnualDividendYield. Always ÷100; the old `>1`
+    # heuristic corrupted genuine sub-1% yields (0.9 → 90%). See AUDIT §3 F-7.
+    dy = (dy / 100.0) if dy is not None else None
     payout, debt, ebitda = snap.get("payoutRatio"), snap.get("totalDebt"), snap.get("ebitda")
 
     g_used_raw, g_reported = _pick_growth(snap, hist)
@@ -212,10 +253,75 @@ def value_analysis(symbol: str, price: float | None, currency: str | None = None
     if dcf:
         models["dcf"] = round(dcf, 2)
 
+    # --- Cash-based lane: free cash flow & owner earnings (AUDIT §3 F-8) ---------
+    # A genuine cash figure, not accounting EPS relabeled. Normalised FCF/share is the
+    # MEDIAN of the available years so a single lumpy-capex year doesn't distort it, and
+    # it drives an additional DCF model in the intrinsic range. Owner earnings ≈
+    # NetIncome + D&A − capex (capex is a negative outflow), reported per share.
+    cf = (data or {}).get("cashflow") or {}
+    shares = cf.get("sharesOutstanding")
+    cf_years = sorted((cf.get("years") or []), key=lambda y: y.get("year", 0))
+
+    def _per_share(v: float | None) -> float | None:
+        if v is None or not shares or shares <= 0:
+            return None
+        return _norm_px(v / shares)   # per-share, minor-unit normalised by snapshot ccy
+
+    fcf_ps_series = [ps for y in cf_years if (ps := _per_share(y.get("freeCashFlow"))) is not None]
+    fcf_per_share = _per_share(cf_years[-1].get("freeCashFlow")) if cf_years else None
+    normalized_fcf_ps = round(_median(fcf_ps_series), 2) if fcf_ps_series else None
+
+    owner_earnings_ps = None
+    if cf_years:
+        last = cf_years[-1]
+        ni, dna, capex = last.get("netIncome"), last.get("dna"), last.get("capex")
+        if ni is not None and dna is not None and capex is not None:
+            oe = _per_share(ni + dna + capex)
+            owner_earnings_ps = round(oe, 2) if oe is not None else None
+
+    fcf_dcf = _dcf(normalized_fcf_ps, g, r=cfg["disc"], tg=cfg["tg"])
+    if fcf_dcf:
+        models["fcf"] = round(fcf_dcf, 2)
+    fcf_yield = round(fcf_per_share / price, 4) if (fcf_per_share and price and price > 0) else None
+
+    # --- Bear / base / bull scenarios (AUDIT §3 F-10) --------------------------
+    # No single "magic" fair value: vary the ASSUMPTIONS (growth, discount, terminal)
+    # to a conservative and an optimistic case around the base. The base case is the
+    # same earnings DCF that feeds `models["dcf"]`, so the range is centred on it.
+    def _scenario(g_s: float, r_s: float, tg_s: float) -> dict:
+        v = _dcf(base_eps, g_s, r=r_s, tg=tg_s)
+        return {
+            "assumptions": {"growth": round(g_s, 4), "discountRate": round(r_s, 4),
+                            "terminalGrowth": round(tg_s, 4)},
+            "intrinsicValue": round(v, 2) if v else None,
+            "marginOfSafety": round(v / price - 1, 4) if (v and price and price > 0) else None,
+        }
+
+    scenarios = None
+    valuation_range = None
+    valuation_uncertainty = None
+    if base_eps and base_eps > 0:
+        r0, tg0 = cfg["disc"], cfg["tg"]
+        scenarios = {
+            "bear": _scenario(max(g - 0.03, -0.02), r0 + 0.02, max(tg0 - 0.01, 0.0)),
+            "base": _scenario(g, r0, tg0),
+            "bull": _scenario(g + 0.03, max(r0 - 0.01, tg0 + 0.005), tg0 + 0.005),
+        }
+        lo_v = scenarios["bear"]["intrinsicValue"]
+        base_v = scenarios["base"]["intrinsicValue"]
+        hi_v = scenarios["bull"]["intrinsicValue"]
+        spread = round(hi_v / lo_v, 2) if (lo_v and hi_v and lo_v > 0) else None
+        valuation_range = {"low": lo_v, "base": base_v, "high": hi_v, "spread": spread}
+        valuation_uncertainty = (
+            "high" if (spread and spread > 2.5)
+            else "moderate" if (spread and spread > 1.6)
+            else "low"
+        )
+
     vals = sorted(v for v in models.values() if v and v > 0)
     intrinsic = {
         "low": round(vals[0], 2) if vals else None,
-        "mid": round(vals[len(vals) // 2], 2) if vals else None,
+        "mid": round(_median(vals), 2) if vals else None,   # true median, not index-max
         "high": round(vals[-1], 2) if vals else None,
     }
     mos = round(intrinsic["mid"] / price - 1, 4) if (intrinsic["mid"] and price) else None
@@ -226,21 +332,40 @@ def value_analysis(symbol: str, price: float | None, currency: str | None = None
     fair_value = intrinsic.get("mid")
     band = classify_band(price, fair_value, cfg)
 
-    def chk(label: str, ok: bool, detail: str) -> dict:
-        return {"label": label, "pass": bool(ok), "detail": detail}
+    def chk(label: str, ok: bool, detail: str, applicable: bool = True) -> dict:
+        return {"label": label, "pass": bool(ok), "detail": detail, "applicable": applicable}
 
-    de = (debt / ebitda) if (debt and ebitda and ebitda > 0) else None
+    # Leverage with correct debt-state semantics (AUDIT §3 F-2): a debt-free balance
+    # sheet is a STRENGTH (pass), unknown debt is n/a (not counted), only genuine
+    # leverage above the threshold fails. The old `if debt and …` made debt==0 → None
+    # → a silent FAIL, penalising the safest companies.
+    if debt == 0:
+        lev = chk("Debt / EBITDA ≤ 3", True, "0.0x (debt-free)")
+    elif debt is not None and ebitda and ebitda > 0:
+        de = debt / ebitda
+        lev = chk("Debt / EBITDA ≤ 3", de <= 3, f"{de:.1f}x")
+    else:
+        lev = chk("Debt / EBITDA ≤ 3", False, "n/a (no debt/EBITDA data)", applicable=False)
+
     hist_cagr = _hist_income_cagr(hist)
     checks = [
         chk("Return on equity ≥ 15%", roe is not None and roe >= 0.15, _pct(roe)),
         chk("Net margin ≥ 10%", margins is not None and margins >= 0.10, _pct(margins)),
         chk("Earnings growing", g_used_raw > 0, _pct(g_used_raw)),
-        chk("Debt / EBITDA ≤ 3", de is not None and de <= 3, f"{de:.1f}x" if de is not None else "n/a"),
+        lev,
         chk("Payout sustainable ≤ 70%", payout is not None and 0 <= payout <= 0.7, _pct(payout)),
         chk("Positive long-run earnings trend", hist_cagr is not None and hist_cagr > 0, _pct(hist_cagr)),
     ]
 
     confidence, flags = _confidence(snap, models, price)
+    if valuation_uncertainty == "high":
+        # Extreme assumption-sensitivity → never present a high-confidence point (AUDIT §6).
+        if _CONF_RANK[confidence] > _CONF_RANK["medium"]:
+            confidence = "medium"
+        flags.append(
+            "Wide bear-to-bull valuation spread — intrinsic value is highly sensitive to the "
+            "growth/discount assumptions; read the range, not a single fair value."
+        )
 
     return {
         "symbol": symbol,
@@ -256,7 +381,13 @@ def value_analysis(symbol: str, price: float | None, currency: str | None = None
         "band": band,
         "impliedGrowth": round(implied_g, 4) if implied_g is not None else None,
         "supportableReturn": round((g or 0) + (dy or 0), 4),
-        "quality": {"score": sum(1 for c in checks if c["pass"]), "max": len(checks), "checks": checks},
+        "quality": {
+            # Score over APPLICABLE checks only, so an n/a check (e.g. unknown debt)
+            # neither counts as a pass nor drags the denominator (AUDIT §3 F-2).
+            "score": sum(1 for c in checks if c.get("applicable", True) and c["pass"]),
+            "max": sum(1 for c in checks if c.get("applicable", True)),
+            "checks": checks,
+        },
         "assumptions": {"discountRate": DISCOUNT_RATE, "terminalGrowth": TERMINAL_GROWTH, "years": DCF_YEARS},
         "confidence": confidence,
         "flags": flags,
@@ -265,6 +396,18 @@ def value_analysis(symbol: str, price: float | None, currency: str | None = None
         "eps": eps,
         "forwardEps": fwd_eps,
         "bookValuePerShare": round(bvps, 2) if bvps else None,
+        "fcfPerShare": fcf_per_share,
+        "normalizedFcfPerShare": normalized_fcf_ps,
+        "ownerEarningsPerShare": owner_earnings_ps,
+        "fcfYield": fcf_yield,
+        "scenarios": scenarios,
+        "valuationRange": valuation_range,
+        "valuationUncertainty": valuation_uncertainty,
+        # Structured business-quality & financial-strength read (Phase 3) — additive,
+        # None-safe; consumers can show ROIC / cash conversion / interest coverage /
+        # consistency / dilution / moat and the distinct-debt-state strength rating.
+        "qualityAssessment": quality_mod.assess_quality(data, price),
+        "financialStrength": quality_mod.assess_financial_strength(data),
         "roe": roe,
         "dividendYield": dy,
         "hasData": bool(models) or eps is not None,

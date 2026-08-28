@@ -153,6 +153,26 @@ export interface Verdict {
     afterTaxGainIfSoldCHF: number;
     taxNote: string;
   } | null;
+  /** Engine 2.0: whether a reliable valuation basis exists (false → action 'Insufficient data'). */
+  dataSufficient?: boolean;
+  /** Engine 2.0: the separate decision dimensions, kept distinct rather than blended. */
+  dimensions?: VerdictDimensions | null;
+}
+
+/** A single scored decision dimension (Engine 2.0). */
+export interface VerdictDimension {
+  rating: string;
+  [k: string]: unknown;
+}
+export interface VerdictDimensions {
+  valuation: VerdictDimension;
+  quality: VerdictDimension;
+  financialStrength: VerdictDimension;
+  expectedReturn: VerdictDimension;
+  portfolioFit: VerdictDimension & { preferEtf?: boolean; effectiveExposure?: number | null };
+  opportunityCost: VerdictDimension;
+  dataConfidence: VerdictDimension;
+  risk: VerdictDimension;
 }
 
 /** Valuation-driven sell/trim signal for an owned position (see services/signals.py). */

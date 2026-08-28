@@ -71,11 +71,22 @@ def _valuation_now(symbol: str, price: float | None, currency: str | None,
         va["priceFreshness"] = freshness
         va["priceAsOf"] = price_as_of
     # Same shared verdict every surface renders (valuation-only for a researched name),
-    # but ownership-aware so an owned name reads "Buy more" and an un-owned one "Buy".
+    # but ownership-aware (by ISIN, so a cross-listing of a held name still reads "Buy more")
+    # and portfolio-fit-aware, so an excellent buy already held heavily via ETFs can read
+    # "Prefer ETF" (Engine 2.0). Fit is best-effort — a hiccup never blanks the analysis.
     from ..services import repo
-    rec = resolve_verdict(va, held=(symbol in repo.owned_symbol_set()))
+    inst = repo.get_instrument_by_symbol(symbol)
+    held = repo.is_owned(symbol, isin=(inst or {}).get("isin"))
+    fit = None
+    try:
+        from ..services.fit import portfolio_fit
+        fit = portfolio_fit(symbol, settings)
+    except Exception:  # noqa: BLE001
+        fit = None
+    rec = resolve_verdict(va, held=held, fit=fit)
     va["verdict"] = rec["verdict"]
     va["recommendation"] = rec
+    va["portfolioFit"] = fit
     return va
 
 

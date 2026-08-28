@@ -6,10 +6,15 @@ import math
 import pandas as pd
 
 from .finance_math import cagr
-from .marketdata import get_history
+from .marketdata import get_dividends, get_history
 
 
 def benchmark_cagr(symbol: str, lookback_years: int = 10) -> float | None:
+    """TOTAL-return trailing CAGR (price appreciation + dividends over the window), so the
+    forward-growth basis matches the counterfactual's total-return convention rather than the
+    old dividend-blind price return (VALUE_INVESTING_AUDIT register #10, brief §9/§12). Note
+    it is still a historical extrapolation — for a *business* projection, fundamentals-based
+    growth is preferable (register #11, deferred)."""
     from_date = (pd.Timestamp.utcnow() - pd.DateOffset(years=lookback_years)).strftime("%Y-%m-%d")
     hist = get_history(symbol, from_date)
     if len(hist) < 2:
@@ -17,7 +22,11 @@ def benchmark_cagr(symbol: str, lookback_years: int = 10) -> float | None:
     start = hist[0]
     end = hist[-1]
     years = (pd.Timestamp(end["date"]) - pd.Timestamp(start["date"])).days / 365
-    return cagr(start["close"], end["close"], years)
+    try:
+        div_sum = sum((d.get("close") or 0.0) for d in get_dividends(symbol, from_date))
+    except Exception:  # noqa: BLE001 — a dividend hiccup degrades to price-return, never fails
+        div_sum = 0.0
+    return cagr(start["close"], end["close"] + div_sum, years)
 
 
 def compute_break_even(current_value_chf: float, invested_chf: float, etf_cagr: float) -> dict:
@@ -91,6 +100,19 @@ def prospective_projection(
         "endEtfCHF": end["etf"],
         "advantageCHF": end["hold"] - end["etf"],
     })
+
+    # Bear / base / bull range instead of a single deterministic point (register #11):
+    # vary the stock growth ±3pp so the forecast communicates uncertainty.
+    def _end_hold(cagr_value: float) -> float:
+        pts = project_hold_vs_etf(amount_chf, cagr_value, etf_cagr, years)["points"]
+        return pts[-1]["hold"] if pts else amount_chf
+
+    bear_c, bull_c = stock_cagr - 0.03, stock_cagr + 0.03
+    result["holdRange"] = {
+        "bear": round(_end_hold(bear_c), 2), "base": round(end["hold"], 2),
+        "bull": round(_end_hold(bull_c), 2),
+        "bearCagr": round(bear_c, 4), "baseCagr": round(stock_cagr, 4), "bullCagr": round(bull_c, 4),
+    }
     return result
 
 

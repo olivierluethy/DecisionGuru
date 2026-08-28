@@ -39,6 +39,34 @@ export function PortfolioFit({ symbol }: { symbol: string }) {
       {!ind.available && <p className="text-[12px] text-text-faint">{ind.note}</p>}
       <p className="text-[13px] text-text-muted">{data.diversification.note}</p>
       {data.concentrationNote && <p className="text-[12px] text-warn">{data.concentrationNote}</p>}
+      {/* The distinct portfolio-fit decision — can prefer the ETF over a direct buy. */}
+      {data.fitDecision && (
+        <div
+          className={`card !p-3 border-l-2 ${
+            data.fitDecision.status === 'prefer-etf'
+              ? 'border-l-warn'
+              : data.fitDecision.status === 'improves'
+                ? 'border-l-gain'
+                : 'border-l-hairline'
+          }`}
+        >
+          <div className="flex items-center gap-2 mb-1">
+            <span className="eyebrow">Fit decision</span>
+            <span
+              className={`chip !py-0 !px-2 capitalize ${
+                data.fitDecision.status === 'prefer-etf'
+                  ? 'text-warn'
+                  : data.fitDecision.status === 'improves'
+                    ? 'text-gain'
+                    : ''
+              }`}
+            >
+              {data.fitDecision.status === 'prefer-etf' ? 'Prefer ETF' : data.fitDecision.status}
+            </span>
+          </div>
+          <p className="text-[12px] text-text-muted">{data.fitDecision.note}</p>
+        </div>
+      )}
     </div>
   );
 }

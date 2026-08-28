@@ -55,9 +55,18 @@ async def position(instrument_id: int, preTax: str = "false") -> dict:
         cf = await run_in_threadpool(
             compute_counterfactual, inst, repo.get_transactions(inst["id"]),
             settings["defaultBenchmarkSymbol"], settings, pre_tax)
+        # Portfolio-fit (best-effort) so the verdict is fit-aware (e.g. PREFER ETF / already
+        # heavily exposed via ETFs); a fit hiccup never blocks the position verdict.
+        fit = None
+        try:
+            from ..services.fit import portfolio_fit
+            fit = await run_in_threadpool(portfolio_fit, inst["symbol"], settings)
+        except Exception:  # noqa: BLE001
+            fit = None
+        position["portfolioFit"] = fit
         position["verdict"] = verdict_for(
             inst["symbol"], position.get("currentPrice"), inst.get("currency"), cached, settings,
-            performance=performance_from_counterfactual(cf), held=True, position=position)
+            performance=performance_from_counterfactual(cf), held=True, position=position, fit=fit)
     return position
 
 

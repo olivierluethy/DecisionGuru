@@ -8,6 +8,7 @@ import { useApp } from '../store';
 import { SymbolSearch, type SymbolPick } from '../components/SymbolSearch';
 import { BenchmarkSelect } from '../components/BenchmarkSelect';
 import { BandBadge } from '../components/ValuationBand';
+import { VerdictBadge } from '../components/Verdict';
 import { Spinner, EmptyState, Segmented, KindBadge } from '../components/ui';
 import { fmtPct, fmtPctSigned, fmtNum, fmtMoney, plClass } from '../lib/format';
 
@@ -126,6 +127,7 @@ export function Watchlist() {
                     <th className="th text-right">Entry target</th>
                     <th className="th text-right">Gap to entry</th>
                     <th className="th">Valuation</th>
+                    <th className="th">Verdict</th>
                     <th className="th w-10"></th>
                   </tr>
                 </thead>
@@ -217,6 +219,7 @@ function EntryRow({ w, onOpen, onAlert, alerted }: {
         {w.gapToEntry != null ? (inBuyZone ? `in buy zone` : `+${fmtPct(w.gapToEntry, 1)}`) : '—'}
       </td>
       <td className="td">{w.band ? <BandBadge band={w.band.band} /> : <span className="text-text-faint text-[12px]">not valued yet</span>}</td>
+      <td className="td">{w.verdict ? <VerdictBadge verdict={w.verdict} confidence={w.confidence} /> : <span className="text-text-faint text-[12px]">—</span>}</td>
       <td className="td text-right">
         {w.entryTarget != null && (
           <button className="text-text-faint hover:text-azure transition-colors" title="Alert me at the entry price" onClick={onAlert}>

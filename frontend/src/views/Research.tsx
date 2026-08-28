@@ -1,9 +1,13 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
-import { Check, X, CircleHelp, RefreshCw, Eye } from 'lucide-react';
+import {
+  Check, X, CircleHelp, RefreshCw, Eye,
+  Gauge, LineChart, Percent, Building2, Radar, Gem, Scale, GitCompareArrows, PieChart, Newspaper,
+} from 'lucide-react';
 import { api, type AssetMetrics } from '../lib/api';
 import { useApp } from '../store';
+import { SectionNav, type NavSection } from '../components/SectionNav';
 import { SymbolSearch } from '../components/SymbolSearch';
 import { PriceMovementChart } from '../components/PriceMovementChart';
 import { ExposureBars } from '../components/ExposureBars';
@@ -253,6 +257,21 @@ function AssetView({ symbol, onReset }: { symbol: string; onReset: () => void })
   if (isLoading) return <Spinner label={`Researching ${symbol}…`} />;
   if (!data) return null;
   const m = data.metrics;
+  const isStock = data.kind === 'stock';
+  // "On this page" rail — same component, anchor convention and icons the position
+  // detail view uses; stock-only chapters drop for ETFs just as they do there.
+  const navSections: NavSection[] = [
+    { id: 'res-metrics', label: 'Metrics', icon: Gauge },
+    { id: 'res-history', label: 'Price history', icon: LineChart },
+    { id: 'res-returns', label: 'Period returns', icon: Percent },
+    ...(isStock ? [{ id: 'res-fundamentals', label: 'Fundamentals', icon: Building2 }] : []),
+    ...(isStock ? [{ id: 'res-market', label: 'Market analysis', icon: Radar }] : []),
+    ...(isStock ? [{ id: 'res-value', label: 'Value', icon: Gem }] : []),
+    { id: 'res-opportunity', label: 'Opportunity cost', icon: Scale },
+    { id: 'res-ranked', label: 'Ranked', icon: GitCompareArrows },
+    { id: 'res-exposure', label: 'Exposure', icon: PieChart },
+    { id: 'res-news', label: 'News', icon: Newspaper },
+  ];
 
   return (
     <div className="flex flex-col gap-6">
@@ -284,9 +303,11 @@ function AssetView({ symbol, onReset }: { symbol: string; onReset: () => void })
         </div>
       </header>
 
-      <div className="card">{metricCells(m)}</div>
+      <SectionNav sections={navSections} />
 
-      <div className="card">
+      <div id="res-metrics" className="card scroll-mt-24">{metricCells(m)}</div>
+
+      <div id="res-history" className="card scroll-mt-24">
         <div className="flex items-center justify-between mb-3">
           <div className="eyebrow">Full-history price</div>
           <div className="flex items-center gap-3 text-[11px] text-text-faint">
@@ -298,14 +319,14 @@ function AssetView({ symbol, onReset }: { symbol: string; onReset: () => void })
         <PriceMovementChart series={history ?? []} movements={data.movements} currency={data.currency} height={300} />
       </div>
 
-      <div className="card">
+      <div id="res-returns" className="card scroll-mt-24">
         <PeriodReturns symbol={data.symbol} />
       </div>
 
       {/* Company fundamentals — same panel the Overview position detail shows (market cap,
           P/E, margins, revenue history, analyst view). Stock-only, matching Overview. */}
       {data.kind === 'stock' && (
-        <div className="card">
+        <div id="res-fundamentals" className="card scroll-mt-24">
           <div className="eyebrow mb-3">Company fundamentals · {data.symbol}</div>
           <Fundamentals symbol={data.symbol} name={data.name} currency={data.currency} />
         </div>
@@ -313,7 +334,7 @@ function AssetView({ symbol, onReset }: { symbol: string; onReset: () => void })
 
       {/* Market analysis — sector, competitors & relative performance. */}
       {data.kind === 'stock' && (
-        <div className="card">
+        <div id="res-market" className="card scroll-mt-24">
           <div className="eyebrow mb-3">Market analysis</div>
           <MarketAnalysis symbol={data.symbol} />
         </div>
@@ -321,7 +342,7 @@ function AssetView({ symbol, onReset }: { symbol: string; onReset: () => void })
 
       {/* Value-investing analysis — intrinsic value, margin of safety, Buffett quality. */}
       {data.kind === 'stock' && (
-        <div className="card">
+        <div id="res-value" className="card scroll-mt-24">
           <div className="eyebrow mb-3">Value analysis · what {data.symbol} is really worth</div>
           <ValueAnalysis symbol={data.symbol} price={data.currentPrice ?? null} currency={data.currency}
             priceAsOf={data.priceAsOf} priceFreshness={data.priceFreshness} />
@@ -329,9 +350,11 @@ function AssetView({ symbol, onReset }: { symbol: string; onReset: () => void })
       )}
 
       {/* Future-oriented opportunity cost for a prospective buy of this asset. */}
-      <ProspectiveSection symbol={data.symbol} />
+      <div id="res-opportunity" className="scroll-mt-24">
+        <ProspectiveSection symbol={data.symbol} />
+      </div>
 
-      <div className="grid lg:grid-cols-[1fr_360px] gap-6">
+      <div id="res-ranked" className="grid lg:grid-cols-[1fr_360px] gap-6 scroll-mt-24">
         <div className="card">
           <div className="eyebrow mb-4">Ranked vs your portfolio</div>
           <UniversalCompare symbol={data.symbol} name={data.name} kind={data.kind} window={window} />
@@ -342,7 +365,7 @@ function AssetView({ symbol, onReset }: { symbol: string; onReset: () => void })
       </div>
 
       <div className="grid lg:grid-cols-[360px_1fr] gap-6">
-        <div className="card">
+        <div id="res-exposure" className="card scroll-mt-24">
           <div className="eyebrow mb-3">Exposure</div>
           {data.allocation.countries?.length ? (
             <>
@@ -355,7 +378,7 @@ function AssetView({ symbol, onReset }: { symbol: string; onReset: () => void })
             <div className="text-sm text-text-faint">No exposure breakdown available.</div>
           )}
         </div>
-        <div className="card">
+        <div id="res-news" className="card scroll-mt-24">
           <div className="eyebrow mb-3">Latest headlines</div>
           <NewsFeed symbol={data.symbol} limit={8} />
         </div>

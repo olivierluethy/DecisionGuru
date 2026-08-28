@@ -3,6 +3,7 @@ import { useApp } from '../store';
 import { Modal } from '../components/Modal';
 import { ValueAnalysis } from '../components/ValueAnalysis';
 import { ListingRecommendation } from '../components/ListingRecommendation';
+import { PortfolioFit } from '../components/PortfolioFit';
 import { researchHref } from '../lib/router';
 
 /**
@@ -45,6 +46,11 @@ export function OpportunityModal({
       }
     >
       <ValueAnalysis symbol={symbol} price={price ?? null} currency={currency} />
+
+      {/* Does buying this fit the portfolio? Direct + indirect ETF exposure. */}
+      <div className="mt-6 pt-5 border-t border-hairline">
+        <PortfolioFit symbol={symbol} />
+      </div>
 
       {/* Which exchange to actually buy — the right listing for a CHF portfolio. */}
       <div className="mt-6 pt-5 border-t border-hairline">

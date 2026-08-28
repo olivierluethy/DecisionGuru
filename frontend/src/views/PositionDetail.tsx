@@ -42,6 +42,7 @@ import { PriceMovementChart } from '../components/PriceMovementChart';
 import { SymbolSearch } from '../components/SymbolSearch';
 import { Fundamentals } from '../components/Fundamentals';
 import { ValueAnalysis } from '../components/ValueAnalysis';
+import { PortfolioFit } from '../components/PortfolioFit';
 import { SellSignalPanel } from '../components/SellSignalPanel';
 import { VerdictBadge, VerdictRationale, VERDICT_META } from '../components/Verdict';
 import { catchUp } from '../lib/rebase';
@@ -557,6 +558,11 @@ export function PositionDetail() {
           />
         </section>
       )}
+
+      {/* Portfolio fit — direct + indirect ETF exposure and diversification context. */}
+      <section id="sec-fit" className="card mb-6 scroll-mt-24">
+        <PortfolioFit symbol={inst.symbol} />
+      </section>
 
       {!delisted && (
         <section id="sec-returns" className="card mb-6 scroll-mt-24">

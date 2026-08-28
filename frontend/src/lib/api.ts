@@ -229,6 +229,7 @@ export const api = {
       `/research/valuation/${encodeURIComponent(symbol)}${qs ? `?${qs}` : ''}`,
     );
   },
+  fit: (symbol: string) => req<PortfolioFit>(`/analysis/fit/${encodeURIComponent(symbol)}`),
   researchProjection: (
     symbol: string,
     opts: { benchmark?: string; amount?: number; years?: number; stockCagr?: number; etfCagr?: number } = {},
@@ -855,6 +856,29 @@ export interface CompetitorsResult {
   peerCount: number;
   subjectRank: number | null;
 }
+/** Portfolio-fit read for a candidate symbol (see services/fit.py). Weights are fractions.
+ *  Indirect exposure is limited to owned ETFs' top holdings — `available: false` when none
+ *  match; a number is never fabricated. */
+export interface PortfolioFit {
+  symbol: string;
+  owned: boolean;
+  directWeight: number;
+  country: string | null;
+  sector: string | null;
+  indirect:
+    | {
+        available: true;
+        weight: number;
+        coverage: string;
+        note: string;
+        contributors: { etfSymbol: string; etfName: string | null; viaWeight: number }[];
+      }
+    | { available: false; note: string };
+  effectiveExposure: number | null;
+  diversification: { status: string; sectorWeight: number | null; note: string };
+  concentrationNote: string | null;
+}
+
 export interface ScreenerRow {
   symbol: string;
   name: string | null;

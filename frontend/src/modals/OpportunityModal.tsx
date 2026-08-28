@@ -4,6 +4,7 @@ import { Modal } from '../components/Modal';
 import { ValueAnalysis } from '../components/ValueAnalysis';
 import { ListingRecommendation } from '../components/ListingRecommendation';
 import { PortfolioFit } from '../components/PortfolioFit';
+import { MarketAnalysis } from '../components/MarketAnalysis';
 import { researchHref } from '../lib/router';
 import { yahooUrl, googleUrl, finanzenUrl } from '../lib/externalLinks';
 
@@ -54,6 +55,12 @@ export function OpportunityModal({
       {/* Does buying this fit the portfolio? Direct + indirect ETF exposure. */}
       <div className="mt-6 pt-5 border-t border-hairline">
         <PortfolioFit symbol={symbol} />
+      </div>
+
+      {/* Market analysis — sector, competitors & relative performance. */}
+      <div className="mt-6 pt-5 border-t border-hairline">
+        <div className="eyebrow mb-3">Market analysis</div>
+        <MarketAnalysis symbol={symbol} />
       </div>
 
       {/* Which exchange to actually buy — the right listing for a CHF portfolio. */}

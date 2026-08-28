@@ -10,6 +10,7 @@ import { ExposureBars } from '../components/ExposureBars';
 import { PeriodReturns } from '../components/PeriodReturns';
 import { Fundamentals } from '../components/Fundamentals';
 import { ValueAnalysis } from '../components/ValueAnalysis';
+import { MarketAnalysis } from '../components/MarketAnalysis';
 import { ProjectionChart } from '../components/ProjectionChart';
 import { BenchmarkSelect } from '../components/BenchmarkSelect';
 import { NewsFeed } from '../components/NewsFeed';
@@ -222,93 +223,6 @@ function ProspectiveSection({ symbol }: { symbol: string }) {
   );
 }
 
-/** Compact market-cap: 250.3B / 41.2M. */
-function bigCap(v: number | null | undefined, ccy = ''): string {
-  if (v == null || !Number.isFinite(v)) return '—';
-  const a = Math.abs(v);
-  const s = a >= 1e12 ? `${(v / 1e12).toFixed(2)}T` : a >= 1e9 ? `${(v / 1e9).toFixed(2)}B` : a >= 1e6 ? `${(v / 1e6).toFixed(1)}M` : fmtNum(v);
-  return ccy ? `${ccy} ${s}` : s;
-}
-
-/**
- * Competitive position: same-sector peers ranked by size, so you can see where this
- * company sits by market cap and valuation within its sector. Peers come from names
- * with cached fundamentals — sparse until more are analysed.
- */
-function CompetitorsPanel({ symbol }: { symbol: string }) {
-  const { data, isLoading } = useQuery({
-    queryKey: ['competitors', symbol],
-    queryFn: () => api.competitors(symbol),
-  });
-  const researchSymbolView = useApp((s) => s.researchSymbolView);
-
-  if (isLoading) return <Spinner label="Finding sector peers…" />;
-  if (!data || !data.sector) {
-    return <p className="text-sm text-text-faint">No sector data cached yet for {symbol}.</p>;
-  }
-  if (data.peerCount === 0) {
-    return (
-      <p className="text-sm text-text-faint">
-        No same-sector peers analysed yet. Open a few {data.sector} names in Research or the Screener
-        to build out the competitive set.
-      </p>
-    );
-  }
-
-  return (
-    <>
-      <p className="text-[13px] text-text-muted mb-3">
-        {data.subjectRank != null && (
-          <>
-            <span className="font-mono text-azure">{symbol}</span> ranks{' '}
-            <span className="text-text">#{data.subjectRank}</span> of {data.peers.length} by market cap in{' '}
-          </>
-        )}
-        <span className="text-text">{data.sector}</span>.
-      </p>
-      <div className="overflow-x-auto -mx-5">
-        <table className="w-full text-sm">
-          <thead>
-            <tr>
-              <th className="th">Company</th>
-              <th className="th text-right">Market cap</th>
-              <th className="th text-right">P/E</th>
-              <th className="th text-right">P/B</th>
-              <th className="th text-right">Net margin</th>
-              <th className="th text-right">Rev growth</th>
-            </tr>
-          </thead>
-          <tbody>
-            {data.peers.map((p) => (
-              <tr key={p.symbol} className={clsx('hover:bg-surface-2', p.isSubject && 'bg-azure/5')}>
-                <td className="td">
-                  {p.isSubject ? (
-                    <span className="font-mono text-azure font-semibold">{p.symbol}</span>
-                  ) : (
-                    <button className="font-mono text-azure hover:underline" onClick={() => researchSymbolView(p.symbol)}>
-                      {p.symbol}
-                    </button>
-                  )}
-                  {p.name && <span className="text-text-muted ml-2 text-[13px]">{p.name}</span>}
-                </td>
-                <td className="td text-right font-mono tnum">{bigCap(p.marketCap, p.currency ?? '')}</td>
-                <td className="td text-right font-mono tnum text-text-muted">{p.trailingPE != null ? p.trailingPE.toFixed(1) : '—'}</td>
-                <td className="td text-right font-mono tnum text-text-muted">{p.priceToBook != null ? p.priceToBook.toFixed(1) : '—'}</td>
-                <td className="td text-right font-mono tnum text-text-muted">{fmtPct(p.profitMargins, 2)}</td>
-                <td className="td text-right font-mono tnum text-text-muted">{p.revenueGrowth != null ? fmtPctSigned(p.revenueGrowth) : '—'}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <p className="text-[11px] text-text-faint mt-3">
-        Same-sector large caps with cached fundamentals. Market caps are shown in each
-        company's own currency — not FX-normalised.
-      </p>
-    </>
-  );
-}
-
 /** Toggle the researched asset on/off the watchlist without leaving the page. */
 function WatchToggle({ symbol, name, kind }: { symbol: string; name: string | null; kind: string }) {
   const qc = useQueryClient();
@@ -397,11 +311,11 @@ function AssetView({ symbol, onReset }: { symbol: string; onReset: () => void })
         </div>
       )}
 
-      {/* Competitive position — where this company sits among same-sector peers. */}
+      {/* Market analysis — sector, competitors & relative performance. */}
       {data.kind === 'stock' && (
         <div className="card">
           <div className="eyebrow mb-3">Competitive position</div>
-          <CompetitorsPanel symbol={data.symbol} />
+          <MarketAnalysis symbol={data.symbol} />
         </div>
       )}
 

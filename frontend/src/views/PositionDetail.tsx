@@ -22,6 +22,7 @@ import {
   ArrowLeftRight,
   Newspaper,
   StickyNote,
+  Radar,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { api } from '../lib/api';
@@ -42,6 +43,7 @@ import { PriceMovementChart } from '../components/PriceMovementChart';
 import { SymbolSearch } from '../components/SymbolSearch';
 import { Fundamentals } from '../components/Fundamentals';
 import { ValueAnalysis } from '../components/ValueAnalysis';
+import { MarketAnalysis } from '../components/MarketAnalysis';
 import { PortfolioFit } from '../components/PortfolioFit';
 import { yahooUrl, googleUrl, finanzenUrl } from '../lib/externalLinks';
 import { SellSignalPanel } from '../components/SellSignalPanel';
@@ -178,6 +180,7 @@ export function PositionDetail() {
     ...(hasHistory ? [{ id: 'sec-history', label: 'Price history', icon: LineChart }] : []),
     ...(!delisted && isStock ? [{ id: 'sec-fundamentals', label: 'Fundamentals', icon: Building2 }] : []),
     ...(!delisted && isStock ? [{ id: 'sec-value', label: 'Value', icon: Gem }] : []),
+    ...(!delisted && isStock ? [{ id: 'sec-market', label: 'Market analysis', icon: Radar }] : []),
     ...(!delisted ? [{ id: 'sec-returns', label: 'Returns', icon: Percent }] : []),
     { id: 'sec-projection', label: 'Projection', icon: Rocket },
     { id: 'sec-whatif', label: 'What-if sale', icon: Shuffle },
@@ -547,6 +550,14 @@ export function PositionDetail() {
             benchmarkSymbol={catchups[0]?.symbol ?? null}
             verdict={p.verdict}
           />
+        </section>
+      )}
+
+      {/* Market analysis — sector, competitors & relative performance */}
+      {!delisted && inst.kind === 'stock' && (
+        <section id="sec-market" className="card mb-6 scroll-mt-24">
+          <div className="eyebrow mb-3">Market analysis · sector, competitors & relative performance</div>
+          <MarketAnalysis symbol={inst.symbol} />
         </section>
       )}
 

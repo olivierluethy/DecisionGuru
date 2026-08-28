@@ -84,7 +84,7 @@ def _detect_new_opportunities(settings: dict) -> dict:
     for r in rows:
         sym = r["symbol"]
         price = r.get("price")
-        attractive_now = r.get("verdict") == "attractive"
+        attractive_now = r.get("verdict") == "buy-more"
         owned = bool(r.get("inPortfolio"))
         snapshot[sym] = {"price": price, "attractive": attractive_now, "owned": owned}
 
@@ -132,7 +132,7 @@ def _detect_new_opportunities(settings: dict) -> dict:
     set_state("scan.became_attractive", became)
     set_state("scan.movers", movers)
 
-    attractive_not_owned = sum(1 for r in rows if r.get("verdict") == "attractive" and not r.get("inPortfolio"))
+    attractive_not_owned = sum(1 for r in rows if r.get("verdict") == "buy-more" and not r.get("inPortfolio"))
     return {"attractive": attractive_not_owned, "new": len(fresh),
             "newSymbols": fresh, "analysed": result.get("analysedCount", 0)}
 

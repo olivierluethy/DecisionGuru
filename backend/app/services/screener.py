@@ -23,6 +23,7 @@ from ..core.db import get_state
 from .watchlist import list_watchlist
 from .fundamentals import get_cached_fundamentals
 from .valuation import value_analysis
+from .verdict import resolve_verdict
 from .marketdata import price_on
 from .exposure import portfolio_exposure
 from ..reference import geo
@@ -57,22 +58,6 @@ def _attractiveness(mos: float | None, quality_frac: float, supportable: float |
     ret_score = _clamp((supportable or 0.0) / 0.15, 0.0, 1.0)  # 15%+ supportable = full marks
     score = 0.45 * val_score + 0.30 * quality_frac + 0.20 * ret_score + 0.05 * fit_bonus
     return round(_clamp(score, 0.0, 1.0) * 100)
-
-
-def _verdict(mos: float | None, quality_frac: float, supportable: float | None) -> str:
-    """Separate 'attractive' from merely 'cheap'. Low valuation alone never earns a buy."""
-    if mos is None:
-        return "unknown"
-    cheap = mos >= 0.15
-    quality_ok = quality_frac >= 0.5
-    return_ok = (supportable or 0.0) >= 0.05
-    if mos < 0:
-        return "expensive"
-    if cheap and quality_ok and return_ok:
-        return "attractive"
-    if cheap:
-        return "cheap-only"  # trades below intrinsic value but quality/return don't back it
-    return "fair"
 
 
 def screen_universe(settings: dict) -> dict:
@@ -117,6 +102,9 @@ def screen_universe(settings: dict) -> dict:
         quality_frac = (quality["score"] / quality["max"]) if quality.get("max") else 0.0
         supportable = va.get("supportableReturn")
         fit_status, fit_weight, fit_bonus = _fit(sector, pf_sectors)
+        # One canonical verdict from the shared engine (valuation-only for a candidate —
+        # not held, so no benchmark performance). Discover shows this, never a fork.
+        rec = resolve_verdict(va, held=False)
 
         rows.append({
             "symbol": sym,
@@ -142,7 +130,8 @@ def screen_universe(settings: dict) -> dict:
             "impliedGrowth": va.get("impliedGrowth"),
             "confidence": va.get("confidence"),
             "attractiveness": _attractiveness(mos, quality_frac, supportable, fit_bonus),
-            "verdict": _verdict(mos, quality_frac, supportable),
+            "verdict": rec["verdict"],          # canonical: 'buy-more' | 'hold' | 'sell'
+            "recommendation": rec,              # full engine output (rationale, drivers, …)
             "portfolioFit": {"status": fit_status, "sectorWeight": fit_weight},
             "inPortfolio": sym in holdings,
             "onWatchlist": sym in watch,
@@ -195,7 +184,7 @@ def _geo_density(rows: list[dict]) -> list[dict]:
         })
         bucket["totalCount"] += 1
         mos = r.get("marginOfSafety")
-        if r.get("verdict") == "attractive":
+        if r.get("verdict") == "buy-more":
             bucket["attractiveCount"] += 1
             if mos is not None:
                 bucket["mosSum"] += max(mos, 0.0)

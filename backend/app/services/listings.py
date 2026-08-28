@@ -63,7 +63,9 @@ _NOISE_TOKENS = {
     "representing", "common", "stock", "nam", "akt",
 }
 
-_TTL_MS = 7 * 24 * 3600 * 1000  # a company's listings barely change — cache a week.
+# A company's listings barely change, but the recommendation embeds today's FX rate — cache
+# a day so the rate stays current while still shielding the rate-limited provider search.
+_TTL_MS = 24 * 3600 * 1000
 
 
 def _suffix(symbol: str) -> str:

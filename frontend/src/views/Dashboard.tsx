@@ -25,7 +25,6 @@ import {
   DeltaPill,
   Sparkline,
   MiniBar,
-  Reveal,
   Skeleton,
 } from '../components/ui';
 import { buildPortfolioExport } from '../lib/exporters';
@@ -284,76 +283,73 @@ export function Dashboard() {
         </div>
       )}
 
-      {/* Summary band — two colour-separated pools + today's P/L + total gain */}
+      {/* Summary band — two colour-separated pools + today's P/L + total gain.
+          Each card animates in on a slight stagger while staying a direct grid
+          child, so all four keep equal height. */}
       <section id="ov-summary" className="scroll-mt-24 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
         {/* Kontoguthaben (cash) — neutral/cool, distinct from the azure invested pool */}
-        <Reveal>
-          <MetricCard
-            icon={Wallet}
-            label="Kontoguthaben · cash · CHF"
-            accent="neutral"
-            onClick={() => openModal({ kind: 'cash-detail' })}
-            value={fmtCHF(cash.totalCHF, true)}
-            sub={
-              <div className="flex flex-wrap gap-1.5">
-                {Object.entries(cash.byCurrency)
-                  .sort((a, b) => b[1].chf - a[1].chf)
-                  .map(([ccy, v]) => (
-                    <span key={ccy} className="chip !py-0 !px-2 font-mono">
-                      {ccy} {fmtNum(v.amount)}
-                    </span>
-                  ))}
-                {Object.keys(cash.byCurrency).length === 0 && (
-                  <span className="text-text-faint">Import account statement for cash</span>
-                )}
-              </div>
-            }
-          />
-        </Reveal>
+        <MetricCard
+          icon={Wallet}
+          label="Kontoguthaben · cash · CHF"
+          accent="neutral"
+          className="h-full animate-fade-up motion-reduce:animate-none"
+          onClick={() => openModal({ kind: 'cash-detail' })}
+          value={fmtCHF(cash.totalCHF, true)}
+          sub={
+            <div className="flex flex-wrap gap-1.5">
+              {Object.entries(cash.byCurrency)
+                .sort((a, b) => b[1].chf - a[1].chf)
+                .map(([ccy, v]) => (
+                  <span key={ccy} className="chip !py-0 !px-2 font-mono">
+                    {ccy} {fmtNum(v.amount)}
+                  </span>
+                ))}
+              {Object.keys(cash.byCurrency).length === 0 && (
+                <span className="text-text-faint">Import account statement for cash</span>
+              )}
+            </div>
+          }
+        />
 
         {/* Finanzrat Portfolio (invested) — azure, "you" — with a live equity sparkline */}
-        <Reveal delay={60}>
-          <MetricCard
-            icon={PieChart}
-            label="Finanzrat Portfolio · invested · CHF"
-            labelClass="text-azure/80"
-            accent="azure"
-            className="bg-azure/5"
-            value={fmtCHF(totals.currentValueCHF, true)}
-            spark={
-              sparkVals.length >= 2 ? (
-                <span className={rangeGainPct != null && rangeGainPct < 0 ? 'text-loss' : 'text-azure'}>
-                  <Sparkline data={sparkVals} width={84} height={30} />
-                </span>
-              ) : undefined
-            }
-            sub={`Invested ${fmtCHF(totals.investedCHF)} · ${data.positions.length} holdings`}
-          />
-        </Reveal>
+        <MetricCard
+          icon={PieChart}
+          label="Finanzrat Portfolio · invested · CHF"
+          labelClass="text-azure/80"
+          accent="azure"
+          className="h-full bg-azure/5 animate-fade-up motion-reduce:animate-none [animation-delay:60ms]"
+          value={fmtCHF(totals.currentValueCHF, true)}
+          spark={
+            sparkVals.length >= 2 ? (
+              <span className={rangeGainPct != null && rangeGainPct < 0 ? 'text-loss' : 'text-azure'}>
+                <Sparkline data={sparkVals} width={84} height={30} />
+              </span>
+            ) : undefined
+          }
+          sub={`Invested ${fmtCHF(totals.investedCHF)} · ${data.positions.length} holdings`}
+        />
 
         {/* Today's P/L */}
-        <Reveal delay={120}>
-          <MetricCard
-            label="Today’s P/L · CHF"
-            accent={todayDelta == null ? 'neutral' : todayDelta >= 0 ? 'gain' : 'loss'}
-            value={todayDelta == null ? '—' : fmtCHFSigned(todayDelta)}
-            valueClass={plClass(todayDelta)}
-            delta={todayPct != null ? <DeltaPill value={todayPct} /> : undefined}
-            sub={todayPct == null ? 'Awaiting price history' : undefined}
-          />
-        </Reveal>
+        <MetricCard
+          label="Today’s P/L · CHF"
+          accent={todayDelta == null ? 'neutral' : todayDelta >= 0 ? 'gain' : 'loss'}
+          className="h-full animate-fade-up motion-reduce:animate-none [animation-delay:120ms]"
+          value={todayDelta == null ? '—' : fmtCHFSigned(todayDelta)}
+          valueClass={plClass(todayDelta)}
+          delta={todayPct != null ? <DeltaPill value={todayPct} /> : undefined}
+          sub={todayPct == null ? 'Awaiting price history' : undefined}
+        />
 
         {/* Total gain (Gesamtgewinn) */}
-        <Reveal delay={180}>
-          <MetricCard
-            label="Total gain · Gesamtgewinn · CHF"
-            accent={totals.totalGainCHF >= 0 ? 'gain' : 'loss'}
-            value={fmtCHFSigned(totals.totalGainCHF)}
-            valueClass={plClass(totals.totalGainCHF)}
-            delta={totalGainPct != null ? <DeltaPill value={totalGainPct} /> : undefined}
-            sub={`incl. ${fmtCHF(totals.netDividendsCHF)} dividends`}
-          />
-        </Reveal>
+        <MetricCard
+          label="Total gain · Gesamtgewinn · CHF"
+          accent={totals.totalGainCHF >= 0 ? 'gain' : 'loss'}
+          className="h-full animate-fade-up motion-reduce:animate-none [animation-delay:180ms]"
+          value={fmtCHFSigned(totals.totalGainCHF)}
+          valueClass={plClass(totals.totalGainCHF)}
+          delta={totalGainPct != null ? <DeltaPill value={totalGainPct} /> : undefined}
+          sub={`incl. ${fmtCHF(totals.netDividendsCHF)} dividends`}
+        />
       </section>
 
       {/* Proactive strategy surface — most important decision, if any */}

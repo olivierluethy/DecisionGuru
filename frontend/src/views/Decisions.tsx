@@ -1,25 +1,19 @@
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import clsx from 'clsx';
-import { ArrowRight, Wallet, TrendingDown, ShieldCheck, Scissors, Activity, ChevronDown } from 'lucide-react';
-import { api, type Recommendation, type RecAction } from '../lib/api';
+import { ArrowRight, Wallet, ShieldCheck, Activity, ChevronDown } from 'lucide-react';
+import { api, type Recommendation } from '../lib/api';
 import { Stat, Spinner, EmptyState } from '../components/ui';
 import { DeltaChart } from '../components/DeltaChart';
+import { VerdictBadge, VerdictRationale, VERDICT_META } from '../components/Verdict';
 import { fmtCHF, fmtCHFSigned, fmtPct, fmtPctSigned, fmtDurationMonths, plClass } from '../lib/format';
 import { useApp } from '../store';
 
-const ACTION_META: Record<RecAction, { label: string; cls: string; border: string; Icon: typeof Scissors }> = {
-  sell: { label: 'Sell', cls: 'text-loss', border: 'border-l-loss', Icon: TrendingDown },
-  trim: { label: 'Trim', cls: 'text-warn', border: 'border-l-warn', Icon: Scissors },
-  hold: { label: 'Hold', cls: 'text-text-muted', border: 'border-l-hairline-strong', Icon: ShieldCheck },
-  buy: { label: 'Buy', cls: 'text-gain', border: 'border-l-gain', Icon: Wallet },
-};
-
 function RecCard({ rec }: { rec: Recommendation }) {
   const { selectInstrument, openModal } = useApp();
-  const meta = ACTION_META[rec.action];
-  const actionable = rec.action === 'sell' || rec.action === 'trim';
-  const target = rec.action === 'sell' || rec.action === 'trim';
+  const meta = VERDICT_META[rec.verdict.verdict];
+  const isSell = rec.action === 'sell';
+  const target = isSell;
   const [showWhy, setShowWhy] = useState(false);
   const cf = useQuery({
     queryKey: ['rec-cf', rec.instrumentId, rec.benchmarkSymbol],
@@ -33,9 +27,7 @@ function RecCard({ rec }: { rec: Recommendation }) {
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className={clsx('chip !py-0.5', meta.cls)}>
-              <meta.Icon size={12} /> {meta.label}
-            </span>
+            <VerdictBadge verdict={rec.verdict.verdict} withIcon />
             <button
               onClick={() => selectInstrument(rec.instrumentId)}
               className="font-mono text-sm text-azure hover:text-azure-bright"
@@ -43,17 +35,17 @@ function RecCard({ rec }: { rec: Recommendation }) {
               {rec.symbol}
             </button>
             <span className="text-sm text-text-muted truncate">{rec.name}</span>
-            <span className="text-[11px] text-text-faint uppercase tracking-wide">{rec.conviction} conviction</span>
+            <span className="text-[11px] text-text-faint uppercase tracking-wide">{rec.conviction} confidence</span>
           </div>
-          <p className="text-[13px] text-text-muted mt-2 leading-relaxed max-w-3xl">{rec.reason}</p>
+          <VerdictRationale verdict={rec.verdict} className="mt-2 max-w-3xl" />
         </div>
         <div className="text-right shrink-0">
-          <div className="eyebrow mb-1">{actionable ? 'Capital at stake' : 'Vs benchmark'}</div>
-          <div className={clsx('font-mono text-xl font-semibold tnum', actionable ? 'text-warn' : plClass(-rec.opportunityCostCHF))}>
-            {actionable ? fmtCHF(rec.impactCHF) : fmtCHFSigned(-rec.opportunityCostCHF)}
+          <div className="eyebrow mb-1">{isSell ? 'After-tax if sold' : 'Vs benchmark'}</div>
+          <div className={clsx('font-mono text-xl font-semibold tnum', isSell ? 'text-gain' : plClass(-rec.opportunityCostCHF))}>
+            {isSell ? fmtCHF(rec.verdict.afterTax?.afterTaxGainIfSoldCHF ?? rec.impactCHF) : fmtCHFSigned(-rec.opportunityCostCHF)}
           </div>
           {rec.recoveryMonths != null && (
-            <div className="text-[11px] text-text-faint mt-0.5">recover in {fmtDurationMonths(rec.recoveryMonths)}</div>
+            <div className="text-[11px] text-text-faint mt-0.5">ETF recovers in {fmtDurationMonths(rec.recoveryMonths)}</div>
           )}
         </div>
       </div>
@@ -125,9 +117,11 @@ function RecCard({ rec }: { rec: Recommendation }) {
                 gold line is what that same money would be worth in{' '}
                 <span className="font-mono text-gold">{rec.benchmarkSymbol}</span>. The shaded gap is green where you're
                 ahead, red where the ETF wins —{' '}
-                {rec.action === 'hold'
-                  ? 'here your holding keeps pace or stays ahead, so the model says hold.'
-                  : 'that red gap is the opportunity cost driving this call.'}
+                {rec.action === 'sell'
+                  ? 'but the verdict here is driven by valuation (it now trades in the sell zone), not this gap.'
+                  : rec.action === 'buy'
+                    ? "a lag here doesn't force a sell: it's undervalued with sound fundamentals, so the verdict is Buy more."
+                    : 'the verdict weighs valuation and fundamentals, not this benchmark gap alone.'}
               </p>
             )}
             {cf.isError && <p className="text-[12px] text-loss mt-2">Could not load the comparison chart.</p>}
@@ -149,7 +143,7 @@ export function Decisions() {
   if (!data) return null;
 
   const recs = data.recommendations;
-  const actionable = recs.filter((r) => r.action === 'sell' || r.action === 'trim');
+  const actionable = recs.filter((r) => r.action === 'sell' || r.action === 'buy');
   const holds = recs.filter((r) => r.action === 'hold');
   const { summary, cashSignal } = data;
 
@@ -198,19 +192,19 @@ export function Decisions() {
       {/* Summary band */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <div className="card">
-          <div className="eyebrow mb-1">To reallocate</div>
-          <div className="font-mono text-2xl font-semibold tnum text-warn">{fmtCHF(summary.reallocatableCHF)}</div>
-          <div className="text-xs text-text-muted mt-0.5">{summary.counts.sell} sell · {summary.counts.trim} trim</div>
+          <div className="eyebrow mb-1">To realise</div>
+          <div className="font-mono text-2xl font-semibold tnum text-loss">{fmtCHF(summary.reallocatableCHF)}</div>
+          <div className="text-xs text-text-muted mt-0.5">{summary.counts.sell} sell · in the sell zone</div>
         </div>
         <div className="card">
-          <div className="eyebrow mb-1">Opportunity cost</div>
-          <div className="font-mono text-2xl font-semibold tnum text-loss">{fmtCHF(summary.totalOpportunityCostCHF)}</div>
-          <div className="text-xs text-text-muted mt-0.5">behind the benchmark, flagged holdings</div>
+          <div className="eyebrow mb-1">Buy more</div>
+          <div className="font-mono text-2xl font-semibold tnum text-gain">{summary.counts.buy}</div>
+          <div className="text-xs text-text-muted mt-0.5">undervalued &amp; fundamentally sound</div>
         </div>
         <div className="card">
           <div className="eyebrow mb-1">Holding steady</div>
           <div className="font-mono text-2xl font-semibold tnum text-text">{summary.counts.hold}</div>
-          <div className="text-xs text-text-muted mt-0.5">tracking or ahead — no action</div>
+          <div className="text-xs text-text-muted mt-0.5">fairly valued — no action</div>
         </div>
         <div className="card border-l-2 border-l-azure bg-azure/5">
           <div className="eyebrow mb-1">Idle cash</div>

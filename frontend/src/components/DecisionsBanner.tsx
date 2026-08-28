@@ -11,7 +11,7 @@ export function DecisionsBanner() {
   const { data } = useQuery({ queryKey: ['recommendations'], queryFn: api.recommendations });
   if (!data) return null;
 
-  const actionable = data.recommendations.filter((r) => r.action === 'sell' || r.action === 'trim');
+  const actionable = data.recommendations.filter((r) => r.action === 'sell');
   const hasCash = !!data.cashSignal;
   if (!actionable.length && !hasCash) return null;
 
@@ -28,7 +28,7 @@ export function DecisionsBanner() {
           {actionable.length > 0 ? (
             <>
               <span className="font-medium text-warn">{actionable.length} holding{actionable.length > 1 ? 's' : ''}</span>{' '}
-              flagged to reallocate · <span className="font-mono tnum">{fmtCHF(data.summary.reallocatableCHF)}</span> at stake
+              in the sell zone · <span className="font-mono tnum">{fmtCHF(data.summary.reallocatableCHF)}</span> after-tax
             </>
           ) : (
             <><span className="font-medium text-gain">{fmtCHF(data.summary.idleCashCHF)}</span> idle cash ready to deploy</>
@@ -36,7 +36,7 @@ export function DecisionsBanner() {
         </div>
         <div className="text-[12px] text-text-faint mt-0.5 truncate">
           {top.length > 0
-            ? top.map((r) => `${r.symbol} (${r.action})`).join(' · ')
+            ? top.map((r) => `${r.symbol} (${r.verdict.label})`).join(' · ')
             : data.cashSignal?.reason}
         </div>
       </div>

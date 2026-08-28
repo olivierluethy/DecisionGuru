@@ -24,8 +24,10 @@ import type {
   AccountCommitResponse,
   AdvisoryResponse,
   SellSignal,
+  Verdict,
+  VerdictKey,
 } from '@decisionguru/shared';
-export type { SellSignal } from '@decisionguru/shared';
+export type { SellSignal, Verdict, VerdictKey, VerdictDrivers } from '@decisionguru/shared';
 
 const BASE = '/api';
 
@@ -524,6 +526,9 @@ export interface ValuationResult {
   fairValue: number | null;
   entryTarget: number | null;
   band: ValuationBand | null;
+  /** Canonical verdict from the shared engine (valuation-only). */
+  verdict?: VerdictKey;
+  recommendation?: Verdict | null;
   // Price-freshness qualifier (present when the server resolved a last price itself).
   priceFreshness?: 'live' | 'delayed' | 'prev-close' | 'none' | null;
   priceAsOf?: string | null;
@@ -614,7 +619,7 @@ export interface MovementsResponse {
 }
 
 // ---- Recommendations -----------------------------------------------------
-export type RecAction = 'buy' | 'hold' | 'sell' | 'trim';
+export type RecAction = 'buy' | 'hold' | 'sell';
 export interface ReinvestTarget {
   symbol: string;
   name: string;
@@ -629,6 +634,8 @@ export interface Recommendation {
   kind: string | null;
   action: RecAction;
   conviction: 'high' | 'medium' | 'low';
+  /** The full canonical verdict this recommendation renders (shared engine). */
+  verdict: Verdict;
   investedCHF: number;
   currentValueCHF: number;
   weight: number;
@@ -639,6 +646,8 @@ export interface Recommendation {
   benchmarkName: string;
   benchmarkReturnPct: number | null;
   opportunityCostCHF: number;
+  /** Reinvest target(s) — present only on a Sell verdict. */
+  reinvest: ReinvestTarget[] | null;
   recoveryMonths: number | null;
   impactCHF: number;
   sinceDate: string;
@@ -840,7 +849,6 @@ export interface CompetitorsResult {
   peerCount: number;
   subjectRank: number | null;
 }
-export type ScreenerVerdict = 'attractive' | 'cheap-only' | 'fair' | 'expensive' | 'unknown';
 export interface ScreenerRow {
   symbol: string;
   name: string | null;
@@ -866,7 +874,9 @@ export interface ScreenerRow {
   impliedGrowth: number | null;
   confidence: string | null;
   attractiveness: number;
-  verdict: ScreenerVerdict;
+  /** Canonical verdict from the shared engine (valuation-only for a candidate). */
+  verdict: VerdictKey;
+  recommendation: Verdict | null;
   portfolioFit: { status: string; sectorWeight: number };
   inPortfolio: boolean;
   onWatchlist: boolean;
@@ -929,6 +939,9 @@ export interface WatchlistAnalysisItem extends WatchlistItem {
   marginOfSafety: number | null;
   quality: { score: number; max: number } | null;
   confidence: string | null;
+  /** Canonical verdict (valuation-only — a watched name isn't held). */
+  verdict: VerdictKey | null;
+  recommendation: Verdict | null;
   analysed: boolean;
 }
 

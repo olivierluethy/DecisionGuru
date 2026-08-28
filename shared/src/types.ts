@@ -103,6 +103,53 @@ export interface Position {
   weight?: number;
   /** Valuation-driven sell/trim signal — present only when (significantly) overvalued. */
   sellSignal?: SellSignal | null;
+  /** The unified recommendation verdict for this holding (shared engine). */
+  verdict?: Verdict | null;
+}
+
+/** The single canonical recommendation verdict (see backend services/verdict.py).
+ * Every surface renders THIS — no view computes its own buy/sell/hold logic. */
+export type VerdictKey = 'buy-more' | 'hold' | 'sell';
+
+export interface VerdictDrivers {
+  band: 'undervalued' | 'fair' | 'overvalued' | 'significantly-overvalued' | null;
+  bandLabel: string | null;
+  /** Discount to fair value (fraction, +ve = undervalued). */
+  marginOfSafetyPct: number | null;
+  /** Upside to fair value (fraction) — equals the margin of safety here. */
+  upsidePct: number | null;
+  qualityScore: number | null;
+  qualityMax: number | null;
+  earningsTrend: 'improving' | 'flat' | 'deteriorating' | null;
+  /** vs the benchmark; null for watched/unheld names. */
+  performance: 'outperform' | 'inline' | 'underperform' | null;
+  /** +ve = behind the benchmark. */
+  lagPct: number | null;
+  benchmarkSymbol: string | null;
+  benchmarkName: string | null;
+  opportunityCostCHF: number | null;
+}
+
+export interface Verdict {
+  verdict: VerdictKey;
+  label: string; // 'Buy more' | 'Hold' | 'Sell'
+  confidence: 'high' | 'medium' | 'low';
+  drivers: VerdictDrivers;
+  /** Factual one-liner: driving factors → verdict. */
+  rationale: string;
+  /** Present only when the verdict overrides a signal (e.g. lags benchmark yet Buy more). */
+  conflictNote: string | null;
+  /** 'consider trimming' for overvalued / concentration — never escalates the badge. */
+  trimNote: string | null;
+  underperformanceCause: 'fundamentals' | 'temporary-discount' | null;
+  valueTrap: boolean;
+  /** After-tax gain if sold now (present only on a Sell verdict). */
+  afterTax: {
+    unrealizedGainCHF: number;
+    capitalGainsTaxCHF: number;
+    afterTaxGainIfSoldCHF: number;
+    taxNote: string;
+  } | null;
 }
 
 /** Valuation-driven sell/trim signal for an owned position (see services/signals.py). */
@@ -152,6 +199,8 @@ export interface AdvisoryInsight {
   lagPct: number;
   series: CounterfactualPoint[];
   handled: boolean;
+  /** The unified verdict for this holding (same engine as every other view). */
+  verdict?: Verdict | null;
   rationale: string;
 }
 

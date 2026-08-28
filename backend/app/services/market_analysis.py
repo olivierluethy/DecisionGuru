@@ -5,6 +5,8 @@ returns are price-return % (currency-neutral) for one consistent cross-security 
 """
 from __future__ import annotations
 
+import statistics
+
 import pandas as pd
 
 from ..core import db
@@ -82,3 +84,37 @@ def rebased_series(symbol: str, months: int) -> list[dict]:
     if base <= 0:
         return []
     return [{"date": r["date"], "value": round(r["close"] / base * 100.0, 4)} for r in rows]
+
+
+def peer_median(returns_by_symbol: dict[str, dict], key: str) -> float | None:
+    """Median of the peers' `key`-window returns, ignoring missing (None) values."""
+    vals = [r.get(key) for r in returns_by_symbol.values() if r.get(key) is not None]
+    return round(statistics.median(vals), 6) if vals else None
+
+
+# How far apart (in return fraction) the subject and its reference must be before the gap
+# is called out rather than treated as in line with the market.
+_MATERIAL = 0.05
+
+
+def classify(subject: float | None, sector: float | None, peer_med: float | None,
+             benchmark: float | None) -> str | None:
+    """Descriptive market-vs-company read — never a recommendation, never forces a Sell.
+
+    Compares the subject's return against a sector reference (the sector ETF return, else
+    the peer median) over the same horizon. Distinguishes broad-market weakness (subject
+    and the market both down together) from company-specific weakness (subject down while
+    the market is up)."""
+    ref = sector if sector is not None else peer_med
+    if subject is None or ref is None:
+        return None
+    gap = subject - ref
+    if ref < -0.03 and subject < -0.03 and abs(gap) <= _MATERIAL:
+        return "market-wide-weakness"
+    if gap < -_MATERIAL:
+        return "company-specific-weakness"
+    if gap > _MATERIAL:
+        if peer_med is not None and (subject - peer_med) > _MATERIAL:
+            return "outperforming-peers"
+        return "outperforming-sector"
+    return "inline"

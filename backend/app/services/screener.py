@@ -11,8 +11,10 @@ Each scored name gets:
   - a value read (margin of safety vs intrinsic mid, Graham/DCF models, quality),
   - a portfolio-fit read (does its sector diversify or concentrate your book),
   - a combined *attractiveness* (0–100) blending valuation, quality, supportable
-    return and fit, and a *verdict* that separates genuinely attractive from merely
-    cheap — a low-quality bargain is flagged 'cheap-only', not recommended.
+    return and fit (kept as a ranking score), and
+  - the single canonical *verdict* from services/verdict.py (Buy more / Hold / Sell) —
+    the same one every other view shows. Being cheap is never enough: a low-quality
+    bargain reads Hold (a value trap), not Buy more.
 """
 from __future__ import annotations
 

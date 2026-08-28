@@ -2,19 +2,12 @@ import { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
 import { ArrowUpRight, Eye, Info, Clock, Globe2, Sparkles, Loader2, DownloadCloud, ChevronDown } from 'lucide-react';
-import { api, type ScreenerRow, type ScreenerVerdict } from '../lib/api';
+import { api, type ScreenerRow } from '../lib/api';
 import { useApp } from '../store';
 import { Spinner, EmptyState, Segmented } from '../components/ui';
 import { DiscoverMap } from '../components/DiscoverMap';
+import { VerdictBadge, VERDICT_META } from '../components/Verdict';
 import { fmtPct, fmtPctSigned, fmtNum, plClass } from '../lib/format';
-
-const VERDICT_META: Record<ScreenerVerdict, { label: string; cls: string }> = {
-  attractive: { label: 'Attractive', cls: 'text-gain border-gain/40 bg-gain/10' },
-  'cheap-only': { label: 'Cheap only', cls: 'text-warn border-warn/40 bg-warn/10' },
-  fair: { label: 'Fair', cls: 'text-text-muted border-hairline bg-surface-2' },
-  expensive: { label: 'Expensive', cls: 'text-loss border-loss/40 bg-loss/10' },
-  unknown: { label: 'No data', cls: 'text-text-faint border-hairline bg-surface-2' },
-};
 
 const FIT_CLS: Record<string, string> = {
   'new sector': 'text-azure',
@@ -26,10 +19,9 @@ const FIT_CLS: Record<string, string> = {
 
 const VERDICT_FILTERS: { value: string; label: string }[] = [
   { value: '', label: 'All verdicts' },
-  { value: 'attractive', label: 'Attractive' },
-  { value: 'cheap-only', label: 'Cheap only' },
-  { value: 'fair', label: 'Fair' },
-  { value: 'expensive', label: 'Expensive' },
+  { value: 'buy-more', label: 'Buy more' },
+  { value: 'hold', label: 'Hold' },
+  { value: 'sell', label: 'Sell' },
 ];
 
 /** A sortable column header: the `.th` cell wraps a full-width button; the active
@@ -94,9 +86,9 @@ const FIT_RANK: Record<string, number> = {
   'new sector': 4, diversifies: 3, neutral: 2, concentrates: 1, unknown: 0,
 };
 
-/** A not-yet-owned name that clears the attractiveness bar. */
+/** A not-yet-owned name the shared engine rates Buy more. */
 function isNewOpportunity(r: ScreenerRow): boolean {
-  return !r.inPortfolio && r.verdict === 'attractive';
+  return !r.inPortfolio && r.verdict === 'buy-more';
 }
 
 /** Numeric value backing a numeric sort column (null → sorted last, both directions). */
@@ -118,7 +110,7 @@ function textVal(r: ScreenerRow, col: SortCol): string {
   switch (col) {
     case 'company': return r.symbol;
     case 'sector': return r.sector ?? '';
-    case 'verdict': return VERDICT_META[r.verdict].label;
+    case 'verdict': return VERDICT_META[r.verdict]?.label ?? '';
     default: return '';
   }
 }
@@ -249,8 +241,9 @@ export function Screener() {
         <p className="text-sm text-text-muted mt-1 max-w-3xl">
           Screens the global universe for value, maps where the opportunities are, and ranks each
           name by an attractiveness score blending Graham/Buffett intrinsic value, margin of safety,
-          quality, supportable return and portfolio fit. Being cheap is not enough — a low-quality
-          bargain is flagged <span className="text-warn">cheap only</span>, not attractive.
+          quality, supportable return and portfolio fit. The verdict is the same one every view
+          uses — being cheap is not enough, a low-quality bargain reads <span className="text-text-muted">Hold</span>
+          (a value trap), not <span className="text-gain">Buy more</span>.
         </p>
       </header>
 
@@ -494,7 +487,6 @@ function Row({
   onWatch: () => void;
   onReplay: (s: string, name?: string | null) => void;
 }) {
-  const v = VERDICT_META[r.verdict];
   return (
     <tr className="hover:bg-surface-2">
       <td className="td">
@@ -525,9 +517,7 @@ function Row({
         </span>
       </td>
       <td className="td text-right"><div className="flex justify-end"><AttractivenessBar value={r.attractiveness} /></div></td>
-      <td className="td">
-        <span className={clsx('inline-block px-2 py-0.5 rounded border text-[11px] font-medium', v.cls)}>{v.label}</span>
-      </td>
+      <td className="td"><VerdictBadge verdict={r.verdict} /></td>
       <td className="td text-right">
         <div className="flex items-center justify-end gap-2">
           <button

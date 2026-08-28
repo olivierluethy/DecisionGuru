@@ -32,7 +32,7 @@ export function DiscoverMap({
       if (!r.country) continue;
       const b = byCountry.get(r.country) ?? { attractive: 0, total: 0, mosSum: 0 };
       b.total += 1;
-      if (r.verdict === 'attractive') {
+      if (r.verdict === 'buy-more') {
         b.attractive += 1;
         if (r.marginOfSafety != null) b.mosSum += Math.max(r.marginOfSafety, 0);
       }

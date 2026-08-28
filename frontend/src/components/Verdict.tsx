@@ -18,16 +18,18 @@ export function VerdictBadge({
   verdict,
   confidence,
   withIcon = false,
+  title,
   className,
 }: {
   verdict: VerdictKey;
   confidence?: string | null;
   withIcon?: boolean;
+  title?: string;
   className?: string;
 }) {
   const m = VERDICT_META[verdict];
   return (
-    <span className={clsx('chip !py-0 !px-2 inline-flex items-center gap-1.5', m.text, className)}>
+    <span title={title} className={clsx('chip !py-0 !px-2 inline-flex items-center gap-1.5', m.text, className)}>
       {withIcon ? <m.Icon size={12} /> : <span className={clsx('w-1.5 h-1.5 rounded-full', m.dot)} />}
       {m.label}
       {confidence && <span className="text-[11px] text-text-faint ml-0.5">· {confidence}</span>}

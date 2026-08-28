@@ -17,7 +17,6 @@ import { DecisionsBanner } from '../components/DecisionsBanner';
 import { VerdictBadge } from '../components/Verdict';
 import {
   Segmented,
-  Spinner,
   EmptyState,
   KindBadge,
   DataStatusBadge,
@@ -27,6 +26,7 @@ import {
   Sparkline,
   MiniBar,
   Reveal,
+  Skeleton,
 } from '../components/ui';
 import { buildPortfolioExport } from '../lib/exporters';
 import { downloadExport } from '../lib/api';
@@ -85,7 +85,29 @@ export function Dashboard() {
     queryClient.invalidateQueries({ queryKey: ['portfolio'] });
   };
 
-  if (isLoading) return <Spinner label="Loading your portfolio…" />;
+  // A skeleton in the real page shape — the layout never jumps when data lands.
+  if (isLoading)
+    return (
+      <div className="p-6 max-w-[1400px] mx-auto">
+        <div className="mb-6 space-y-2">
+          <Skeleton className="h-2.5 w-40" />
+          <Skeleton className="h-7 w-64" />
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="card space-y-3">
+              <Skeleton className="h-2.5 w-28" />
+              <Skeleton className="h-7 w-32" />
+              <Skeleton className="h-3 w-20" />
+            </div>
+          ))}
+        </div>
+        <div className="card">
+          <Skeleton className="h-[280px] w-full" />
+        </div>
+        <span className="sr-only">Loading your portfolio…</span>
+      </div>
+    );
   if (error) return <div className="text-loss p-6 text-sm">Failed to load: {(error as Error).message}</div>;
 
   const hasPositions = data?.hasPositions;

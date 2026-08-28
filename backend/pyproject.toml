@@ -21,6 +21,7 @@ dependencies = [
     "python-dateutil>=2.9",
     "openpyxl>=3.1",
     "reportlab>=4.2",
+    "python-docx>=1.1",
     "pyspark>=3.5",
     "pypdf>=5.1",
     "xlrd>=2.0",

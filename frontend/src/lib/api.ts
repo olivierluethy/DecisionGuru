@@ -339,7 +339,7 @@ export const api = {
     req<AccountCommitResponse>('/imports/commit', { method: 'POST', body: JSON.stringify(mapping) }),
 
   // export
-  exportUrl: (kind: 'excel' | 'pdf') => `${BASE}/export/${kind}`,
+  exportUrl: (kind: 'excel' | 'pdf' | 'docx') => `${BASE}/export/${kind}`,
 };
 
 export interface PortfolioResponse {
@@ -1083,7 +1083,7 @@ export interface UniversalCompareResponse {
 }
 
 /** POST a JSON body and stream the response as a file download. */
-export async function downloadExport(kind: 'excel' | 'pdf', body: unknown, filename: string) {
+export async function downloadExport(kind: 'excel' | 'pdf' | 'docx', body: unknown, filename: string) {
   const res = await fetch(api.exportUrl(kind), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

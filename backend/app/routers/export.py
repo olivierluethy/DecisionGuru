@@ -11,6 +11,7 @@ from fastapi.responses import Response
 router = APIRouter()
 
 XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
 
 def _safe_name(s: str) -> str:
@@ -114,6 +115,67 @@ def _build_pdf(body: dict) -> bytes:
     return buf.getvalue()
 
 
+def _build_docx(body: dict) -> bytes:
+    from docx import Document
+    from docx.shared import Inches, Pt, RGBColor
+
+    doc = Document()
+    title = doc.add_paragraph()
+    run = title.add_run(str(body.get("title") or ""))
+    run.bold = True
+    run.font.size = Pt(18)
+    if body.get("subtitle"):
+        sub = doc.add_paragraph(str(body["subtitle"]))
+        sub.runs[0].font.color.rgb = RGBColor(0x66, 0x66, 0x66)
+
+    chart = body.get("chartImage")
+    if isinstance(chart, str) and chart.startswith("data:image"):
+        try:
+            raw = base64.b64decode(chart.split(",", 1)[1])
+            doc.add_picture(io.BytesIO(raw), width=Inches(6.0))
+        except Exception:  # noqa: BLE001
+            pass
+
+    for table in (body.get("tables") or []):
+        if table.get("title"):
+            h = doc.add_paragraph()
+            hr = h.add_run(str(table["title"]))
+            hr.bold = True
+            hr.font.size = Pt(12)
+        headers = table.get("headers") or []
+        rows = table.get("rows") or []
+        t = doc.add_table(rows=1, cols=max(len(headers), 1))
+        t.style = "Light Grid Accent 1"
+        for i, htext in enumerate(headers):
+            cell = t.rows[0].cells[i]
+            cell.text = str(htext)
+            for p in cell.paragraphs:
+                for r in p.runs:
+                    r.bold = True
+        for row in rows:
+            cells = t.add_row().cells
+            for i, val in enumerate(row):
+                if i < len(cells):
+                    cells[i].text = str(val)
+
+    if body.get("notes"):
+        nh = doc.add_paragraph()
+        nh.add_run("Notes").bold = True
+        for n in body["notes"]:
+            doc.add_paragraph(str(n))
+
+    disc = doc.add_paragraph(
+        str(body.get("disclaimer")
+            or "Not financial advice. Figures are model estimates — see docs/TAX-MODEL.md."))
+    disc.runs[0].italic = True
+    disc.runs[0].font.size = Pt(7)
+    disc.runs[0].font.color.rgb = RGBColor(0x99, 0x99, 0x99)
+
+    buf = io.BytesIO()
+    doc.save(buf)
+    return buf.getvalue()
+
+
 @router.post("/excel")
 async def export_excel(request: Request) -> Response:
     body = await request.json() or {}
@@ -129,4 +191,13 @@ async def export_pdf(request: Request) -> Response:
     data = await run_in_threadpool(_build_pdf, body)
     filename = f"{_safe_name(body.get('title'))}.pdf"
     return Response(content=data, media_type="application/pdf",
+                    headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+@router.post("/docx")
+async def export_docx(request: Request) -> Response:
+    body = await request.json() or {}
+    data = await run_in_threadpool(_build_docx, body)
+    filename = f"{_safe_name(body.get('title'))}.docx"
+    return Response(content=data, media_type=DOCX_MIME,
                     headers={"Content-Disposition": f'attachment; filename="{filename}"'})

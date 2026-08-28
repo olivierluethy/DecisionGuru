@@ -264,6 +264,71 @@ differ only in presentation density.
   the crown figure is the after-tax gain if sold now, gain-coloured, with the plain Swiss
   tax fact. The badge says the verdict; the panel carries the numbers.
 
+## 9d. Advanced Discover filters (numeric ranges, presets)
+
+The screener's dropdown filters (sector / industry / verdict) and mode toggle are joined
+by a **numeric filter bar** for the measurable columns. All filters compose with logical
+**AND**; results, the count and the map recompute **live** on every change (inputs
+lightly debounced, no apply button). None of this introduces a new colour — it reuses the
+tokens and the `.input` / `.chip` primitives.
+
+- **Range control (`RangeFilter`).** One per numeric metric — at minimum **Dividend
+  yield** and **Margin of safety**, plus **Quality**, **Supportable return** and
+  **Price**. A compact block: a `label` caption + the live min–max readout (mono,
+  tabular, in the metric's own unit — `%` for the rate metrics, `/100` for quality,
+  currency for price), over a **dual-thumb slider**. The slider track is `--surface-2`
+  (`h-1.5`, `--r-sm`); the **selected span** between the thumbs is filled `--azure` at
+  full opacity; the two thumbs are 14px `--azure` discs with a 1px `--bg` ring and the
+  standard azure focus ring. The domain (min/max bounds) is derived from the data's own
+  spread for that metric, so the ends are always reachable. A metric is **active** only
+  when its range is narrower than the full domain.
+- **Missing values.** A name with no value for an *active* metric is excluded from that
+  filter (never coerced to 0) and reappears the moment the filter is cleared. A name is
+  never dropped by a metric the user hasn't touched.
+- **Preset chips.** A row of `.chip` toggles for common value combinations — **High MoS**,
+  **High yield**, **Undervalued income** (high MoS *and* high yield). A preset only
+  *sets* the underlying ranges (which stay freely editable afterwards); an active preset
+  chip reads `--azure` (text + `border-azure/50`), inactive is the default chip. Presets
+  are a shortcut onto the same range state, never a separate filter.
+- **Active-filter count + clear-all.** When any filter (dropdown or range) is active, a
+  faint count (`--text-faint`, e.g. `3 filters`) sits by a **Clear all** ghost control
+  that resets every filter and preset at once. Absent when nothing is filtered.
+- **Sorting composes.** Dividend yield and margin of safety are ordinary sortable columns
+  (§ *Discover — sortable table*); sorting always runs *after* filtering, so the active
+  ranges and the sort order stack.
+
+## 9e. Cross-listing & exchange recommendation
+
+When a company trades on more than one exchange, DecisionGuru names the **one listing to
+buy for a CHF portfolio** so two lines of the same company are never confused. The
+recommendation is derived per-investor from the configured base currency (Tax & settings,
+CHF) — never a fixed default. It lives in the **opportunity detail modal**; a name's own
+exchange also shows as a faint tag on its Discover row (derived from the ticker suffix, no
+fetch). No new colour: currency-match is the one moment that earns `--gain`.
+
+- **Recommended listing (`ListingRecommendation`).** A `--gain`-left-bordered block (same
+  device as the new-opportunities strip) headed by an eyebrow `RECOMMENDED FOR YOUR CHF
+  PORTFOLIO`. It carries: the **exchange name**, the **exact exchange-specific ticker** in
+  mono (`NESN.SW`, `SHEL.L`), the **trading currency**, and a **copy button**. When the
+  recommended listing already trades in CHF that fact is the crown (`--gain`); otherwise
+  the block is quiet (`--hairline-strong` left border) and states the single FX conversion
+  plainly.
+- **Copy button (`CopyTicker`).** A `.btn-secondary`-height control pairing the mono
+  ticker with a `Copy` glyph; on click it copies the exchange-specific symbol and flips to
+  a `--gain` `Check` + “Copied” state for ~1.5s, then reverts. Keyboard-operable, ≥36px hit
+  target. This is the canonical copy affordance — reuse it wherever a ticker is copied.
+- **Why-this-exchange.** One factual sentence under the ticker (`--text-muted`, 13px,
+  tabular figures), in the product voice: currency match (“Trades in CHF — no conversion”)
+  or the FX case (“No CHF listing; London in USD is the most liquid major line — one FX
+  conversion, ≈ CHF 0.79 per USD today”). Never advisory beyond stating the facts.
+- **Alternative listings.** Every other detected listing is listed beneath the recommended
+  one as a quiet hairline-separated row — exchange · mono ticker · currency · copy — each
+  clearly labelled so the wrong line is never picked. A ticker is never shown bare and
+  ambiguous.
+- **Graceful degradation.** One known listing → show it as the ticker with no
+  recommendation ceremony. Cross-listing data unavailable → show the primary listing and
+  note alternatives weren't found. Never fabricate an exchange, ticker or currency.
+
 ## 10. Voice
 
 Plain, factual, instrument-like. State numbers; never advise. "You'd have CHF 4,120

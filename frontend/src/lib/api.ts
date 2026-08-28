@@ -262,6 +262,12 @@ export const api = {
       body: JSON.stringify(limit != null ? { limit } : {}),
     }),
   screenerWarmStatus: () => req<ScreenerWarmStatus>('/screener/refresh/status'),
+  /** Cross-listings of a company + the recommended one for the configured base currency. */
+  listings: (symbol: string, name?: string | null) => {
+    const q = new URLSearchParams({ symbol });
+    if (name) q.set('name', name);
+    return req<ListingResult>(`/screener/listings?${q.toString()}`);
+  },
 
   // watchlist
   listWatchlist: () => req<WatchlistItem[]>('/watchlist'),
@@ -921,6 +927,31 @@ export interface ScreenerResult {
   geo: GeoDensity[];
   warm?: ScreenerWarmStatus;
 }
+// ---- Cross-listing recommendation (see services/listings.py) -------------
+export interface Listing {
+  symbol: string;
+  exchange: string;
+  exchangeName: string;
+  currency: string | null;
+  country: string | null;
+  kind: string;
+  isSubject: boolean;
+  score: number;
+  /** CHF per 1 unit of this listing's currency; null when it already trades in the base. */
+  fxToBase: number | null;
+}
+export interface ListingResult {
+  symbol: string;
+  base: string;
+  singleListing: boolean;
+  crossListingAvailable: boolean;
+  recommended: Listing;
+  alternatives: Listing[];
+  listings: Listing[];
+  why: string;
+  currencyMatch: boolean;
+}
+
 export interface WatchlistItem {
   id: number;
   symbol: string;

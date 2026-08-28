@@ -79,3 +79,26 @@ def test_missing_native_currency_yields_null_block(monkeypatch):
     out = valuation.attach_display_currency(va, base="CHF")
     assert out["displayCurrency"]["fxRate"] is None
     assert "price" not in out["displayCurrency"]
+
+
+def test_valuation_now_attaches_display_currency(monkeypatch):
+    """The panel route must carry displayCurrency so the component can render CHF."""
+    from app.routers import research as research_router
+    from app.services import fx
+    from app.services.fx import FxResult
+
+    monkeypatch.setattr(fx, "resolve_fx", lambda *a, **k: FxResult(0.9, "cache"))
+    # Stub the engine so the test needs no provider/network.
+    monkeypatch.setattr(
+        research_router, "value_analysis",
+        lambda *a, **k: {"symbol": "AAA", "currency": "USD", "price": 100.0,
+                         "fairValue": 120.0, "entryTarget": 84.0,
+                         "intrinsic": {"low": 110.0, "mid": 120.0, "high": 130.0},
+                         "models": {"grahamNumber": 90.0}, "marginOfSafety": 0.2,
+                         "hasData": True},
+    )
+    monkeypatch.setattr(research_router, "resolve_verdict", lambda *a, **k: {"verdict": "hold"})
+    # portfolio_fit / repo lookups are best-effort and already wrapped in try/except.
+    va = research_router._valuation_now("AAA", 100.0, "USD", settings={})
+    assert va["displayCurrency"]["code"] == "CHF"
+    assert va["displayCurrency"]["fairValue"] == pytest.approx(108.0, abs=0.01)  # 120 × 0.9

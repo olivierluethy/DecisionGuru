@@ -67,6 +67,8 @@ def _valuation_now(symbol: str, price: float | None, currency: str | None,
         currency = currency or resolved["currency"]
         freshness, price_as_of = resolved["freshness"], resolved["asOf"]
     va = value_analysis(symbol, price, currency, None, settings)
+    from ..services.valuation import attach_display_currency
+    attach_display_currency(va, base="CHF")
     if freshness is not None:
         va["priceFreshness"] = freshness
         va["priceAsOf"] = price_as_of

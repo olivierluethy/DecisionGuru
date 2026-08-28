@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { Menu } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { Sidebar } from './components/Sidebar';
 import { Dashboard } from './views/Dashboard';
@@ -18,6 +19,8 @@ import { api } from './lib/api';
 export default function App() {
   const view = useApp((s) => s.view);
   const setBenchmark = useApp((s) => s.setBenchmark);
+  const navOpen = useApp((s) => s.navOpen);
+  const setNavOpen = useApp((s) => s.setNavOpen);
 
   // Sync the default benchmark from persisted settings once.
   const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: api.getSettings });
@@ -26,21 +29,50 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings?.defaultBenchmarkSymbol]);
 
+  // Lock background scroll while the mobile nav drawer is open.
+  useEffect(() => {
+    document.body.style.overflow = navOpen ? 'hidden' : '';
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [navOpen]);
+
   return (
     <div className="flex h-full bg-bg text-text">
       <Sidebar />
-      <main className="flex-1 overflow-y-auto">
-        {view === 'dashboard' && <Dashboard />}
-        {view === 'position' && <PositionDetail />}
-        {view === 'scenarios' && <Scenarios />}
-        {view === 'advisory' && <Advisory />}
-        {view === 'decisions' && <Decisions />}
-        {view === 'research' && <Research />}
-        {view === 'plans' && <Plans />}
-        {view === 'watchlist' && <Watchlist />}
-        {view === 'screener' && <Screener />}
-        {view === 'alerts' && <Alerts />}
-      </main>
+      {navOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 z-30 lg:hidden"
+          onClick={() => setNavOpen(false)}
+          aria-hidden
+        />
+      )}
+      <div className="flex-1 flex flex-col min-w-0">
+        <header className="lg:hidden flex items-center gap-3 px-4 h-14 border-b border-hairline bg-bg-elev shrink-0">
+          <button
+            className="p-1.5 -ml-1.5 rounded text-text-muted hover:text-text hover:bg-surface-2"
+            aria-label="Open navigation"
+            onClick={() => setNavOpen(true)}
+          >
+            <Menu size={20} />
+          </button>
+          <span className="font-display text-base font-semibold tracking-tight">
+            Decision<span className="text-azure">Guru</span>
+          </span>
+        </header>
+        <main className="flex-1 overflow-y-auto">
+          {view === 'dashboard' && <Dashboard />}
+          {view === 'position' && <PositionDetail />}
+          {view === 'scenarios' && <Scenarios />}
+          {view === 'advisory' && <Advisory />}
+          {view === 'decisions' && <Decisions />}
+          {view === 'research' && <Research />}
+          {view === 'plans' && <Plans />}
+          {view === 'watchlist' && <Watchlist />}
+          {view === 'screener' && <Screener />}
+          {view === 'alerts' && <Alerts />}
+        </main>
+      </div>
       <ModalHost />
     </div>
   );

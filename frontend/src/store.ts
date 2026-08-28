@@ -40,6 +40,8 @@ interface AppState {
   benchmark: string;
   /** Instruments ticked for an ad-hoc basket comparison on the portfolio. */
   compareSelection: number[];
+  /** Mobile navigation drawer open state (desktop sidebar is always visible). */
+  navOpen: boolean;
 
   setView: (v: View) => void;
   selectInstrument: (id: number) => void;
@@ -52,6 +54,7 @@ interface AppState {
   setBenchmark: (s: string) => void;
   toggleCompare: (id: number) => void;
   clearCompare: () => void;
+  setNavOpen: (v: boolean) => void;
 }
 
 export const useApp = create<AppState>((set) => ({
@@ -62,8 +65,10 @@ export const useApp = create<AppState>((set) => ({
   preTax: false,
   benchmark: 'VWRL.SW',
   compareSelection: [],
+  navOpen: false,
 
   setView: (view) => set({ view }),
+  setNavOpen: (navOpen) => set({ navOpen }),
   selectInstrument: (id) => set({ selectedInstrumentId: id, view: 'position' }),
   setResearchSymbol: (researchSymbol) => set({ researchSymbol }),
   researchSymbolView: (researchSymbol) => set({ researchSymbol, view: 'research' }),

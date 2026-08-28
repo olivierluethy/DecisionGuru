@@ -33,7 +33,12 @@ const NAV = [
 ] as const;
 
 export function Sidebar() {
-  const { view, setView, openModal } = useApp();
+  const { view, setView, openModal, navOpen, setNavOpen } = useApp();
+  // Any destination choice also closes the mobile drawer (no-op on desktop).
+  const go = (fn: () => void) => {
+    fn();
+    setNavOpen(false);
+  };
   // Poll the unread badge so it reflects background-scan alerts without a manual refresh.
   const unread = useQuery({
     queryKey: ['unread-count'],
@@ -43,7 +48,13 @@ export function Sidebar() {
   const unreadCount = unread.data?.unreadCount ?? 0;
 
   return (
-    <aside className="w-60 shrink-0 bg-bg-elev border-r border-hairline flex flex-col h-full">
+    <aside
+      className={clsx(
+        'w-60 shrink-0 bg-bg-elev border-r border-hairline flex flex-col h-full z-40',
+        'fixed inset-y-0 left-0 transition-transform lg:static lg:translate-x-0',
+        navOpen ? 'translate-x-0' : '-translate-x-full',
+      )}
+    >
       <div className="px-5 py-5 border-b border-hairline">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
@@ -54,7 +65,7 @@ export function Sidebar() {
           </div>
           {/* Header bell → alert centre, with an unread badge. */}
           <button
-            onClick={() => setView('alerts')}
+            onClick={() => go(() => setView('alerts'))}
             title="Alerts & notifications"
             className="relative p-1.5 rounded text-text-muted hover:text-text hover:bg-surface-2 transition-colors"
           >
@@ -76,7 +87,7 @@ export function Sidebar() {
           return (
             <button
               key={n.view}
-              onClick={() => setView(n.view)}
+              onClick={() => go(() => setView(n.view))}
               className={clsx(
                 'flex items-center gap-3 px-3 h-9 rounded text-sm transition-colors text-left',
                 active ? 'bg-surface-2 text-text' : 'text-text-muted hover:text-text hover:bg-surface-2/60',
@@ -89,7 +100,7 @@ export function Sidebar() {
         })}
         {/* Comparison is a modal (secondary destination, not the landing page). */}
         <button
-          onClick={() => openModal({ kind: 'compare', instrumentIds: [] })}
+          onClick={() => go(() => openModal({ kind: 'compare', instrumentIds: [] }))}
           className="flex items-center gap-3 px-3 h-9 rounded text-sm transition-colors text-left text-text-muted hover:text-text hover:bg-surface-2/60"
         >
           <Scale size={16} />
@@ -99,10 +110,10 @@ export function Sidebar() {
 
       <div className="p-3 mt-2 flex flex-col gap-2">
         <div className="eyebrow px-2 mb-1">Add data</div>
-        <button className="btn-secondary w-full justify-start" onClick={() => openModal({ kind: 'import' })}>
+        <button className="btn-secondary w-full justify-start" onClick={() => go(() => openModal({ kind: 'import' }))}>
           <Upload size={15} /> Import data
         </button>
-        <button className="btn-secondary w-full justify-start" onClick={() => openModal({ kind: 'manual-add' })}>
+        <button className="btn-secondary w-full justify-start" onClick={() => go(() => openModal({ kind: 'manual-add' }))}>
           <Plus size={15} /> Add position
         </button>
       </div>
@@ -112,7 +123,7 @@ export function Sidebar() {
       </div>
 
       <div className="p-3 border-t border-hairline">
-        <button className="btn-ghost w-full justify-start" onClick={() => openModal({ kind: 'settings' })}>
+        <button className="btn-ghost w-full justify-start" onClick={() => go(() => openModal({ kind: 'settings' }))}>
           <Settings size={15} /> Tax & settings
         </button>
         <p className="text-[10px] text-text-faint px-2 mt-3 leading-relaxed">

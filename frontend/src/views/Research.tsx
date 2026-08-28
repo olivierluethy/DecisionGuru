@@ -314,7 +314,7 @@ function AssetView({ symbol, onReset }: { symbol: string; onReset: () => void })
       {/* Market analysis — sector, competitors & relative performance. */}
       {data.kind === 'stock' && (
         <div className="card">
-          <div className="eyebrow mb-3">Competitive position</div>
+          <div className="eyebrow mb-3">Market analysis</div>
           <MarketAnalysis symbol={data.symbol} />
         </div>
       )}

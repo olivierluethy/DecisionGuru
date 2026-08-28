@@ -21,7 +21,6 @@ from ..reference.sector_etfs import sector_etf_for, BROAD_BENCHMARKS
 WINDOWS: list[tuple[str, int]] = [
     ("1M", 1), ("3M", 3), ("6M", 6), ("1Y", 12), ("3Y", 36), ("5Y", 60),
 ]
-_MONTHS = dict(WINDOWS)
 
 
 def cached_closes(symbol: str, from_date: str) -> list[dict]:

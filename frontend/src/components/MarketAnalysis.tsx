@@ -45,7 +45,7 @@ export function MarketAnalysis({ symbol }: { symbol: string }) {
     if (b.series.length > 1) lines.push({ key: b.key, label: b.symbol, color: LINE_COLORS[(i + 1) % LINE_COLORS.length], series: b.series });
   });
   if (data.sectorLine.kind === 'etf' && data.sectorLine.series.length > 1) {
-    lines.push({ key: 'sector', label: data.sectorLine.label, color: '#D9A94E', series: data.sectorLine.series });
+    lines.push({ key: 'sector', label: data.sectorLine.label, color: '#B6D94E', series: data.sectorLine.series });
   }
   const byDate = new Map<string, Record<string, number | string>>();
   for (const ln of lines) for (const p of ln.series) {
@@ -78,7 +78,7 @@ export function MarketAnalysis({ symbol }: { symbol: string }) {
           <div className={`font-semibold ${cls.tone}`}>{cls.label}</div>
           <p className="text-sm text-text-muted mt-1">{cls.blurb}</p>
           <div className="flex flex-wrap gap-x-5 gap-y-1 mt-2 text-[12px]">
-            <span><span className="eyebrow mr-1">This stock</span><span className={data.subject.returnPct != null && data.subject.returnPct < 0 ? 'text-loss' : 'text-gain'}>{fmtPctSigned(data.subject.returnPct)}</span></span>
+            <span><span className="eyebrow mr-1">This stock</span><span className={data.subject.returnPct == null ? 'text-text-faint' : data.subject.returnPct < 0 ? 'text-loss' : 'text-gain'}>{fmtPctSigned(data.subject.returnPct)}</span></span>
             <span><span className="eyebrow mr-1">Sector</span>{fmtPctSigned(data.sectorLine.returnPct)} <span className="text-text-faint">({data.sectorLine.kind === 'peer-median' ? 'peer median' : data.sectorLine.kind === 'etf' ? data.sectorLine.symbol : 'n/a'})</span></span>
             <span><span className="eyebrow mr-1">Peer median</span>{fmtPctSigned(data.peerMedianReturnPct)}</span>
             {data.benchmarks.map((b) => (
@@ -143,8 +143,8 @@ export function MarketAnalysis({ symbol }: { symbol: string }) {
                       <td className="td text-right font-mono tnum">{c.marketCapCHF != null ? fmtMoney(c.marketCapCHF, 'CHF', false) : '—'}</td>
                       <td className="td text-right font-mono tnum">{c.trailingPE != null ? c.trailingPE.toFixed(1) : '—'}</td>
                       <td className="td text-right font-mono tnum">{fmtPct(c.profitMargins, 1)}</td>
-                      <td className={`td text-right font-mono tnum ${c.returns[range] != null && c.returns[range]! < 0 ? 'text-loss' : 'text-gain'}`}>{fmtPctSigned(c.returns[range] ?? null)}</td>
-                      <td className={`td text-right font-mono tnum ${c.relativeToSubjectPct != null && c.relativeToSubjectPct < 0 ? 'text-loss' : 'text-gain'}`}>{c.isSubject ? '—' : fmtPctSigned(c.relativeToSubjectPct)}</td>
+                      <td className={`td text-right font-mono tnum ${c.returns[range] == null ? 'text-text-faint' : c.returns[range]! < 0 ? 'text-loss' : 'text-gain'}`}>{fmtPctSigned(c.returns[range] ?? null)}</td>
+                      <td className={`td text-right font-mono tnum ${c.relativeToSubjectPct == null ? 'text-text-faint' : c.relativeToSubjectPct < 0 ? 'text-loss' : 'text-gain'}`}>{c.isSubject ? '—' : fmtPctSigned(c.relativeToSubjectPct)}</td>
                     </tr>
                   ))}
                 </tbody>

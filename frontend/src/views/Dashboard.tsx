@@ -13,6 +13,7 @@ import { RangeStats } from '../components/RangeStats';
 import { Timeline } from '../components/Timeline';
 import { AccountTimeline } from '../components/AccountTimeline';
 import { DecisionsBanner } from '../components/DecisionsBanner';
+import { VerdictBadge } from '../components/Verdict';
 import { Segmented, Spinner, EmptyState, KindBadge, DataStatusBadge } from '../components/ui';
 import { buildPortfolioExport } from '../lib/exporters';
 import { downloadExport } from '../lib/api';
@@ -489,13 +490,12 @@ export function Dashboard() {
                               {sold && (
                                 <span className="chip !py-0 !px-1.5 text-gold border-gold/40">sold</span>
                               )}
-                              {p.sellSignal && (
-                                <span
-                                  className={`chip !py-0 !px-1.5 ${p.sellSignal.isSellSignal ? 'text-loss border-loss/40' : 'text-warn border-warn/40'}`}
-                                  title={p.sellSignal.reasoning.headline}
-                                >
-                                  {p.sellSignal.isSellSignal ? 'Sell signal' : 'Overvalued'}
-                                </span>
+                              {p.verdict && p.verdict.verdict !== 'hold' && (
+                                <VerdictBadge
+                                  verdict={p.verdict.verdict}
+                                  title={p.verdict.rationale}
+                                  className="!px-1.5"
+                                />
                               )}
                               <DataStatusBadge status={p.dataStatus} onRetry={() => retryResolve(p.instrument.id)} />
                             </div>

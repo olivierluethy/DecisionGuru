@@ -9,8 +9,10 @@ from __future__ import annotations
 
 import math
 import statistics
+from datetime import date as _date
 
 from . import fundamentals as fund
+from . import fx
 from . import quality as quality_mod
 from ..providers.base import normalize_minor_currency
 
@@ -412,3 +414,43 @@ def value_analysis(symbol: str, price: float | None, currency: str | None = None
         "dividendYield": dy,
         "hasData": bool(models) or eps is not None,
     }
+
+def attach_display_currency(va: dict, base: str = "CHF", as_of: str | None = None) -> dict:
+    """Attach a `displayCurrency` block so the UI can render every valuation figure in ONE
+    currency (`base`, e.g. CHF) beside the native one — instead of a CHF price next to a
+    USD fair value. Purely additive: the native fields and the currency-invariant
+    `marginOfSafety` are untouched. Never fabricates a rate — an unresolvable pair (or a
+    payload with no native currency) yields {code, fxRate: None} and no converted amounts.
+    """
+    native = va.get("currency")
+    as_of = as_of or _date.today().isoformat()
+    if not native:
+        va["displayCurrency"] = {"code": base, "fxRate": None, "fxAsOf": as_of, "fxSource": "unresolved"}
+        return va
+
+    r = fx.resolve_fx(native, base, as_of)
+    if r.rate is None:
+        va["displayCurrency"] = {"code": base, "fxRate": None, "fxAsOf": as_of, "fxSource": r.source}
+        return va
+
+    k = r.rate
+
+    def cv(v):
+        return round(v * k, 2) if isinstance(v, (int, float)) else None
+
+    intrinsic = va.get("intrinsic") or {}
+    models = va.get("models") or {}
+    va["displayCurrency"] = {
+        "code": base,
+        "fxRate": round(k, 6),
+        "fxAsOf": as_of,
+        "fxSource": r.source,
+        "price": cv(va.get("price")),
+        "fairValue": cv(va.get("fairValue")),
+        "grahamNumber": cv(models.get("grahamNumber")),
+        "entryTarget": cv(va.get("entryTarget")),
+        "intrinsicLow": cv(intrinsic.get("low")),
+        "intrinsicMid": cv(intrinsic.get("mid")),
+        "intrinsicHigh": cv(intrinsic.get("high")),
+    }
+    return va

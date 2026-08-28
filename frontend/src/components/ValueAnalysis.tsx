@@ -87,8 +87,12 @@ export function ValueAnalysis({
   const dispCcy = fxRate != null ? dc!.code : ccy;
   const money = (v: number | null | undefined) =>
     v == null ? '—' : fmtMoney(fxRate != null ? v * fxRate : v, dispCcy);
+  // When the security already trades in the display currency (e.g. a CHF-listed stock,
+  // rate 1.0), the "converted" value equals the native one — don't show a redundant
+  // secondary or an "FX CHF→CHF 1.0000" footer.
+  const converting = fxRate != null && dispCcy !== ccy;
   const nativeSub = (v: number | null | undefined) =>
-    fxRate != null && v != null ? fmtMoney(v, ccy) : null;
+    converting && v != null ? fmtMoney(v, ccy) : null;
   const px = data.price ?? price;
   // Qualify a non-live price ("prev close · <date>"). Caller-supplied freshness wins;
   // otherwise use whatever the server attached when it resolved the price itself.
@@ -180,9 +184,9 @@ export function ValueAnalysis({
               <span className="text-text-faint"> · fair value less a {fmtPct(data.band?.marginOfSafetyPct ?? 0, 0)} margin of safety</span>
             </div>
           )}
-          {dc && fxRate != null && (
+          {converting && (
             <div className="text-[10px] text-text-faint mt-1">
-              FX {ccy}→{dc.code} {fxRate.toFixed(4)}{dc.fxAsOf ? ` · ${dc.fxAsOf}` : ''}
+              FX {ccy}→{dc!.code} {fxRate!.toFixed(4)}{dc!.fxAsOf ? ` · ${dc!.fxAsOf}` : ''}
             </div>
           )}
           {dc && dc.fxRate == null && ccy !== 'CHF' && (
@@ -239,7 +243,7 @@ export function ValueAnalysis({
                 <div key={k}>
                   <div className="eyebrow mb-0.5 capitalize">{k}</div>
                   <div className="font-mono text-lg tnum text-text">
-                    {sc.intrinsicValue != null ? fmtMoney(sc.intrinsicValue, ccy) : '—'}
+                    {sc.intrinsicValue != null ? money(sc.intrinsicValue) : '—'}
                   </div>
                   <div
                     className={`text-[11px] ${sc.marginOfSafety != null && sc.marginOfSafety >= 0 ? 'text-gain' : 'text-loss'}`}
@@ -262,13 +266,13 @@ export function ValueAnalysis({
           {data.ownerEarningsPerShare != null && (
             <div>
               <div className="eyebrow mb-0.5">Owner earnings / sh</div>
-              <div className="font-mono text-text tnum">{fmtMoney(data.ownerEarningsPerShare, ccy)}</div>
+              <div className="font-mono text-text tnum">{money(data.ownerEarningsPerShare)}</div>
             </div>
           )}
           {data.fcfPerShare != null && (
             <div>
               <div className="eyebrow mb-0.5">FCF / sh</div>
-              <div className="font-mono text-text tnum">{fmtMoney(data.fcfPerShare, ccy)}</div>
+              <div className="font-mono text-text tnum">{money(data.fcfPerShare)}</div>
             </div>
           )}
           {data.fcfYield != null && (

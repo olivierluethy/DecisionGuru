@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { api, type AssetMetrics } from '../lib/api';
 import { useApp } from '../store';
-import { SectionNav, type NavSection } from '../components/SectionNav';
+import { SectionNav, type NavSection, type AssetContext } from '../components/SectionNav';
 import { SymbolSearch } from '../components/SymbolSearch';
 import { PriceMovementChart } from '../components/PriceMovementChart';
 import { ExposureBars } from '../components/ExposureBars';
@@ -273,6 +273,19 @@ function AssetView({ symbol, onReset }: { symbol: string; onReset: () => void })
     { id: 'res-news', label: 'News', icon: Newspaper },
   ];
 
+  // Compact identity for the sticky rail — same price string as the header below
+  // (`{currency} {fmtNum}` when a real price exists), same live hours. No extra fetch.
+  const stickyAsset: AssetContext = {
+    symbol: data.symbol,
+    name: data.name,
+    kind: data.kind,
+    price:
+      data.currentPrice != null && data.currentPrice > 0
+        ? `${data.currency} ${fmtNum(data.currentPrice)}`
+        : undefined,
+    hours: hours ?? undefined,
+  };
+
   return (
     <div className="flex flex-col gap-6">
       <header className="flex items-start justify-between gap-4 flex-wrap">
@@ -303,7 +316,7 @@ function AssetView({ symbol, onReset }: { symbol: string; onReset: () => void })
         </div>
       </header>
 
-      <SectionNav sections={navSections} />
+      <SectionNav sections={navSections} asset={stickyAsset} />
 
       <div id="res-metrics" className="card scroll-mt-24">{metricCells(m)}</div>
 

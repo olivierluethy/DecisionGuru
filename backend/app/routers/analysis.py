@@ -14,6 +14,7 @@ from ..services.counterfactual import compute_counterfactual
 from ..services.finance import build_position
 from ..services.fundamentals import get_cached_fundamentals
 from ..services.signals import sell_signal_for
+from ..services.verdict import verdict_for, performance_from_counterfactual
 from ..services.history import instrument_series, portfolio_series
 from ..services.timeline import build_timeline
 from ..services.projection import benchmark_cagr, compute_break_even, project_hold_vs_etf
@@ -46,9 +47,17 @@ async def position(instrument_id: int, preTax: str = "false") -> dict:
     else:
         position["netDividendsCHF"] = position["dividends"]["netAfterTaxCHF"]
     # Valuation-driven sell signal (None unless it's (significantly) overvalued vs fair value).
-    position["sellSignal"] = sell_signal_for(
-        position, get_cached_fundamentals(inst["symbol"]), settings
-    )
+    cached = get_cached_fundamentals(inst["symbol"])
+    position["sellSignal"] = sell_signal_for(position, cached, settings)
+    # Unified verdict (same engine every view uses): valuation + fundamentals + performance
+    # vs the default benchmark. Underperformance alone never yields a Sell.
+    if position.get("openQuantity", 0) > 0:
+        cf = await run_in_threadpool(
+            compute_counterfactual, inst, repo.get_transactions(inst["id"]),
+            settings["defaultBenchmarkSymbol"], settings, pre_tax)
+        position["verdict"] = verdict_for(
+            inst["symbol"], position.get("currentPrice"), inst.get("currency"), cached, settings,
+            performance=performance_from_counterfactual(cf), held=True, position=position)
     return position
 
 
@@ -263,9 +272,10 @@ async def portfolio(preTax: str = "false", benchmark: str | None = None) -> dict
                 continue
             built = build_position(inst, txs, settings["tax"], pre_tax)
             p = built["position"]
+            cached = get_cached_fundamentals(inst["symbol"])
             # Cheap valuation overlay off cached fundamentals — flags (significantly)
             # overvalued holdings without a second rebuild or any provider call.
-            sig = sell_signal_for(p, get_cached_fundamentals(inst["symbol"]), settings)
+            sig = sell_signal_for(p, cached, settings)
             if sig:
                 p["sellSignal"] = sig
                 sell_signals.append(sig)
@@ -279,6 +289,12 @@ async def portfolio(preTax: str = "false", benchmark: str | None = None) -> dict
             cf = compute_counterfactual(inst, txs, bench, settings, pre_tax)
             counterfactuals.append({"instrumentId": inst["id"], "symbol": inst["symbol"],
                                     "counterfactual": cf})
+            # One unified verdict per holding — the same engine Decisions/detail use, so the
+            # Overview never contradicts them. Benchmark lag alone never yields a Sell.
+            if p.get("openQuantity", 0) > 0:
+                p["verdict"] = verdict_for(
+                    inst["symbol"], p.get("currentPrice"), inst.get("currency"), cached, settings,
+                    performance=performance_from_counterfactual(cf), held=True, position=p)
 
         # Portfolio weight per holding (share of invested market value).
         for p in positions:

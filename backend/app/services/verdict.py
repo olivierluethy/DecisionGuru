@@ -212,6 +212,35 @@ def resolve_verdict(va: dict | None, *, performance: dict | None = None, held: b
     }
 
 
+def verdict_for(symbol: str, price: float | None, currency: str | None, cached: dict | None,
+                settings: dict | None, *, performance: dict | None = None, held: bool = False,
+                position: dict | None = None) -> dict:
+    """Convenience: value a symbol off *cached* fundamentals (no provider call) and resolve
+    its verdict in one shot. Used by the portfolio/position endpoints, which have the cached
+    fundamentals and (optionally) a benchmark counterfactual already to hand."""
+    from .valuation import value_analysis  # lazy — avoids import order coupling
+
+    snap = (cached or {}).get("snapshot") if cached else None
+    va = None
+    if cached and snap:
+        va = value_analysis(symbol, price, currency or snap.get("currency"),
+                            data=cached, settings=settings)
+    return resolve_verdict(va, performance=performance, held=held, position=position,
+                           settings=settings)
+
+
+def performance_from_counterfactual(cf: dict | None) -> dict | None:
+    """Shape a counterfactual result into the engine's `performance` input."""
+    if not cf or not cf.get("counterfactualValueCHF"):
+        return None
+    return {
+        "deltaPct": cf.get("deltaPct"),
+        "benchmarkSymbol": cf.get("benchmarkSymbol"),
+        "benchmarkName": cf.get("benchmarkName"),
+        "opportunityCostCHF": (cf.get("counterfactualValueCHF") or 0) - (cf.get("actualValueCHF") or 0),
+    }
+
+
 def _build_conflict(verdict, perf, band, mos, upside, q_score, q_max, lag_pct,
                     bench_name, cause, *, has_va) -> str | None:
     """The one-line explanation shown only when the verdict overrides a signal."""

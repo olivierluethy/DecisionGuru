@@ -9,6 +9,7 @@ import { DiscoverMap } from '../components/DiscoverMap';
 import { VerdictBadge, VERDICT_META } from '../components/Verdict';
 import { DiscoverFilterBar, computeDomains, passesRanges, type Ranges } from '../components/DiscoverFilters';
 import { useDebounced } from '../lib/useDebounced';
+import { exchangeTag } from '../lib/exchanges';
 import { fmtPct, fmtPctSigned, fmtNum, plClass } from '../lib/format';
 
 const FIT_CLS: Record<string, string> = {
@@ -516,6 +517,11 @@ function Row({
           <span className="font-mono text-azure group-hover:underline">{r.symbol}</span>
           <ArrowUpRight size={12} className="text-text-faint opacity-0 group-hover:opacity-100" />
         </button>
+        {exchangeTag(r.symbol) && (
+          <span className="ml-2 text-[10px] uppercase tracking-wide text-text-faint" title="Listing exchange (open for the recommended listing)">
+            {exchangeTag(r.symbol)}
+          </span>
+        )}
         {r.inPortfolio && <span className="ml-2 text-[10px] uppercase text-gain/80">held</span>}
         {r.isNew && (
           <span className="ml-2 chip !py-0 !px-1.5 text-[9px] text-gain border-gain/40" title="Newly became attractive since the last scan">NEW</span>

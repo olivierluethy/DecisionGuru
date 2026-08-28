@@ -2,6 +2,7 @@ import { ArrowUpRight, Clock } from 'lucide-react';
 import { useApp } from '../store';
 import { Modal } from '../components/Modal';
 import { ValueAnalysis } from '../components/ValueAnalysis';
+import { ListingRecommendation } from '../components/ListingRecommendation';
 import { researchHref } from '../lib/router';
 
 /**
@@ -44,6 +45,11 @@ export function OpportunityModal({
       }
     >
       <ValueAnalysis symbol={symbol} price={price ?? null} currency={currency} />
+
+      {/* Which exchange to actually buy — the right listing for a CHF portfolio. */}
+      <div className="mt-6 pt-5 border-t border-hairline">
+        <ListingRecommendation symbol={symbol} name={name} />
+      </div>
     </Modal>
   );
 }

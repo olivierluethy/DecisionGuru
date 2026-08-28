@@ -247,6 +247,8 @@ export const api = {
   },
   competitors: (symbol: string) =>
     req<CompetitorsResult>(`/research/competitors/${encodeURIComponent(symbol)}`),
+  marketAnalysis: (symbol: string, range = '1Y') =>
+    req<MarketAnalysisResult>(`/research/market/${encodeURIComponent(symbol)}?range=${range}`),
   validateClaim: (symbol: string, claim: string | ClaimSpec) =>
     req<ClaimResult>('/research/claim', { method: 'POST', body: JSON.stringify({ symbol, claim }) }),
   universalCompare: (entities: CompareEntity[], windowYears = 5) =>
@@ -904,6 +906,28 @@ export interface CompetitorsResult {
   peers: CompetitorPeer[];
   peerCount: number;
   subjectRank: number | null;
+}
+export type MarketClassification =
+  | 'market-wide-weakness' | 'company-specific-weakness'
+  | 'outperforming-sector' | 'outperforming-peers' | 'inline';
+
+export interface MarketSeriesPoint { date: string; value: number }
+export interface MarketCompetitor {
+  symbol: string; name: string | null; isSubject: boolean;
+  marketCapCHF: number | null; trailingPE: number | null; priceToBook: number | null;
+  profitMargins: number | null; revenueGrowth: number | null;
+  returns: Record<string, number | null>; relativeToSubjectPct: number | null;
+}
+export interface MarketAnalysisResult {
+  symbol: string; name: string; sector: string | null; industry: string | null;
+  displayCurrency: string; range: string;
+  subject: { returnPct: number | null; returns: Record<string, number | null>; series: MarketSeriesPoint[] };
+  benchmarks: { key: string; symbol: string; returnPct: number | null; series: MarketSeriesPoint[] }[];
+  sectorLine: { kind: 'etf' | 'peer-median' | 'unavailable'; symbol?: string | null; label: string; returnPct: number | null; series: MarketSeriesPoint[] };
+  competitors: MarketCompetitor[];
+  peerMedianReturnPct: number | null;
+  classification: MarketClassification | null;
+  valuation: { band: ValuationBand | null; marginOfSafety: number | null; fairValue: number | null } | null;
 }
 /** Portfolio-fit read for a candidate symbol (see services/fit.py). Weights are fractions.
  *  Indirect exposure is limited to owned ETFs' top holdings — `available: false` when none

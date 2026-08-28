@@ -350,6 +350,7 @@ def search_symbol(query: str) -> list[dict]:
         return []
     hits = provider.search(query)
     return [
-        {"symbol": h.symbol, "name": h.name, "exchange": h.exchange, "kind": h.kind, "type": h.type}
+        {"symbol": h.symbol, "name": h.name, "exchange": h.exchange, "kind": h.kind,
+         "type": h.type, "currency": h.currency}
         for h in hits
     ]

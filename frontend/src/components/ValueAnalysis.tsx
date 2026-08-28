@@ -77,6 +77,18 @@ export function ValueAnalysis({
   }
 
   const ccy = data.currency || currency || '';
+  // Display currency (CHF): when an FX rate resolved, render every figure converted to the
+  // base currency as the PRIMARY number, with the native value as a faint secondary — so
+  // the price and the fair value are never shown in different currencies. When no rate
+  // resolved, fall back to native for everything (never mixed). MoS is currency-invariant,
+  // so multiplying every figure by the same rate preserves all relationships.
+  const dc = data.displayCurrency ?? null;
+  const fxRate = dc && dc.fxRate != null ? dc.fxRate : null;
+  const dispCcy = fxRate != null ? dc!.code : ccy;
+  const money = (v: number | null | undefined) =>
+    v == null ? '—' : fmtMoney(fxRate != null ? v * fxRate : v, dispCcy);
+  const nativeSub = (v: number | null | undefined) =>
+    fxRate != null && v != null ? fmtMoney(v, ccy) : null;
   const px = data.price ?? price;
   // Qualify a non-live price ("prev close · <date>"). Caller-supplied freshness wins;
   // otherwise use whatever the server attached when it resolved the price itself.
@@ -138,11 +150,12 @@ export function ValueAnalysis({
             {data.band && <BandBadge band={data.band.band} />}
           </div>
           <div className="font-mono text-2xl font-semibold tnum">
-            {mid != null ? fmtMoney(mid, ccy) : '—'}
+            {money(mid)}
+            {nativeSub(mid) && <span className="ml-2 text-sm font-normal text-text-faint">{nativeSub(mid)}</span>}
           </div>
           {data.intrinsic.low != null && data.intrinsic.high != null && (
             <div className="text-[11px] text-text-faint mt-0.5">
-              range {fmtMoney(data.intrinsic.low, ccy)} – {fmtMoney(data.intrinsic.high, ccy)}
+              range {money(data.intrinsic.low)} – {money(data.intrinsic.high)}
             </div>
           )}
           {mos != null && (
@@ -156,15 +169,24 @@ export function ValueAnalysis({
             </div>
           )}
           <div className="text-[11px] text-text-faint mt-1">
-            at {px != null ? fmtMoney(px, ccy) : '—'} today
+            at {money(px)} today
+            {nativeSub(px) && <span className="ml-1 text-text-faint">({nativeSub(px)})</span>}
             {freshLabel && <span className="ml-1">· {freshLabel}</span>}
           </div>
           {data.entryTarget != null && (
             <div className="mt-2 pt-2 border-t border-hairline text-[12px] text-text-muted">
               Attractive entry price{' '}
-              <span className="font-mono text-gain tnum">{fmtMoney(data.entryTarget, ccy)}</span>
+              <span className="font-mono text-gain tnum">{money(data.entryTarget)}</span>
               <span className="text-text-faint"> · fair value less a {fmtPct(data.band?.marginOfSafetyPct ?? 0, 0)} margin of safety</span>
             </div>
+          )}
+          {dc && fxRate != null && (
+            <div className="text-[10px] text-text-faint mt-1">
+              FX {ccy}→{dc.code} {fxRate.toFixed(4)}{dc.fxAsOf ? ` · ${dc.fxAsOf}` : ''}
+            </div>
+          )}
+          {dc && dc.fxRate == null && ccy !== 'CHF' && (
+            <div className="text-[10px] text-warn mt-1">CHF conversion unavailable — shown in {ccy}</div>
           )}
         </div>
 
@@ -173,12 +195,12 @@ export function ValueAnalysis({
             {Object.entries(data.models).map(([k, v]) => (
               <div key={k}>
                 <div className="eyebrow mb-0.5">{MODEL_LABELS[k] ?? k}</div>
-                <div className="font-mono text-text tnum">{fmtMoney(v, ccy)}</div>
+                <div className="font-mono text-text tnum">{money(v)}</div>
               </div>
             ))}
           </div>
           <p>
-            At {px != null ? fmtMoney(px, ccy) : 'today’s price'} the market is pricing in about{' '}
+            At {px != null ? money(px) : 'today’s price'} the market is pricing in about{' '}
             <span className={impliedDemanding ? 'text-loss' : 'text-text'}>
               {data.impliedGrowth != null ? `${fmtPct(data.impliedGrowth, 1)}/yr` : 'unclear'}
             </span>{' '}

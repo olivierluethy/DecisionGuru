@@ -556,6 +556,21 @@ export interface ValuationResult {
   marginOfSafety: number | null;
   fairValue: number | null;
   entryTarget: number | null;
+  /** One-currency display block (CHF): fxRate null = conversion unavailable. Additive;
+   *  the native `currency`/`price`/`fairValue` fields are unchanged and MoS is invariant. */
+  displayCurrency?: {
+    code: string;
+    fxRate: number | null;
+    fxAsOf?: string;
+    fxSource?: string;
+    price?: number;
+    fairValue?: number;
+    grahamNumber?: number;
+    entryTarget?: number;
+    intrinsicLow?: number;
+    intrinsicMid?: number;
+    intrinsicHigh?: number;
+  } | null;
   band: ValuationBand | null;
   /** Canonical verdict from the shared engine (valuation-only). */
   verdict?: VerdictKey;

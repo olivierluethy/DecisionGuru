@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Download, ArrowUpRight, ArrowDownRight, Wallet, PieChart, AlertTriangle, Search, X, TrendingDown } from 'lucide-react';
+import { Download, Wallet, PieChart, AlertTriangle, Search, X, TrendingDown, LineChart, Globe2, History, Coins, Layers } from 'lucide-react';
 import type { RangeKey, AllocationBreakdown } from '@decisionguru/shared';
 import { api } from '../lib/api';
 import { useApp } from '../store';
-import { fmtCHF, fmtCHFSigned, fmtDate, fmtPct, fmtPctSigned, fmtNum, plClass } from '../lib/format';
+import { fmtCHF, fmtCHFSigned, fmtDate, fmtPct, fmtNum, plClass } from '../lib/format';
+import { SectionNav, type NavSection } from '../components/SectionNav';
 import { ValueChart } from '../components/ValueChart';
 import { Globe } from '../components/Globe';
 import { ExposureBars } from '../components/ExposureBars';
@@ -14,7 +15,19 @@ import { Timeline } from '../components/Timeline';
 import { AccountTimeline } from '../components/AccountTimeline';
 import { DecisionsBanner } from '../components/DecisionsBanner';
 import { VerdictBadge } from '../components/Verdict';
-import { Segmented, Spinner, EmptyState, KindBadge, DataStatusBadge } from '../components/ui';
+import {
+  Segmented,
+  Spinner,
+  EmptyState,
+  KindBadge,
+  DataStatusBadge,
+  MetricCard,
+  SectionHeader,
+  DeltaPill,
+  Sparkline,
+  MiniBar,
+  Reveal,
+} from '../components/ui';
 import { buildPortfolioExport } from '../lib/exporters';
 import { downloadExport } from '../lib/api';
 import { fuzzyScore } from '../lib/fuzzy';
@@ -105,6 +118,10 @@ export function Dashboard() {
   const todayPrev = pts.length >= 2 ? pts[pts.length - 2].value : null;
   const todayPct = todayDelta != null && todayPrev ? todayDelta / todayPrev : null;
   const totalGainPct = totals.investedCHF > 0 ? totals.totalGainCHF / totals.investedCHF : null;
+  // Real equity-curve samples drive the summary sparklines (no synthetic data).
+  const sparkVals = pts.map((p) => p.value);
+  const rangeStart = pts.length ? pts[0].value : null;
+  const rangeGainPct = rangeStart ? (pts[pts.length - 1].value - rangeStart) / rangeStart : null;
 
   // Value-weighted geographic/sector exposure → feeds the globe (countries carry lat/lng).
   const exposureAllocation: AllocationBreakdown | null = exposure
@@ -175,6 +192,25 @@ export function Dashboard() {
     await downloadExport(kind, payload, `portfolio-${benchmark}`);
   };
 
+  // Contextual sub-navigation — only lists sections that actually render, so the
+  // reader sees every chapter of this long page at a glance and can jump to it.
+  const hasExposure = !!(
+    hasPositions &&
+    exposureAllocation &&
+    exposure &&
+    (exposure.countries.length > 0 || exposure.sectors.length > 0)
+  );
+  const hasTimeline = !!((hasPositions || hasAccount) && timeline && timeline.events.length > 0);
+  const hasDividends = data.accountDividends.length > 0;
+  const navSections: NavSection[] = [{ id: 'ov-summary', label: 'Summary', icon: Wallet }];
+  if (hasPositions) navSections.push({ id: 'ov-performance', label: 'Performance', icon: LineChart });
+  if (hasExposure) navSections.push({ id: 'ov-exposure', label: 'Exposure', icon: Globe2 });
+  if (hasTimeline) navSections.push({ id: 'ov-timeline', label: 'Timeline', icon: History });
+  if (hasPositions) navSections.push({ id: 'ov-holdings', label: 'Holdings', icon: Layers });
+  if (hasDividends) navSections.push({ id: 'ov-dividends', label: 'Dividends', icon: Coins });
+  // Largest visible weight → scales the inline weight bars in the holdings table.
+  const maxWeight = Math.max(0.0001, ...rows.map((p) => p.weight ?? 0));
+
   return (
     <div className="p-6 max-w-[1400px] mx-auto">
       <header className="flex flex-wrap items-center justify-between gap-4 mb-6">
@@ -216,6 +252,8 @@ export function Dashboard() {
         </div>
       </header>
 
+      <SectionNav sections={navSections} />
+
       {data.unknownEvents > 0 && (
         <div className="mb-4 flex items-center gap-2 text-warn text-sm bg-warn/10 border border-warn/30 rounded p-3">
           <AlertTriangle size={16} />
@@ -224,64 +262,76 @@ export function Dashboard() {
         </div>
       )}
 
-      {/* Summary band — two color-separated pools + today's P/L + total gain */}
-      <section className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
+      {/* Summary band — two colour-separated pools + today's P/L + total gain */}
+      <section id="ov-summary" className="scroll-mt-24 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
         {/* Kontoguthaben (cash) — neutral/cool, distinct from the azure invested pool */}
-        <button
-          className="card text-left border-l-2 border-l-hairline-strong bg-surface hover:border-hairline-strong transition-colors"
-          onClick={() => openModal({ kind: 'cash-detail' })}
-        >
-          <div className="flex items-center gap-1.5 eyebrow mb-2">
-            <Wallet size={12} /> Kontoguthaben · cash · CHF
-          </div>
-          <div className="font-mono font-semibold text-2xl tnum">{fmtCHF(cash.totalCHF, true)}</div>
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            {Object.entries(cash.byCurrency)
-              .sort((a, b) => b[1].chf - a[1].chf)
-              .map(([ccy, v]) => (
-                <span key={ccy} className="chip !py-0 !px-2 font-mono">
-                  {ccy} {fmtNum(v.amount)}
-                </span>
-              ))}
-            {Object.keys(cash.byCurrency).length === 0 && (
-              <span className="text-xs text-text-faint">Import account statement for cash</span>
-            )}
-          </div>
-        </button>
+        <Reveal>
+          <MetricCard
+            icon={Wallet}
+            label="Kontoguthaben · cash · CHF"
+            accent="neutral"
+            onClick={() => openModal({ kind: 'cash-detail' })}
+            value={fmtCHF(cash.totalCHF, true)}
+            sub={
+              <div className="flex flex-wrap gap-1.5">
+                {Object.entries(cash.byCurrency)
+                  .sort((a, b) => b[1].chf - a[1].chf)
+                  .map(([ccy, v]) => (
+                    <span key={ccy} className="chip !py-0 !px-2 font-mono">
+                      {ccy} {fmtNum(v.amount)}
+                    </span>
+                  ))}
+                {Object.keys(cash.byCurrency).length === 0 && (
+                  <span className="text-text-faint">Import account statement for cash</span>
+                )}
+              </div>
+            }
+          />
+        </Reveal>
 
-        {/* Finanzrat Portfolio (invested) — azure, "you" */}
-        <div className="card border-l-2 border-l-azure bg-azure/5">
-          <div className="flex items-center gap-1.5 eyebrow mb-2 text-azure/80">
-            <PieChart size={12} /> Finanzrat Portfolio · invested · CHF
-          </div>
-          <div className="font-mono font-semibold text-2xl tnum">{fmtCHF(totals.currentValueCHF, true)}</div>
-          <div className="mt-2 text-xs text-text-muted">
-            Invested {fmtCHF(totals.investedCHF)} · {data.positions.length} holdings
-          </div>
-        </div>
+        {/* Finanzrat Portfolio (invested) — azure, "you" — with a live equity sparkline */}
+        <Reveal delay={60}>
+          <MetricCard
+            icon={PieChart}
+            label="Finanzrat Portfolio · invested · CHF"
+            labelClass="text-azure/80"
+            accent="azure"
+            className="bg-azure/5"
+            value={fmtCHF(totals.currentValueCHF, true)}
+            spark={
+              sparkVals.length >= 2 ? (
+                <span className={rangeGainPct != null && rangeGainPct < 0 ? 'text-loss' : 'text-azure'}>
+                  <Sparkline data={sparkVals} width={84} height={30} />
+                </span>
+              ) : undefined
+            }
+            sub={`Invested ${fmtCHF(totals.investedCHF)} · ${data.positions.length} holdings`}
+          />
+        </Reveal>
 
         {/* Today's P/L */}
-        <div className="card">
-          <div className="eyebrow mb-2">Today’s P/L · CHF</div>
-          <div className={`font-mono font-semibold text-2xl tnum ${plClass(todayDelta)}`}>
-            {todayDelta == null ? '—' : fmtCHFSigned(todayDelta)}
-          </div>
-          <div className={`mt-2 text-xs ${plClass(todayDelta)}`}>
-            {todayPct == null ? 'Awaiting price history' : fmtPctSigned(todayPct)}
-          </div>
-        </div>
+        <Reveal delay={120}>
+          <MetricCard
+            label="Today’s P/L · CHF"
+            accent={todayDelta == null ? 'neutral' : todayDelta >= 0 ? 'gain' : 'loss'}
+            value={todayDelta == null ? '—' : fmtCHFSigned(todayDelta)}
+            valueClass={plClass(todayDelta)}
+            delta={todayPct != null ? <DeltaPill value={todayPct} /> : undefined}
+            sub={todayPct == null ? 'Awaiting price history' : undefined}
+          />
+        </Reveal>
 
         {/* Total gain (Gesamtgewinn) */}
-        <div className="card">
-          <div className="eyebrow mb-2">Total gain · Gesamtgewinn · CHF</div>
-          <div className={`font-mono font-semibold text-2xl tnum ${plClass(totals.totalGainCHF)}`}>
-            {fmtCHFSigned(totals.totalGainCHF)}
-          </div>
-          <div className={`mt-2 flex items-center gap-1 text-xs ${plClass(totals.totalGainCHF)}`}>
-            {totals.totalGainCHF >= 0 ? <ArrowUpRight size={13} /> : <ArrowDownRight size={13} />}
-            {totalGainPct == null ? '—' : fmtPctSigned(totalGainPct)} · incl. {fmtCHF(totals.netDividendsCHF)} dividends
-          </div>
-        </div>
+        <Reveal delay={180}>
+          <MetricCard
+            label="Total gain · Gesamtgewinn · CHF"
+            accent={totals.totalGainCHF >= 0 ? 'gain' : 'loss'}
+            value={fmtCHFSigned(totals.totalGainCHF)}
+            valueClass={plClass(totals.totalGainCHF)}
+            delta={totalGainPct != null ? <DeltaPill value={totalGainPct} /> : undefined}
+            sub={`incl. ${fmtCHF(totals.netDividendsCHF)} dividends`}
+          />
+        </Reveal>
       </section>
 
       {/* Proactive strategy surface — most important decision, if any */}
@@ -340,11 +390,19 @@ export function Dashboard() {
 
       {/* Portfolio equity curve with time-range selector */}
       {hasPositions && (
-        <section className="card mb-6">
-          <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
-            <div className="eyebrow">Portfolio value · CHF</div>
-            <TimeRangeSelector value={range} onChange={setRange} />
-          </div>
+        <section id="ov-performance" className="scroll-mt-24 card mb-6">
+          <SectionHeader
+            icon={LineChart}
+            eyebrow={`Performance · ${range}`}
+            title={
+              <span className="flex items-center gap-2">
+                Portfolio value
+                {rangeGainPct != null && <DeltaPill value={rangeGainPct} />}
+              </span>
+            }
+            action={<TimeRangeSelector value={range} onChange={setRange} />}
+            className="mb-4"
+          />
           <ValueChart series={series} height={280} />
           <div className="mt-4 pt-3 border-t border-hairline">
             <RangeStats stats={series?.stats ?? null} />
@@ -354,15 +412,20 @@ export function Dashboard() {
 
       {/* Global exposure — where in the world the portfolio is invested */}
       {hasPositions && exposureAllocation && (exposure!.countries.length > 0 || exposure!.sectors.length > 0) && (
-        <section className="card mb-6">
-          <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-            <div className="eyebrow">Where you’re invested · global exposure</div>
-            <div className="text-[11px] text-text-faint">
-              {exposure!.countries.length} countr{exposure!.countries.length === 1 ? 'y' : 'ies'} · top holding{' '}
-              {fmtPct(exposure!.concentration.topHoldingWeight)} · country concentration{' '}
-              {(exposure!.concentration.country * 100).toFixed(0)}%
-            </div>
-          </div>
+        <section id="ov-exposure" className="scroll-mt-24 card mb-6">
+          <SectionHeader
+            icon={Globe2}
+            eyebrow="Where you’re invested"
+            title="Global exposure"
+            action={
+              <span className="text-[11px] text-text-faint text-right">
+                {exposure!.countries.length} countr{exposure!.countries.length === 1 ? 'y' : 'ies'} · top holding{' '}
+                {fmtPct(exposure!.concentration.topHoldingWeight)} · country concentration{' '}
+                {(exposure!.concentration.country * 100).toFixed(0)}%
+              </span>
+            }
+            className="mb-4"
+          />
           <div className="grid lg:grid-cols-[320px_1fr] gap-6 items-center">
             <div className="flex justify-center">
               <Globe allocation={exposureAllocation} size={300} />
@@ -374,21 +437,26 @@ export function Dashboard() {
 
       {/* Chronological timeline of account & trade events (both source files) */}
       {(hasPositions || hasAccount) && timeline && timeline.events.length > 0 && (
-        <section className="card mb-6">
-          <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-            <div className="eyebrow">Timeline · account history</div>
-            <div className="flex items-center gap-3">
-              <span className="text-xs text-text-faint">{timeline.count} events</span>
-              <Segmented
-                value={tlView}
-                onChange={setTlView}
-                options={[
-                  { value: 'chart', label: 'Timeline' },
-                  { value: 'list', label: 'Feed' },
-                ]}
-              />
-            </div>
-          </div>
+        <section id="ov-timeline" className="scroll-mt-24 card mb-6">
+          <SectionHeader
+            icon={History}
+            eyebrow="Account history"
+            title="Timeline"
+            action={
+              <>
+                <span className="text-xs text-text-faint">{timeline.count} events</span>
+                <Segmented
+                  value={tlView}
+                  onChange={setTlView}
+                  options={[
+                    { value: 'chart', label: 'Timeline' },
+                    { value: 'list', label: 'Feed' },
+                  ]}
+                />
+              </>
+            }
+            className="mb-4"
+          />
           {tlView === 'chart' ? (
             <AccountTimeline events={timeline.events} onExpand={() => openModal({ kind: 'timeline' })} />
           ) : (
@@ -399,7 +467,7 @@ export function Dashboard() {
 
       {/* Holdings collection */}
       {hasPositions && (
-        <section className="card !p-0 overflow-hidden">
+        <section id="ov-holdings" className="scroll-mt-24 card !p-0 overflow-hidden">
           {/* Filter by Stock / ETF / delisted + profit-loss counts for the group */}
           <div className="px-4 py-3 border-b border-hairline flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-3 flex-wrap">
@@ -524,7 +592,17 @@ export function Dashboard() {
                       <td className="td text-right font-mono tnum text-gain">
                         {p.netDividendsCHF ? fmtCHF(p.netDividendsCHF) : '—'}
                       </td>
-                      <td className="td text-right font-mono tnum text-text-muted">{fmtPct(p.weight)}</td>
+                      <td className="td">
+                        <div className="flex flex-col items-end gap-1">
+                          <span className="font-mono tnum text-text-muted">{fmtPct(p.weight)}</span>
+                          <MiniBar
+                            value={p.weight ?? 0}
+                            max={maxWeight}
+                            className="w-14"
+                            barClass={p.instrument.kind === 'etf' ? 'bg-gold/70' : 'bg-azure/70'}
+                          />
+                        </div>
+                      </td>
                     </tr>
                   );
                 })}
@@ -536,7 +614,7 @@ export function Dashboard() {
 
       {/* Dividend history by security (works even in the account-only state) */}
       {data.accountDividends.length > 0 && (
-        <section className="card !p-0 overflow-hidden mt-6">
+        <section id="ov-dividends" className="scroll-mt-24 card !p-0 overflow-hidden mt-6">
           <div className="px-4 py-3 border-b border-hairline flex items-center justify-between">
             <div className="eyebrow">Dividends by security · net CHF</div>
             <div className="text-xs text-text-faint">from account statement</div>

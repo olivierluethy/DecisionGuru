@@ -133,6 +133,9 @@ export interface VerdictDrivers {
 export interface Verdict {
   verdict: VerdictKey;
   label: string; // 'Buy more' | 'Hold' | 'Sell'
+  /** Ownership-aware wording of the same signal — owned: Buy more/Hold/Reduce/Sell;
+   *  not owned: Buy/Watch/Avoid. The canonical `verdict` key is unchanged. */
+  action?: { key: VerdictKey; label: string; owned: boolean } | null;
   confidence: 'high' | 'medium' | 'low';
   drivers: VerdictDrivers;
   /** Factual one-liner: driving factors → verdict. */

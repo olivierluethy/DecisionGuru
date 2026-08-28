@@ -91,7 +91,7 @@ function InsightCard({
               {ins.symbol}
             </button>
             <span className="text-sm text-text-muted truncate max-w-[280px]">{ins.name}</span>
-            {ins.verdict && <VerdictBadge verdict={ins.verdict.verdict} confidence={ins.verdict.confidence} />}
+            {ins.verdict && <VerdictBadge verdict={ins.verdict.verdict} action={ins.verdict.action} confidence={ins.verdict.confidence} />}
             {ins.handled && (
               <span className="chip !py-0 !px-2 text-gain border-gain/40">
                 <Check size={11} /> handled

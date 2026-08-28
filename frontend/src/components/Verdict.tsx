@@ -16,22 +16,27 @@ export const VERDICT_META: Record<
 /** The canonical verdict chip — used on every surface that shows a recommendation. */
 export function VerdictBadge({
   verdict,
+  action,
   confidence,
   withIcon = false,
   title,
   className,
 }: {
   verdict: VerdictKey;
+  /** Ownership-aware label to show instead of the default key label (colour/icon still
+   *  come from the key, so an owned "Reduce" keeps the Hold colour, a "Buy" the gain). */
+  action?: { label: string } | null;
   confidence?: string | null;
   withIcon?: boolean;
   title?: string;
   className?: string;
 }) {
   const m = VERDICT_META[verdict];
+  const label = action?.label ?? m.label;
   return (
     <span title={title} className={clsx('chip !py-0 !px-2 inline-flex items-center gap-1.5', m.text, className)}>
       {withIcon ? <m.Icon size={12} /> : <span className={clsx('w-1.5 h-1.5 rounded-full', m.dot)} />}
-      {m.label}
+      {label}
       {confidence && <span className="text-[11px] text-text-faint ml-0.5">· {confidence}</span>}
     </span>
   );

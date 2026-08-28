@@ -545,7 +545,7 @@ function Row({
         </span>
       </td>
       <td className="td text-right"><div className="flex justify-end"><AttractivenessBar value={r.attractiveness} /></div></td>
-      <td className="td"><VerdictBadge verdict={r.verdict} /></td>
+      <td className="td"><VerdictBadge verdict={r.verdict} action={r.recommendation?.action} /></td>
       <td className="td text-right">
         <div className="flex items-center justify-end gap-2">
           <button

@@ -493,6 +493,7 @@ export function Dashboard() {
                               {p.verdict && p.verdict.verdict !== 'hold' && (
                                 <VerdictBadge
                                   verdict={p.verdict.verdict}
+                                  action={p.verdict.action}
                                   title={p.verdict.rationale}
                                   className="!px-1.5"
                                 />

@@ -88,7 +88,7 @@ export function ValueAnalysis({
       {/* The unified verdict — same badge and rationale every surface renders. */}
       {rec && (
         <div className="card !p-4 flex items-start gap-3 flex-wrap">
-          <VerdictBadge verdict={rec.verdict} confidence={rec.confidence} withIcon />
+          <VerdictBadge verdict={rec.verdict} action={rec.action} confidence={rec.confidence} withIcon />
           <VerdictRationale verdict={rec} className="flex-1 min-w-[220px]" />
         </div>
       )}

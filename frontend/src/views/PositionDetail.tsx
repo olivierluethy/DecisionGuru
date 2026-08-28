@@ -299,7 +299,7 @@ export function PositionDetail() {
       {/* The unified verdict — the single recommendation every view shares, above the fold. */}
       {p.verdict && (
         <section className={`card mb-6 flex items-start gap-3 flex-wrap border-l-2 ${VERDICT_META[p.verdict.verdict].border}`}>
-          <VerdictBadge verdict={p.verdict.verdict} confidence={p.verdict.confidence} withIcon />
+          <VerdictBadge verdict={p.verdict.verdict} action={p.verdict.action} confidence={p.verdict.confidence} withIcon />
           <VerdictRationale verdict={p.verdict} className="flex-1 min-w-[260px]" />
         </section>
       )}

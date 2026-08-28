@@ -56,7 +56,7 @@ import { Segmented, Spinner, Stat, KindBadge, StaleDot, DataStatusBadge } from '
 import { BenchmarkSelect } from '../components/BenchmarkSelect';
 import { NotesPanel } from '../components/NotesPanel';
 import { MarketStatusChip } from '../components/MarketStatusChip';
-import { SectionNav, type NavSection } from '../components/SectionNav';
+import { SectionNav, type NavSection, type AssetContext } from '../components/SectionNav';
 
 // Distinct, dark-legible colours for comparison overlays. Azure is the subject stock and
 // green/red mark surge/drop, so those hues are deliberately excluded here.
@@ -189,6 +189,22 @@ export function PositionDetail() {
     { id: 'sec-notes', label: 'Notes', icon: StickyNote },
   ];
 
+  // Compact identity for the sticky rail — mirrors the header's own price semantics
+  // (per-share CHF for an open position, else native current price), and drops price /
+  // hours for a closed or delisted holding so only the identity remains. No extra fetch.
+  const stickyAsset: AssetContext = {
+    symbol: inst.symbol,
+    name: inst.name,
+    kind: inst.kind,
+    price:
+      p.openQuantity > 0 && p.currentValueCHF != null
+        ? fmtCHF(p.currentValueCHF / p.openQuantity, true)
+        : p.currentPrice != null
+          ? fmtMoney(p.currentPrice, inst.currency, true)
+          : undefined,
+    hours: delisted ? undefined : hours.data,
+  };
+
   return (
     <div className="p-6 max-w-[1400px] mx-auto">
       <button className="btn-ghost !px-2 mb-3 -ml-2" onClick={() => setView('dashboard')}>
@@ -271,7 +287,7 @@ export function PositionDetail() {
         </div>
       </header>
 
-      <SectionNav sections={navSections} />
+      <SectionNav sections={navSections} asset={stickyAsset} />
 
       {p.dataStatus?.state === 'data-issue' && (
         <section className="card mb-6 border-l-2 border-l-loss bg-loss/5">

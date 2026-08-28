@@ -5,6 +5,7 @@ from fastapi.concurrency import run_in_threadpool
 
 from ..core.db import get_settings
 from ..services.screener import screen_universe
+from ..services.listings import recommend_listings
 from ..services import screener_warm
 
 router = APIRouter()
@@ -49,3 +50,14 @@ async def refresh(request: Request) -> dict:
 @router.get("/refresh/status")
 async def refresh_status() -> dict:
     return await run_in_threadpool(screener_warm.status)
+
+
+@router.get("/listings")
+async def listings(symbol: str, name: str | None = None, isin: str | None = None,
+                   refresh: bool = False) -> dict:
+    """Detect every known listing of a company across exchanges/currencies and recommend
+    the one line to buy for the investor's configured base currency (Tax & settings) —
+    minimising FX conversion steps. Deterministic; degrades to the primary line when no
+    cross-listing data is available. Cached per symbol; pass refresh=true to re-fetch."""
+    base = (get_settings() or {}).get("baseCurrency") or "CHF"
+    return await run_in_threadpool(recommend_listings, symbol, name, isin, base, refresh)

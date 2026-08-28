@@ -10,6 +10,12 @@ import statistics
 import pandas as pd
 
 from ..core import db
+from .competitors import competitors
+from .fundamentals import get_cached_fundamentals
+from .marketdata import ensure_history, resolve_price
+from .valuation import value_analysis
+from .fx import get_fx_rate
+from ..reference.sector_etfs import sector_etf_for, BROAD_BENCHMARKS, MARKET_ANALYSIS_SYMBOLS
 
 # (key, months) — the horizons the UI offers.
 WINDOWS: list[tuple[str, int]] = [
@@ -118,3 +124,110 @@ def classify(subject: float | None, sector: float | None, peer_med: float | None
             return "outperforming-peers"
         return "outperforming-sector"
     return "inline"
+
+
+_KEY_BY_RANGE = {k: m for k, m in WINDOWS}
+
+
+def _warm_background(symbols: list[str]) -> None:
+    """Bounded, best-effort backfill of a FEW benchmark/sector symbols (serves cached now,
+    fetches in the background). Never raises; never loops over competitors."""
+    from_date = _five_years_ago()
+    for sym in symbols:
+        try:
+            ensure_history(sym, from_date)
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def market_analysis(symbol: str, range_key: str = "1Y", settings: dict | None = None) -> dict:
+    months = _KEY_BY_RANGE.get(range_key, 12)
+    range_key = range_key if range_key in _KEY_BY_RANGE else "1Y"
+
+    comp = competitors(symbol)
+    sector = comp.get("sector")
+    industry = comp.get("industry")
+    snap = (get_cached_fundamentals(symbol) or {}).get("snapshot") or {}
+    name = snap.get("name") or symbol
+    native_ccy = snap.get("currency") or "USD"
+
+    sector_etf = sector_etf_for(sector)
+    # Warm only the subject + broad benchmarks + this sector's ETF — never the peer loop.
+    _warm_background(list(dict.fromkeys([symbol, *[s for _k, s in BROAD_BENCHMARKS],
+                                         *([sector_etf] if sector_etf else [])])))
+
+    # Per-security cached returns (subject + peers), computed once.
+    peers = comp.get("peers") or []
+    returns_by_symbol: dict[str, dict] = {p["symbol"]: returns_for(p["symbol"]) for p in peers}
+    if symbol not in returns_by_symbol:
+        returns_by_symbol[symbol] = returns_for(symbol)
+    subj_returns = returns_by_symbol.get(symbol, returns_for(symbol))
+    subject_pct = subj_returns.get(range_key)
+
+    def _fx(amount, ccy):
+        if amount is None:
+            return None
+        rate = get_fx_rate(ccy or native_ccy, "CHF", pd.Timestamp.utcnow().strftime("%Y-%m-%d"), strict=True)
+        return round(amount * rate, 2) if rate is not None else None
+
+    competitors_out: list[dict] = []
+    for p in peers:
+        r = returns_by_symbol.get(p["symbol"], {})
+        peer_pct = r.get(range_key)
+        competitors_out.append({
+            "symbol": p["symbol"], "name": p.get("name"), "isSubject": p.get("isSubject", False),
+            "marketCapCHF": _fx(p.get("marketCap"), p.get("currency")),
+            "trailingPE": p.get("trailingPE"), "priceToBook": p.get("priceToBook"),
+            "profitMargins": p.get("profitMargins"), "revenueGrowth": p.get("revenueGrowth"),
+            "returns": r,
+            "relativeToSubjectPct": (round(peer_pct - subject_pct, 6)
+                                     if (peer_pct is not None and subject_pct is not None) else None),
+        })
+
+    peer_only = {s: r for s, r in returns_by_symbol.items() if s != symbol}
+    peer_med = peer_median(peer_only, range_key)
+
+    # Sector line: real ETF when its history is cached, else the peer median, else unavailable.
+    sector_etf_pct = single_return(sector_etf, months) if sector_etf else None
+    if sector_etf and sector_etf_pct is not None:
+        sector_line = {"kind": "etf", "symbol": sector_etf, "label": f"{sector} · {sector_etf}",
+                       "returnPct": sector_etf_pct, "series": rebased_series(sector_etf, months)}
+    elif peer_med is not None:
+        sector_line = {"kind": "peer-median", "symbol": None,
+                       "label": f"{sector or 'Sector'} · peer median",
+                       "returnPct": peer_med, "series": []}
+    else:
+        sector_line = {"kind": "unavailable", "label": "Sector performance unavailable",
+                       "returnPct": None, "series": []}
+
+    benchmarks_out: list[dict] = []
+    for key, sym in BROAD_BENCHMARKS:
+        benchmarks_out.append({"key": key, "symbol": sym, "returnPct": single_return(sym, months),
+                               "series": rebased_series(sym, months)})
+
+    sector_pct_for_class = sector_etf_pct if (sector_etf and sector_etf_pct is not None) else None
+    broad_pct = next((b["returnPct"] for b in benchmarks_out if b["key"] == "sp500"), None)
+    classification = classify(subject_pct, sector_pct_for_class, peer_med, broad_pct)
+
+    # Opportunity-cost tie-in: the existing valuation band/MoS at the resolved price (cached).
+    valuation = None
+    try:
+        rp = resolve_price(symbol, native_ccy)
+        va = value_analysis(symbol, rp.get("price"), native_ccy, None, settings)
+        valuation = {"band": va.get("band"), "marginOfSafety": va.get("marginOfSafety"),
+                     "fairValue": va.get("fairValue")}
+    except Exception:  # noqa: BLE001
+        valuation = None
+
+    return {
+        "symbol": symbol, "name": name, "sector": sector, "industry": industry,
+        "displayCurrency": "CHF", "range": range_key,
+        "subject": {"returnPct": subject_pct, "returns": subj_returns,
+                    "series": rebased_series(symbol, months)},
+        "benchmarks": benchmarks_out,
+        "sectorLine": sector_line,
+        "competitors": competitors_out,
+        "peerMedianReturnPct": peer_med,
+        "classification": classification,
+        "valuation": valuation,
+    }

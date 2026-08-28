@@ -145,6 +145,16 @@ async def competitors(symbol: str) -> dict:
     return await run_in_threadpool(competitors_service, symbol)
 
 
+@router.get("/market/{symbol:path}")
+async def market(symbol: str, range: str = "1Y") -> dict:
+    """Market analysis: sector/broad-benchmark/competitor performance + a market-vs-company
+    read + the valuation tie-in, so the user can tell company-specific weakness from a weak
+    market. Cached-only reads."""
+    from ..services.market_analysis import market_analysis
+    settings = get_settings()
+    return await run_in_threadpool(market_analysis, symbol, range, settings)
+
+
 @router.post("/claim")
 async def claim(request: Request) -> dict:
     body = await request.json() or {}

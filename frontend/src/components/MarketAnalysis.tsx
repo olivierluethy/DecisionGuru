@@ -115,9 +115,9 @@ export function MarketAnalysis({ symbol }: { symbol: string }) {
 
       {/* Competitor table */}
       <div>
-        <div className="eyebrow mb-2">Competitors · same sector, ranked by size</div>
+        <div className="eyebrow mb-2">Comparable companies · same market, ranked by market cap (CHF)</div>
         {data.competitors.length === 0 ? (
-          <p className="text-sm text-text-faint">No peers with cached data yet. Open a few same-sector names in Research/Discover to build the peer set.</p>
+          <p className="text-sm text-text-faint">No comparable companies with cached data yet. Open a few same-industry names in Research/Discover to build the peer set.</p>
         ) : (
           <div className="border border-hairline rounded overflow-hidden">
             <div className="overflow-x-auto">
@@ -152,7 +152,7 @@ export function MarketAnalysis({ symbol }: { symbol: string }) {
             </div>
           </div>
         )}
-        <p className="text-[11px] text-text-faint mt-1">Peers are same-sector names with cached data; market caps converted to CHF (omitted when no FX rate).</p>
+        <p className="text-[11px] text-text-faint mt-1">Peers share the same market (sector + industry) and have cached data; ranked by market cap converted to CHF (omitted when no FX rate).</p>
       </div>
 
       {/* Opportunity-cost / valuation tie-in */}

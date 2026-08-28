@@ -140,8 +140,9 @@ async def projection(
 
 @router.get("/competitors/{symbol:path}")
 async def competitors(symbol: str) -> dict:
-    """Same-sector peers (from cached fundamentals) ranked by market cap, so you can see
-    where a company sits by size and valuation within its sector."""
+    """Comparable companies — same competitive market (sector + industry), from cached
+    fundamentals — ranked by CHF-normalised market cap, so you can see where a company sits by
+    size and valuation among its actual peers."""
     return await run_in_threadpool(competitors_service, symbol)
 
 

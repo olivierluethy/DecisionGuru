@@ -14,7 +14,6 @@ from .competitors import competitors
 from .fundamentals import get_cached_fundamentals
 from .marketdata import ensure_history, resolve_price
 from .valuation import value_analysis
-from .fx import get_fx_rate
 from ..reference.sector_etfs import sector_etf_for, BROAD_BENCHMARKS
 
 # (key, months) — the horizons the UI offers.
@@ -163,19 +162,14 @@ def market_analysis(symbol: str, range_key: str = "1Y", settings: dict | None = 
     subj_returns = returns_by_symbol.get(symbol, returns_for(symbol))
     subject_pct = subj_returns.get(range_key)
 
-    def _fx(amount, ccy):
-        if amount is None:
-            return None
-        rate = get_fx_rate(ccy or native_ccy, "CHF", pd.Timestamp.utcnow().strftime("%Y-%m-%d"), strict=True)
-        return round(amount * rate, 2) if rate is not None else None
-
     competitors_out: list[dict] = []
     for p in peers:
         r = returns_by_symbol.get(p["symbol"], {})
         peer_pct = r.get(range_key)
         competitors_out.append({
             "symbol": p["symbol"], "name": p.get("name"), "isSubject": p.get("isSubject", False),
-            "marketCapCHF": _fx(p.get("marketCap"), p.get("currency")),
+            # CHF-normalised cap computed once in competitors() (also drives the peer ranking).
+            "marketCapCHF": p.get("marketCapCHF"),
             "trailingPE": p.get("trailingPE"), "priceToBook": p.get("priceToBook"),
             "profitMargins": p.get("profitMargins"), "revenueGrowth": p.get("revenueGrowth"),
             "returns": r,

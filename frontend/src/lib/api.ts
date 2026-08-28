@@ -892,6 +892,7 @@ export interface CompetitorPeer {
   sector: string | null;
   industry: string | null;
   marketCap: number | null;
+  marketCapCHF: number | null;
   currency: string | null;
   trailingPE: number | null;
   priceToBook: number | null;

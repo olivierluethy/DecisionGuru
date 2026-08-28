@@ -38,6 +38,7 @@ def watchlist_analysis(settings: dict) -> list[dict]:
     the Watchlist reads as a set of buy targets, not just a list. Off cached data only."""
     # Imported lazily to keep this module import-cheap for the screener.
     from .valuation import value_analysis
+    from .verdict import resolve_verdict
     from .fundamentals import get_cached_fundamentals
     from .marketdata import get_quote
 
@@ -49,6 +50,7 @@ def watchlist_analysis(settings: dict) -> list[dict]:
         price = (quote or {}).get("price")
         entry = fair = band = gap = None
         va = None
+        rec = None
         if cached and (cached.get("snapshot")):
             va = value_analysis(sym, price, (quote or {}).get("currency"),
                                 data=cached, settings=settings)
@@ -58,6 +60,8 @@ def watchlist_analysis(settings: dict) -> list[dict]:
             if entry and price and entry > 0:
                 # +ve gap = price is above the entry target (has to fall this far to buy).
                 gap = round(price / entry - 1, 4)
+            # Same shared verdict as everywhere else (valuation-only — a watched name isn't held).
+            rec = resolve_verdict(va, held=False)
         out.append({
             **item,
             "price": price,
@@ -70,6 +74,8 @@ def watchlist_analysis(settings: dict) -> list[dict]:
             "marginOfSafety": (va or {}).get("marginOfSafety"),
             "quality": (va or {}).get("quality"),
             "confidence": (va or {}).get("confidence"),
+            "verdict": rec["verdict"] if rec else None,
+            "recommendation": rec,
             "analysed": va is not None,
         })
     # Closest to (or already at) the entry target first.

@@ -52,7 +52,7 @@ import { catchUp } from '../lib/rebase';
 import { PeriodReturns } from '../components/PeriodReturns';
 import { NewsFeed } from '../components/NewsFeed';
 import { Globe } from '../components/Globe';
-import { Segmented, Spinner, Stat, KindBadge, StaleDot, DataStatusBadge } from '../components/ui';
+import { Segmented, Spinner, Stat, KindBadge, StaleDot, DataStatusBadge, SectionHeader } from '../components/ui';
 import { BenchmarkSelect } from '../components/BenchmarkSelect';
 import { NotesPanel } from '../components/NotesPanel';
 import { MarketStatusChip } from '../components/MarketStatusChip';
@@ -406,9 +406,12 @@ export function PositionDetail() {
 
       {/* Opportunity cost against any alternative — configured ETFs and any stock you add. */}
       <section id="sec-alternatives" className="card mb-6 scroll-mt-24">
-        <div className="eyebrow mb-3">
-          Opportunity cost vs alternatives · {preTax ? 'pre-tax' : 'after-tax'} · CHF
-        </div>
+        <SectionHeader
+          icon={GitCompareArrows}
+          eyebrow={`${preTax ? 'Pre-tax' : 'After-tax'} · CHF`}
+          title="Opportunity cost vs alternatives"
+          className="mb-4"
+        />
         <OpportunityCostVsAlternatives
           id={id!}
           subject={inst.symbol}
@@ -421,23 +424,28 @@ export function PositionDetail() {
       {/* Full-history price with rebased comparison overlays + stagnation markers */}
       {!delisted && (history.data?.length ?? 0) > 1 && (
         <section id="sec-history" className="card mb-6 scroll-mt-24">
-          <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-            <div className="eyebrow">Full price history · {inst.symbol}</div>
-            <div className="flex items-center gap-3 text-[11px] text-text-faint flex-wrap">
-              <span className="flex items-center gap-1"><span className="w-4 h-0.5 bg-azure inline-block" /> {inst.symbol}</span>
-              {priceOverlays.map((o) => (
-                <span key={o.symbol} className="flex items-center gap-1">
-                  <span className="w-4 h-0 border-t-2 border-dashed inline-block" style={{ borderColor: o.color }} /> {o.symbol}
-                </span>
-              ))}
-              <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-gain" /> surge</span>
-              <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-loss" /> drop</span>
-              <span className="flex items-center gap-1"><span className="w-3 h-2 bg-warn/20 border border-warn/30" /> stagnation</span>
-              {(news.data?.items?.length ?? 0) > 0 && (
-                <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-azure-bright" /> news</span>
-              )}
-            </div>
-          </div>
+          <SectionHeader
+            icon={LineChart}
+            eyebrow={inst.symbol}
+            title="Full price history"
+            className="mb-3"
+            action={
+              <div className="flex items-center gap-3 text-[11px] text-text-faint flex-wrap">
+                <span className="flex items-center gap-1"><span className="w-4 h-0.5 bg-azure inline-block" /> {inst.symbol}</span>
+                {priceOverlays.map((o) => (
+                  <span key={o.symbol} className="flex items-center gap-1">
+                    <span className="w-4 h-0 border-t-2 border-dashed inline-block" style={{ borderColor: o.color }} /> {o.symbol}
+                  </span>
+                ))}
+                <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-gain" /> surge</span>
+                <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-loss" /> drop</span>
+                <span className="flex items-center gap-1"><span className="w-3 h-2 bg-warn/20 border border-warn/30" /> stagnation</span>
+                {(news.data?.items?.length ?? 0) > 0 && (
+                  <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-azure-bright" /> news</span>
+                )}
+              </div>
+            }
+          />
 
           {/* Compare-with toolbar: toggle benchmark ETFs, add any stock/ETF, remove chips. */}
           <div className="flex items-center gap-2 flex-wrap mb-3">
@@ -549,7 +557,7 @@ export function PositionDetail() {
       {/* Company fundamentals — valuation, profitability, multi-year figures, index weight */}
       {!delisted && inst.kind === 'stock' && (
         <section id="sec-fundamentals" className="card mb-6 scroll-mt-24">
-          <div className="eyebrow mb-3">Company fundamentals · {inst.symbol}</div>
+          <SectionHeader icon={Building2} eyebrow={inst.symbol} title="Company fundamentals" className="mb-4" />
           <Fundamentals symbol={inst.symbol} domicile={inst.domicile} name={inst.name} currency={inst.currency} />
         </section>
       )}
@@ -557,7 +565,7 @@ export function PositionDetail() {
       {/* Value-investing analysis — intrinsic value, quality, ETF-realism verdict */}
       {!delisted && inst.kind === 'stock' && (
         <section id="sec-value" className="card mb-6 scroll-mt-24">
-          <div className="eyebrow mb-3">Value analysis · what {inst.symbol} is really worth</div>
+          <SectionHeader icon={Gem} eyebrow={`What ${inst.symbol} is really worth`} title="Value analysis" className="mb-4" />
           <ValueAnalysis
             symbol={inst.symbol}
             price={p.currentPrice}
@@ -572,7 +580,7 @@ export function PositionDetail() {
       {/* Market analysis — sector, competitors & relative performance */}
       {!delisted && inst.kind === 'stock' && (
         <section id="sec-market" className="card mb-6 scroll-mt-24">
-          <div className="eyebrow mb-3">Market analysis · sector, competitors & relative performance</div>
+          <SectionHeader icon={Radar} eyebrow="Sector · competitors · relative performance" title="Market analysis" className="mb-4" />
           <MarketAnalysis symbol={inst.symbol} />
         </section>
       )}
@@ -635,13 +643,13 @@ export function PositionDetail() {
 
       {!delisted && (
         <section id="sec-news" className="card mt-6 scroll-mt-24">
-          <h3 className="font-display text-base font-semibold mb-3">Latest headlines</h3>
+          <SectionHeader icon={Newspaper} eyebrow={inst.symbol} title="Latest headlines" className="mb-4" />
           <NewsFeed symbol={inst.symbol} limit={6} />
         </section>
       )}
 
       <section id="sec-notes" className="card mt-6 scroll-mt-24">
-        <h3 className="font-display text-base font-semibold mb-3">Notes</h3>
+        <SectionHeader icon={StickyNote} title="Notes" className="mb-4" />
         <NotesPanel target="instrument" targetId={id} />
       </section>
     </div>

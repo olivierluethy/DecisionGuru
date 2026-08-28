@@ -20,7 +20,7 @@ import { BenchmarkSelect } from '../components/BenchmarkSelect';
 import { NewsFeed } from '../components/NewsFeed';
 import { Globe } from '../components/Globe';
 import { MarketStatusChip } from '../components/MarketStatusChip';
-import { Stat, Spinner, Segmented, EmptyState, KindBadge } from '../components/ui';
+import { Stat, Spinner, Segmented, EmptyState, KindBadge, SectionHeader } from '../components/ui';
 import { fmtCHF, fmtCHFSigned, fmtPct, fmtPctSigned, fmtNum, plClass, priceFreshnessLabel } from '../lib/format';
 
 const WINDOWS = [
@@ -321,14 +321,19 @@ function AssetView({ symbol, onReset }: { symbol: string; onReset: () => void })
       <div id="res-metrics" className="card scroll-mt-24">{metricCells(m)}</div>
 
       <div id="res-history" className="card scroll-mt-24">
-        <div className="flex items-center justify-between mb-3">
-          <div className="eyebrow">Full-history price</div>
-          <div className="flex items-center gap-3 text-[11px] text-text-faint">
-            <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-gain" /> surge</span>
-            <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-loss" /> drop</span>
-            <span className="flex items-center gap-1"><span className="w-3 h-2 bg-warn/20 border border-warn/30" /> stagnation</span>
-          </div>
-        </div>
+        <SectionHeader
+          icon={LineChart}
+          eyebrow={data.symbol}
+          title="Full-history price"
+          className="mb-3"
+          action={
+            <div className="flex items-center gap-3 text-[11px] text-text-faint">
+              <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-gain" /> surge</span>
+              <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-loss" /> drop</span>
+              <span className="flex items-center gap-1"><span className="w-3 h-2 bg-warn/20 border border-warn/30" /> stagnation</span>
+            </div>
+          }
+        />
         <PriceMovementChart series={history ?? []} movements={data.movements} currency={data.currency} height={300} />
       </div>
 
@@ -340,7 +345,7 @@ function AssetView({ symbol, onReset }: { symbol: string; onReset: () => void })
           P/E, margins, revenue history, analyst view). Stock-only, matching Overview. */}
       {data.kind === 'stock' && (
         <div id="res-fundamentals" className="card scroll-mt-24">
-          <div className="eyebrow mb-3">Company fundamentals · {data.symbol}</div>
+          <SectionHeader icon={Building2} eyebrow={data.symbol} title="Company fundamentals" className="mb-4" />
           <Fundamentals symbol={data.symbol} name={data.name} currency={data.currency} />
         </div>
       )}
@@ -348,7 +353,7 @@ function AssetView({ symbol, onReset }: { symbol: string; onReset: () => void })
       {/* Market analysis — sector, competitors & relative performance. */}
       {data.kind === 'stock' && (
         <div id="res-market" className="card scroll-mt-24">
-          <div className="eyebrow mb-3">Market analysis</div>
+          <SectionHeader icon={Radar} eyebrow="Sector · competitors · relative performance" title="Market analysis" className="mb-4" />
           <MarketAnalysis symbol={data.symbol} />
         </div>
       )}
@@ -356,7 +361,7 @@ function AssetView({ symbol, onReset }: { symbol: string; onReset: () => void })
       {/* Value-investing analysis — intrinsic value, margin of safety, Buffett quality. */}
       {data.kind === 'stock' && (
         <div id="res-value" className="card scroll-mt-24">
-          <div className="eyebrow mb-3">Value analysis · what {data.symbol} is really worth</div>
+          <SectionHeader icon={Gem} eyebrow={`What ${data.symbol} is really worth`} title="Value analysis" className="mb-4" />
           <ValueAnalysis symbol={data.symbol} price={data.currentPrice ?? null} currency={data.currency}
             priceAsOf={data.priceAsOf} priceFreshness={data.priceFreshness} />
         </div>
@@ -379,7 +384,7 @@ function AssetView({ symbol, onReset }: { symbol: string; onReset: () => void })
 
       <div className="grid lg:grid-cols-[360px_1fr] gap-6">
         <div id="res-exposure" className="card scroll-mt-24">
-          <div className="eyebrow mb-3">Exposure</div>
+          <SectionHeader icon={PieChart} eyebrow="Where it invests" title="Exposure" className="mb-4" />
           {data.allocation.countries?.length ? (
             <>
               <div className="flex justify-center mb-4">
@@ -392,7 +397,7 @@ function AssetView({ symbol, onReset }: { symbol: string; onReset: () => void })
           )}
         </div>
         <div id="res-news" className="card scroll-mt-24">
-          <div className="eyebrow mb-3">Latest headlines</div>
+          <SectionHeader icon={Newspaper} eyebrow={data.symbol} title="Latest headlines" className="mb-4" />
           <NewsFeed symbol={data.symbol} limit={8} />
         </div>
       </div>

@@ -47,11 +47,10 @@ export function CompareModal({ instrumentIds }: { instrumentIds: number[] }) {
   // — not just the settings benchmark ETFs — can be compared against. `selected` remains the
   // single source of truth for which symbols /analysis/compare receives.
   const [picks, setPicks] = useState<Record<string, SymbolPick>>({});
-  const addPick = (p: SymbolPick) =>
-    setSelected((s) => {
-      setPicks((m) => ({ ...m, [p.symbol]: p }));
-      return s.includes(p.symbol) ? s : [...s, p.symbol];
-    });
+  const addPick = (p: SymbolPick) => {
+    setPicks((m) => ({ ...m, [p.symbol]: p }));
+    setSelected((s) => (s.includes(p.symbol) ? s : [...s, p.symbol]));
+  };
   const [preTax, setPreTax] = useState(false);
   const [range, setRange] = useState<RangeKey>('1Y');
   const [visible, setVisible] = useState<Set<MetricKey>>(new Set(METRICS.map((m) => m.key)));

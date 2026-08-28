@@ -20,7 +20,7 @@
 
 ---
 
-### Task C1: Curated sector-ETF reference
+### Task 1: Curated sector-ETF reference
 
 **Files:**
 - Create: `backend/app/reference/sector_etfs.py`
@@ -129,7 +129,7 @@ Claude-Session: https://claude.ai/code/session_01Bd8N6prahCfPhUrRh6Xo1X"
 
 ---
 
-### Task C2: Cached-only price returns + rebased series
+### Task 2: Cached-only price returns + rebased series
 
 **Files:**
 - Create: `backend/app/services/market_analysis.py` (returns/series helpers only in this task)
@@ -329,14 +329,14 @@ Claude-Session: https://claude.ai/code/session_01Bd8N6prahCfPhUrRh6Xo1X"
 
 ---
 
-### Task C3: Sector line + market-vs-company classifier
+### Task 3: Sector line + market-vs-company classifier
 
 **Files:**
 - Modify: `backend/app/services/market_analysis.py` (add pure functions)
 - Test: `backend/tests/test_market_classifier.py`
 
 **Interfaces:**
-- Consumes: `sector_etfs.sector_etf_for`, `returns_for`/`single_return` (Task C2), `statistics.median`.
+- Consumes: `sector_etfs.sector_etf_for`, `returns_for`/`single_return` (Task 2), `statistics.median`.
 - Produces:
   - `peer_median(returns_by_symbol: dict[str, dict], key: str) -> float | None` — median of peers' `key` returns (excludes None).
   - `classify(subject: float | None, sector: float | None, peer_med: float | None, benchmark: float | None) -> str | None` — one of `market-wide-weakness | company-specific-weakness | outperforming-sector | outperforming-peers | inline`, or `None` when there is nothing to compare against.
@@ -444,7 +444,7 @@ Claude-Session: https://claude.ai/code/session_01Bd8N6prahCfPhUrRh6Xo1X"
 
 ---
 
-### Task C4: Assemble the bundle + the endpoint
+### Task 4: Assemble the bundle + the endpoint
 
 **Files:**
 - Modify: `backend/app/services/market_analysis.py` (add `market_analysis(...)`)
@@ -747,7 +747,7 @@ Claude-Session: https://claude.ai/code/session_01Bd8N6prahCfPhUrRh6Xo1X"
 
 ---
 
-### Task C5: Frontend — `MarketAnalysis` component + API
+### Task 5: Frontend — `MarketAnalysis` component + API
 
 **Files:**
 - Modify: `frontend/src/lib/api.ts` (add `MarketAnalysisResult` + `api.marketAnalysis`)
@@ -989,7 +989,7 @@ Claude-Session: https://claude.ai/code/session_01Bd8N6prahCfPhUrRh6Xo1X"
 
 ---
 
-### Task C6: Wire MarketAnalysis into the three surfaces
+### Task 6: Wire MarketAnalysis into the three surfaces
 
 **Files:**
 - Modify: `frontend/src/views/PositionDetail.tsx` (add SectionNav entry + section)
@@ -997,7 +997,7 @@ Claude-Session: https://claude.ai/code/session_01Bd8N6prahCfPhUrRh6Xo1X"
 - Modify: `frontend/src/modals/OpportunityModal.tsx` (add a section)
 
 **Interfaces:**
-- Consumes: `MarketAnalysis` (Task C5).
+- Consumes: `MarketAnalysis` (Task 5).
 
 - [ ] **Step 1: PositionDetail — import, nav entry, section**
 

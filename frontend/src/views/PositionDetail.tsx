@@ -43,6 +43,7 @@ import { SymbolSearch } from '../components/SymbolSearch';
 import { Fundamentals } from '../components/Fundamentals';
 import { ValueAnalysis } from '../components/ValueAnalysis';
 import { PortfolioFit } from '../components/PortfolioFit';
+import { yahooUrl, googleUrl } from '../lib/externalLinks';
 import { SellSignalPanel } from '../components/SellSignalPanel';
 import { VerdictBadge, VerdictRationale, VERDICT_META } from '../components/Verdict';
 import { catchUp } from '../lib/rebase';
@@ -562,6 +563,28 @@ export function PositionDetail() {
       {/* Portfolio fit — direct + indirect ETF exposure and diversification context. */}
       <section id="sec-fit" className="card mb-6 scroll-mt-24">
         <PortfolioFit symbol={inst.symbol} />
+        {(() => {
+          const y = yahooUrl(inst.symbol);
+          const g = googleUrl(inst.symbol);
+          if (!y && !g) return null;
+          return (
+            <div className="mt-5 pt-4 border-t border-hairline">
+              <p className="eyebrow mb-2">Want to learn more about this investment?</p>
+              <div className="flex gap-2 flex-wrap">
+                {g && (
+                  <a className="btn-secondary" href={g} target="_blank" rel="noopener noreferrer">
+                    Open in Google Finance
+                  </a>
+                )}
+                {y && (
+                  <a className="btn-secondary" href={y} target="_blank" rel="noopener noreferrer">
+                    Open in Yahoo Finance
+                  </a>
+                )}
+              </div>
+            </div>
+          );
+        })()}
       </section>
 
       {!delisted && (

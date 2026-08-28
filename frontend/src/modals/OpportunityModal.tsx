@@ -5,6 +5,7 @@ import { ValueAnalysis } from '../components/ValueAnalysis';
 import { ListingRecommendation } from '../components/ListingRecommendation';
 import { PortfolioFit } from '../components/PortfolioFit';
 import { researchHref } from '../lib/router';
+import { yahooUrl, googleUrl } from '../lib/externalLinks';
 
 /**
  * Opportunity detail — the fair-value read for a screened name without leaving Discover.
@@ -56,6 +57,30 @@ export function OpportunityModal({
       <div className="mt-6 pt-5 border-t border-hairline">
         <ListingRecommendation symbol={symbol} name={name} />
       </div>
+
+      {/* Outbound research — hide a destination whose URL can't be built reliably. */}
+      {(() => {
+        const y = yahooUrl(symbol);
+        const g = googleUrl(symbol);
+        if (!y && !g) return null;
+        return (
+          <div className="mt-6 pt-5 border-t border-hairline">
+            <p className="eyebrow mb-2">Want to learn more about this investment?</p>
+            <div className="flex gap-2 flex-wrap">
+              {g && (
+                <a className="btn-secondary" href={g} target="_blank" rel="noopener noreferrer">
+                  Open in Google Finance
+                </a>
+              )}
+              {y && (
+                <a className="btn-secondary" href={y} target="_blank" rel="noopener noreferrer">
+                  Open in Yahoo Finance
+                </a>
+              )}
+            </div>
+          </div>
+        );
+      })()}
     </Modal>
   );
 }

@@ -5,6 +5,7 @@ import { Modal } from '../components/Modal';
 import { DeltaChart } from '../components/DeltaChart';
 import { TimeRangeSelector } from '../components/TimeRangeSelector';
 import { Segmented, Spinner, KindBadge } from '../components/ui';
+import { SymbolSearch, type SymbolPick } from '../components/SymbolSearch';
 import { api } from '../lib/api';
 import { useApp } from '../store';
 import { sliceByRange } from '../lib/range';
@@ -14,11 +15,11 @@ type MetricKey = 'price' | 'actual' | 'etf' | 'delta' | 'deltaPct' | 'xirr' | 'e
 const METRICS: { key: MetricKey; label: string }[] = [
   { key: 'price', label: 'Price/share' },
   { key: 'actual', label: 'Actual value' },
-  { key: 'etf', label: 'ETF value' },
+  { key: 'etf', label: 'Alt. value' },
   { key: 'delta', label: 'Δ CHF' },
   { key: 'deltaPct', label: 'Δ %' },
   { key: 'xirr', label: 'XIRR' },
-  { key: 'etfXirr', label: 'ETF XIRR' },
+  { key: 'etfXirr', label: 'Alt. XIRR' },
   { key: 'yield', label: 'Div. yield' },
 ];
 
@@ -42,11 +43,22 @@ export function CompareModal({ instrumentIds }: { instrumentIds: number[] }) {
   }, [instruments]);
 
   const [selected, setSelected] = useState<string[]>([benchmark]);
+  // Searched-in comparison targets (symbol → its display name/kind), so any stock/ETF/index
+  // — not just the settings benchmark ETFs — can be compared against. `selected` remains the
+  // single source of truth for which symbols /analysis/compare receives.
+  const [picks, setPicks] = useState<Record<string, SymbolPick>>({});
+  const addPick = (p: SymbolPick) =>
+    setSelected((s) => {
+      setPicks((m) => ({ ...m, [p.symbol]: p }));
+      return s.includes(p.symbol) ? s : [...s, p.symbol];
+    });
   const [preTax, setPreTax] = useState(false);
   const [range, setRange] = useState<RangeKey>('1Y');
   const [visible, setVisible] = useState<Set<MetricKey>>(new Set(METRICS.map((m) => m.key)));
 
   const benchmarks = settings?.benchmarks ?? [];
+  const benchSymbols = new Set(benchmarks.map((b) => b.symbol));
+  const extraSelected = selected.filter((s) => !benchSymbols.has(s));
   const toggleBench = (sym: string) =>
     setSelected((s) => (s.includes(sym) ? s.filter((x) => x !== sym) : [...s, sym]));
   const toggleInstrument = (id: number) =>
@@ -72,8 +84,8 @@ export function CompareModal({ instrumentIds }: { instrumentIds: number[] }) {
 
   return (
     <Modal
-      title="Compare holdings vs ETFs"
-      subtitle={`${basket.length} holding${basket.length === 1 ? '' : 's'} vs ${selected.length} benchmark${selected.length === 1 ? '' : 's'}`}
+      title="Compare holdings vs securities"
+      subtitle={`${basket.length} holding${basket.length === 1 ? '' : 's'} vs ${selected.length} comparison${selected.length === 1 ? '' : 's'}`}
       onClose={closeModal}
       size="xl"
       footer={
@@ -107,7 +119,7 @@ export function CompareModal({ instrumentIds }: { instrumentIds: number[] }) {
         {/* Benchmark multi-select + tax basis */}
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <div className="label">Benchmark ETFs</div>
+            <div className="label">Compare against (stocks, ETFs, indices)</div>
             <div className="flex flex-wrap gap-2">
               {benchmarks.map((b) => {
                 const on = selected.includes(b.symbol);
@@ -123,6 +135,24 @@ export function CompareModal({ instrumentIds }: { instrumentIds: number[] }) {
                   </button>
                 );
               })}
+              {extraSelected.map((sym) => {
+                const p = picks[sym];
+                return (
+                  <button
+                    key={sym}
+                    onClick={() => toggleBench(sym)}
+                    className="chip cursor-pointer !border-gold/60 !text-gold"
+                    title={p ? `${p.name} — click to remove` : 'click to remove'}
+                  >
+                    {p && <KindBadge kind={p.kind} />}
+                    {sym}
+                    <span className="ml-1 text-text-faint">×</span>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="mt-2 max-w-sm">
+              <SymbolSearch onPick={addPick} />
             </div>
           </div>
           <Segmented
@@ -186,7 +216,7 @@ export function CompareModal({ instrumentIds }: { instrumentIds: number[] }) {
                           <div className="font-mono tnum">{fmtCHF(cmp.aggregate.actualValueCHF)}</div>
                         </div>
                         <div>
-                          <div className="eyebrow mb-1">ETF value</div>
+                          <div className="eyebrow mb-1">Alt. value</div>
                           <div className="font-mono tnum text-gold">{fmtCHF(cmp.aggregate.counterfactualValueCHF)}</div>
                         </div>
                       </div>
@@ -203,11 +233,11 @@ export function CompareModal({ instrumentIds }: { instrumentIds: number[] }) {
                             <th className="th">Holding</th>
                             {visible.has('price') && <th className="th text-right">Price/share</th>}
                             {visible.has('actual') && <th className="th text-right">Actual value</th>}
-                            {visible.has('etf') && <th className="th text-right">ETF value</th>}
+                            {visible.has('etf') && <th className="th text-right">Alt. value</th>}
                             {visible.has('delta') && <th className="th text-right">Δ CHF</th>}
                             {visible.has('deltaPct') && <th className="th text-right">Δ %</th>}
                             {visible.has('xirr') && <th className="th text-right">XIRR</th>}
-                            {visible.has('etfXirr') && <th className="th text-right">ETF XIRR</th>}
+                            {visible.has('etfXirr') && <th className="th text-right">Alt. XIRR</th>}
                             {visible.has('yield') && <th className="th text-right">Div. yield</th>}
                           </tr>
                         </thead>

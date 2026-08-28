@@ -250,6 +250,20 @@ async def instrument_value_series(instrument_id: int, range: str = "1Y") -> dict
     return await run_in_threadpool(instrument_series, instrument_id, range)
 
 
+@router.get("/fit/{symbol:path}")
+async def fit(symbol: str) -> dict:
+    """Portfolio-fit read for a candidate: ownership, direct + indirect ETF exposure, and a
+    diversification note. Reuses the exposure/allocation engines; never fabricates a number."""
+    from ..services.fit import portfolio_fit
+
+    settings = get_settings()
+
+    def _work() -> dict:
+        return portfolio_fit(symbol, settings)
+
+    return await run_in_threadpool(_work)
+
+
 @router.get("/portfolio")
 async def portfolio(preTax: str = "false", benchmark: str | None = None) -> dict:
     settings = get_settings()

@@ -63,6 +63,7 @@ def _attractiveness(mos: float | None, quality_frac: float, supportable: float |
 
 
 def screen_universe(settings: dict) -> dict:
+    owned = repo.owned_symbol_set()
     holdings = {i["symbol"]: i for i in repo.list_instruments() if i.get("symbol")}
     watch = {w["symbol"]: w for w in list_watchlist() if w.get("symbol")}
 
@@ -104,9 +105,10 @@ def screen_universe(settings: dict) -> dict:
         quality_frac = (quality["score"] / quality["max"]) if quality.get("max") else 0.0
         supportable = va.get("supportableReturn")
         fit_status, fit_weight, fit_bonus = _fit(sector, pf_sectors)
-        # One canonical verdict from the shared engine (valuation-only for a candidate —
-        # not held, so no benchmark performance). Discover shows this, never a fork.
-        rec = resolve_verdict(va, held=False)
+        # One canonical verdict from the shared engine. `held` drives ownership-aware
+        # wording (owned → Buy more; not owned → Buy) — valuation-only either way, since a
+        # candidate carries no benchmark performance. Discover shows this, never a fork.
+        rec = resolve_verdict(va, held=(sym in owned))
 
         rows.append({
             "symbol": sym,
@@ -135,7 +137,7 @@ def screen_universe(settings: dict) -> dict:
             "verdict": rec["verdict"],          # canonical: 'buy-more' | 'hold' | 'sell'
             "recommendation": rec,              # full engine output (rationale, drivers, …)
             "portfolioFit": {"status": fit_status, "sectorWeight": fit_weight},
-            "inPortfolio": sym in holdings,
+            "inPortfolio": sym in owned,
             "onWatchlist": sym in watch,
         })
 

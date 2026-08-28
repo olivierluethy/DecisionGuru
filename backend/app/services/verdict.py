@@ -36,6 +36,21 @@ LABELS = {"buy-more": "Buy more", "hold": "Hold", "sell": "Sell"}
 _CONF_ORDER = {"high": 2, "medium": 1, "low": 0}
 
 
+# Ownership-aware action wording. The canonical key is unchanged; this only chooses the
+# verb the user sees, so an un-owned name never reads "Buy more". `trim` = the overvalued
+# (not sell-zone) Hold that carries a trim note.
+def _action_for(verdict_key: str, *, held: bool, trim: bool) -> dict:
+    if verdict_key == "buy-more":
+        label = "Buy more" if held else "Buy"
+    elif verdict_key == "sell":
+        label = "Sell" if held else "Avoid"
+    elif trim:
+        label = "Reduce" if held else "Watch"
+    else:  # plain hold / no valuation
+        label = "Hold" if held else "Watch"
+    return {"key": verdict_key, "label": label, "owned": held}
+
+
 def _pct(v: float | None, digits: int = 0) -> str:
     return f"{v * 100:.{digits}f}%" if v is not None else "n/a"
 
@@ -188,6 +203,7 @@ def resolve_verdict(va: dict | None, *, performance: dict | None = None, held: b
     return {
         "verdict": verdict,
         "label": LABELS[verdict],
+        "action": _action_for(verdict, held=held, trim=bool(trim_note)),
         "confidence": conf,
         "drivers": {
             "band": band,

@@ -70,8 +70,10 @@ def _valuation_now(symbol: str, price: float | None, currency: str | None,
     if freshness is not None:
         va["priceFreshness"] = freshness
         va["priceAsOf"] = price_as_of
-    # Same shared verdict every surface renders (valuation-only for a researched name).
-    rec = resolve_verdict(va, held=False)
+    # Same shared verdict every surface renders (valuation-only for a researched name),
+    # but ownership-aware so an owned name reads "Buy more" and an un-owned one "Buy".
+    from ..services import repo
+    rec = resolve_verdict(va, held=(symbol in repo.owned_symbol_set()))
     va["verdict"] = rec["verdict"]
     va["recommendation"] = rec
     return va

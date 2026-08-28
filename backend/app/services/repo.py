@@ -44,6 +44,21 @@ def get_transactions(instrument_id: int) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+def owned_symbol_set() -> set[str]:
+    """Symbols currently held — net open quantity (buys − sells) > 0 — computed OFFLINE
+    from transactions only, no provider calls. This is the canonical 'owned' test:
+    a fully-sold instrument (net qty 0) is NOT owned, per the ownership model."""
+    rows = db.q(
+        """SELECT i.symbol AS symbol,
+                  SUM(CASE t.action WHEN 'buy' THEN t.quantity
+                                    WHEN 'sell' THEN -t.quantity ELSE 0 END) AS net
+             FROM instruments i JOIN transactions t ON t.instrumentId = i.id
+            WHERE i.symbol IS NOT NULL
+            GROUP BY i.symbol"""
+    ).all()
+    return {r["symbol"] for r in rows if (r["net"] or 0) > 1e-9}
+
+
 def all_transactions() -> list[dict]:
     return [dict(r) for r in db.q("SELECT * FROM transactions ORDER BY date, id").all()]
 

@@ -8,6 +8,7 @@ from ..core.errors import ApiError
 from ..services.research import research_asset, validate_claim
 from ..services.fundamentals import fundamentals_bundle
 from ..services.valuation import value_analysis
+from ..services.verdict import resolve_verdict
 from ..services.universal import universal_compare
 from ..services.projection import prospective_projection
 from ..services.competitors import competitors as competitors_service
@@ -69,6 +70,10 @@ def _valuation_now(symbol: str, price: float | None, currency: str | None,
     if freshness is not None:
         va["priceFreshness"] = freshness
         va["priceAsOf"] = price_as_of
+    # Same shared verdict every surface renders (valuation-only for a researched name).
+    rec = resolve_verdict(va, held=False)
+    va["verdict"] = rec["verdict"]
+    va["recommendation"] = rec
     return va
 
 
@@ -79,6 +84,9 @@ def _valuation_as_of(symbol: str, as_of: str, currency: str | None, settings: di
 
     hist_price = price_on(symbol, as_of)
     va = value_analysis(symbol, hist_price, currency, None, settings)
+    rec = resolve_verdict(va, held=False)
+    va["verdict"] = rec["verdict"]
+    va["recommendation"] = rec
     quote = get_quote(symbol) or {}
     now_price = quote.get("price")
     since_return = (

@@ -332,7 +332,7 @@ export function PositionDetail() {
             <div className="grid grid-cols-2 gap-x-4 gap-y-3 mt-6">
               <Stat
                 label="Current price"
-                value={p.openQuantity > 0 && p.currentValueCHF != null ? fmtCHF(p.currentValueCHF / p.openQuantity, true) : fmtCHF(p.currentPrice, true)}
+                value={p.openQuantity > 0 && p.currentValueCHF != null ? fmtCHF(p.currentValueCHF / p.openQuantity, true) : fmtMoney(p.currentPrice ?? null, inst.currency, true)}
                 sub={p.openQuantity > 0 ? `× ${p.openQuantity} shares` : undefined}
               />
               <Stat label="Current value" value={fmtCHF(p.currentValueCHF)} sub="price × shares" />

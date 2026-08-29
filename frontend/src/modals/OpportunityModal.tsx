@@ -90,7 +90,7 @@ export function OpportunityModal({
               )}
               {f && (
                 <a className="btn-secondary" href={f} target="_blank" rel="noopener noreferrer">
-                  Open in finanzen.net
+                  Open in finanzen.ch
                 </a>
               )}
             </div>

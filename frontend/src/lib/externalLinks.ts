@@ -25,11 +25,13 @@ export function googleUrl(symbol?: string | null): string | null {
   return `https://www.google.com/finance/quote/${encodeURIComponent(base)}:${exch}`;
 }
 
-// finanzen.net is ISIN-centric, so search by ISIN when we have it (the unambiguous match);
-// otherwise fall back to the base ticker (Yahoo suffix stripped). Its search page resolves
-// either to the instrument's fundamentals page. Null only when we have no identifier.
+// Use the Swiss site (finanzen.ch) so the search resolves directly in the Swiss database and
+// lands on the Swiss detail page (e.g. /aktien/toyota-aktie) with no country-redirect prompt.
+// ISIN-centric, so search by ISIN when we have it (the unambiguous match); otherwise fall back
+// to the base ticker (Yahoo suffix stripped). The search also accepts a Swiss Valor number.
+// Null only when we have no identifier.
 export function finanzenUrl(symbol?: string | null, isin?: string | null): string | null {
   const query = isin || (symbol ? symbol.split('.')[0] : '');
   if (!query) return null;
-  return `https://www.finanzen.net/suchergebnis.asp?_search=${encodeURIComponent(query)}`;
+  return `https://www.finanzen.ch/suchergebnis.asp?_search=${encodeURIComponent(query)}`;
 }

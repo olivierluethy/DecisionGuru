@@ -138,9 +138,20 @@ def _warm_background(symbols: list[str]) -> None:
             pass
 
 
-def market_analysis(symbol: str, range_key: str = "1Y", settings: dict | None = None) -> dict:
+def market_analysis(symbol: str, range_key: str = "1Y", settings: dict | None = None,
+                    compare: list[str] | None = None) -> dict:
     months = _KEY_BY_RANGE.get(range_key, 12)
     range_key = range_key if range_key in _KEY_BY_RANGE else "1Y"
+
+    # Comparison benchmark lines. When the caller passes an explicit `compare` list we use it
+    # verbatim (any tradeable symbol — ETF or company, any market); otherwise fall back to the
+    # broad defaults. Deduped, the subject itself is never a comparison line.
+    raw_syms = compare if compare else [s for _k, s in BROAD_BENCHMARKS]
+    compare_syms: list[str] = []
+    for s in raw_syms:
+        s = (s or "").strip()
+        if s and s.upper() != symbol.upper() and s not in compare_syms:
+            compare_syms.append(s)
 
     comp = competitors(symbol)
     sector = comp.get("sector")
@@ -150,8 +161,8 @@ def market_analysis(symbol: str, range_key: str = "1Y", settings: dict | None = 
     native_ccy = snap.get("currency") or "USD"
 
     sector_etf = sector_etf_for(sector)
-    # Warm only the subject + broad benchmarks + this sector's ETF — never the peer loop.
-    _warm_background(list(dict.fromkeys([symbol, *[s for _k, s in BROAD_BENCHMARKS],
+    # Warm only the subject + selected comparison lines + this sector's ETF — never the peer loop.
+    _warm_background(list(dict.fromkeys([symbol, *compare_syms,
                                          *([sector_etf] if sector_etf else [])])))
 
     # Per-security cached returns (subject + peers), computed once.
@@ -200,12 +211,13 @@ def market_analysis(symbol: str, range_key: str = "1Y", settings: dict | None = 
                        "returnPct": None, "series": []}
 
     benchmarks_out: list[dict] = []
-    for key, sym in BROAD_BENCHMARKS:
-        benchmarks_out.append({"key": key, "symbol": sym, "returnPct": single_return(sym, months),
+    for sym in compare_syms:
+        benchmarks_out.append({"key": sym, "symbol": sym, "returnPct": single_return(sym, months),
                                "series": rebased_series(sym, months)})
 
     sector_pct_for_class = sector_etf_pct if (sector_etf and sector_etf_pct is not None) else None
-    broad_pct = next((b["returnPct"] for b in benchmarks_out if b["key"] == "sp500"), None)
+    # Broad-market reference for the headline read: prefer a classic broad benchmark when present.
+    broad_pct = next((b["returnPct"] for b in benchmarks_out if b["symbol"] in ("SPY", "VWRL.SW")), None)
     classification = classify(subject_pct, sector_pct_for_class, peer_med, broad_pct)
 
     # Opportunity-cost tie-in: the existing valuation band/MoS at the resolved price (cached).

@@ -147,13 +147,15 @@ async def competitors(symbol: str) -> dict:
 
 
 @router.get("/market/{symbol:path}")
-async def market(symbol: str, range: str = "1Y") -> dict:
+async def market(symbol: str, range: str = "1Y", compare: str | None = None) -> dict:
     """Market analysis: sector/broad-benchmark/competitor performance + a market-vs-company
     read + the valuation tie-in, so the user can tell company-specific weakness from a weak
-    market. Cached-only reads."""
+    market. Cached-only reads. `compare` is a comma-separated list of comparison symbols
+    (any ETF or company, any market); omitted falls back to the broad-market defaults."""
     from ..services.market_analysis import market_analysis
     settings = get_settings()
-    return await run_in_threadpool(market_analysis, symbol, range, settings)
+    compare_list = [s.strip() for s in compare.split(",") if s.strip()] if compare else None
+    return await run_in_threadpool(market_analysis, symbol, range, settings, compare_list)
 
 
 @router.post("/claim")

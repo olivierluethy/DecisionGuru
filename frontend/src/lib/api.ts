@@ -247,8 +247,11 @@ export const api = {
   },
   competitors: (symbol: string) =>
     req<CompetitorsResult>(`/research/competitors/${encodeURIComponent(symbol)}`),
-  marketAnalysis: (symbol: string, range = '1Y') =>
-    req<MarketAnalysisResult>(`/research/market/${encodeURIComponent(symbol)}?range=${range}`),
+  marketAnalysis: (symbol: string, range = '1Y', compare?: string[]) => {
+    const q = new URLSearchParams({ range });
+    if (compare && compare.length) q.set('compare', compare.join(','));
+    return req<MarketAnalysisResult>(`/research/market/${encodeURIComponent(symbol)}?${q.toString()}`);
+  },
   validateClaim: (symbol: string, claim: string | ClaimSpec) =>
     req<ClaimResult>('/research/claim', { method: 'POST', body: JSON.stringify({ symbol, claim }) }),
   universalCompare: (entities: CompareEntity[], windowYears = 5) =>

@@ -41,6 +41,7 @@ import { DeltaChart } from '../components/DeltaChart';
 import { ProjectionChart } from '../components/ProjectionChart';
 import { PriceMovementChart } from '../components/PriceMovementChart';
 import { SymbolSearch } from '../components/SymbolSearch';
+import { ComparisonSelect } from '../components/ComparisonSelect';
 import { Fundamentals } from '../components/Fundamentals';
 import { ValueAnalysis } from '../components/ValueAnalysis';
 import { MarketAnalysis } from '../components/MarketAnalysis';
@@ -101,7 +102,6 @@ export function PositionDetail() {
   });
   const settings = useQuery({ queryKey: ['settings'], queryFn: api.getSettings });
   const [overlaySymbols, setOverlaySymbols] = useState<string[]>(benchmark ? [benchmark] : []);
-  const [showAddOverlay, setShowAddOverlay] = useState(false);
   const overlayHistories = useQueries({
     queries: overlaySymbols.map((sym) => ({
       queryKey: ['pos-history-cmp', sym],
@@ -110,8 +110,6 @@ export function PositionDetail() {
       staleTime: 5 * 60_000,
     })),
   });
-  const toggleOverlay = (sym: string) =>
-    setOverlaySymbols((prev) => (prev.includes(sym) ? prev.filter((s) => s !== sym) : [...prev, sym]));
   const news = useQuery({
     queryKey: ['news', symbol, 20],
     queryFn: () => api.news(symbol!, 20),
@@ -447,49 +445,16 @@ export function PositionDetail() {
             }
           />
 
-          {/* Compare-with toolbar: toggle benchmark ETFs, add any stock/ETF, remove chips. */}
+          {/* Compare-with toolbar: the subject vs. any benchmark ETFs and/or companies. */}
           <div className="flex items-center gap-2 flex-wrap mb-3">
-            <span className="eyebrow">Compare</span>
-            {benchmarkChoices.map((sym) => {
-              const on = overlaySymbols.includes(sym);
-              return (
-                <button
-                  key={sym}
-                  onClick={() => toggleOverlay(sym)}
-                  className={`chip cursor-pointer ${on ? '!text-text' : 'opacity-60'}`}
-                  style={on ? { borderColor: overlayColorOf(sym), color: overlayColorOf(sym) } : undefined}
-                >
-                  {sym}
-                </button>
-              );
-            })}
-            {overlaySymbols
-              .filter((s) => s && !benchmarkChoices.includes(s))
-              .map((sym) => (
-                <button
-                  key={sym}
-                  onClick={() => toggleOverlay(sym)}
-                  className="chip cursor-pointer !text-text inline-flex items-center gap-1"
-                  style={{ borderColor: overlayColorOf(sym), color: overlayColorOf(sym) }}
-                  title="Remove"
-                >
-                  {sym} <X size={11} />
-                </button>
-              ))}
-            <button onClick={() => setShowAddOverlay((v) => !v)} className="chip cursor-pointer">
-              <Plus size={12} /> Add stock / ETF
-            </button>
+            <span className="eyebrow mr-1">Compare</span>
+            <ComparisonSelect
+              subject={inst.symbol}
+              selected={overlaySymbols}
+              onChange={setOverlaySymbols}
+              colorOf={overlayColorOf}
+            />
           </div>
-          {showAddOverlay && (
-            <div className="mb-3 max-w-md">
-              <SymbolSearch
-                onPick={(pick) => {
-                  setOverlaySymbols((prev) => (prev.includes(pick.symbol) ? prev : [...prev, pick.symbol]));
-                  setShowAddOverlay(false);
-                }}
-              />
-            </div>
-          )}
 
           <PriceMovementChart
             series={history.data ?? []}

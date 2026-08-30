@@ -84,3 +84,9 @@ export const useApp = create<AppState>((set) => ({
     })),
   clearCompare: () => set({ compareSelection: [] }),
 }));
+
+// Dev-only: expose the store so E2E tests (Playwright) can deep-link straight to a
+// view/symbol without walking the whole UI. Stripped from production builds.
+if (import.meta.env.DEV) {
+  (window as unknown as { __app?: typeof useApp }).__app = useApp;
+}

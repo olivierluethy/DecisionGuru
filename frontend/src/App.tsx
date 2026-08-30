@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { Menu } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { Sidebar } from './components/Sidebar';
@@ -13,6 +13,7 @@ import { Watchlist } from './views/Watchlist';
 import { Screener } from './views/Screener';
 import { Alerts } from './views/Alerts';
 import { ModalHost } from './modals/ModalHost';
+import { ScrollToTop } from './components/ScrollToTop';
 import { useApp } from './store';
 import { api } from './lib/api';
 
@@ -21,6 +22,7 @@ export default function App() {
   const setBenchmark = useApp((s) => s.setBenchmark);
   const navOpen = useApp((s) => s.navOpen);
   const setNavOpen = useApp((s) => s.setNavOpen);
+  const mainRef = useRef<HTMLElement>(null);
 
   // Sync the default benchmark from persisted settings once.
   const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: api.getSettings });
@@ -60,7 +62,7 @@ export default function App() {
             Decision<span className="text-azure">Guru</span>
           </span>
         </header>
-        <main className="flex-1 overflow-y-auto">
+        <main ref={mainRef} className="flex-1 overflow-y-auto">
           {view === 'dashboard' && <Dashboard />}
           {view === 'position' && <PositionDetail />}
           {view === 'scenarios' && <Scenarios />}
@@ -73,6 +75,7 @@ export default function App() {
           {view === 'alerts' && <Alerts />}
         </main>
       </div>
+      <ScrollToTop scrollRef={mainRef} />
       <ModalHost />
     </div>
   );

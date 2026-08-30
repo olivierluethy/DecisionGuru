@@ -43,7 +43,11 @@ def _entry(key: str, label: str, years: float, start: dict, last: dict) -> dict:
 
 def period_returns(symbol: str, entry_date: str | None = None) -> dict:
     """Price return over each trailing window plus (when given) the full holding period."""
-    today = pd.Timestamp.utcnow().normalize()
+    # tz-naive UTC midnight: every figure here is date-string based, and the holding-period
+    # subtraction below compares against a tz-naive pd.Timestamp(entry_date). Keeping `today`
+    # tz-naive avoids "subtract tz-naive and tz-aware" (utcnow() returns tz-aware, and is
+    # deprecated in pandas 2.x).
+    today = pd.Timestamp.now(tz="UTC").normalize().tz_localize(None)
     today_s = today.strftime("%Y-%m-%d")
     back5 = (today - pd.DateOffset(years=5)).strftime("%Y-%m-%d")
     from_date = min(entry_date, back5) if entry_date else back5

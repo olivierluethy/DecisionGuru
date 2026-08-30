@@ -15,11 +15,13 @@ from ..core.logging import get_logger
 
 log = get_logger("fx")
 
-BASE_URL = "https://api.frankfurter.app"
+# frankfurter.app now 301-redirects to the versioned frankfurter.dev host; point straight
+# at it (and follow redirects anyway, so a future move degrades to a round-trip, not a break).
+BASE_URL = "https://api.frankfurter.dev/v1"
 
 
 def _client() -> httpx.Client:
-    return httpx.Client(timeout=settings.yf_timeout_s)
+    return httpx.Client(timeout=settings.yf_timeout_s, follow_redirects=True)
 
 
 def _cache_get(base: str, quote: str, date: str) -> float | None:

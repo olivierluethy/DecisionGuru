@@ -20,7 +20,7 @@ from datetime import datetime, timezone
 from . import repo
 from .watchlist import list_watchlist
 from .fundamentals import get_cached_fundamentals, get_fundamentals
-from .peer_discovery import discover_peers
+from .peer_discovery import discover_peers, industry_key_from_label
 from .fx import get_fx_rate
 from ..reference.universe import UNIVERSE_SEED
 from ..reference.classification import same_market
@@ -46,9 +46,9 @@ def _peer(sym: str, snap: dict, is_subject: bool, market_cap_chf: float | None) 
 def competitors(symbol: str) -> dict:
     subject = get_cached_fundamentals(symbol)
     subj_snap = (subject or {}).get("snapshot")
-    # industryKey drives the autonomous discovery. Fetch on-demand when the subject is
-    # uncached entirely, or when its cached snapshot predates the industryKey field.
-    if subj_snap is None or not subj_snap.get("industryKey"):
+    # An entirely uncached subject needs one live fetch to learn its sector/industry;
+    # a cached subject already has them (a refresh here would only be a TTL cache hit).
+    if subj_snap is None:
         subject = get_fundamentals(symbol) or subject
         subj_snap = (subject or {}).get("snapshot")
     sector = (subj_snap or {}).get("sector")
@@ -57,8 +57,11 @@ def competitors(symbol: str) -> dict:
         return {"symbol": symbol, "sector": sector, "industry": industry,
                 "peers": [], "peerCount": 0, "subjectRank": None}
 
-    # Autonome Peers aus der Industry des Subjekts; Fallback-Quellen dahinter.
-    discovered = discover_peers((subj_snap or {}).get("industryKey"))
+    # Autonome Peers aus der Industry des Subjekts; Fallback-Quellen dahinter. Der
+    # industryKey fehlt bei vor dem Feature gecachten Snapshots → aus dem Klartext-Label
+    # ableiten, statt einen teuren Re-Scrape zu erzwingen.
+    industry_key = subj_snap.get("industryKey") or industry_key_from_label(industry)
+    discovered = discover_peers(industry_key)
     discovered_set = set(discovered)
 
     holdings = [i["symbol"] for i in repo.list_instruments() if i.get("symbol")]

@@ -22,6 +22,7 @@ import {
   DataStatusBadge,
   MetricCard,
   SectionHeader,
+  InfoTooltip,
   DeltaPill,
   Sparkline,
   MiniBar,
@@ -286,7 +287,12 @@ export function Dashboard() {
       {/* Summary band — two colour-separated pools + today's P/L + total gain.
           Each card animates in on a slight stagger while staying a direct grid
           child, so all four keep equal height. */}
-      <section id="ov-summary" className="scroll-mt-24 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
+      <section id="ov-summary" className="scroll-mt-24 mb-6">
+        <div className="flex items-center gap-1.5 mb-3">
+          <div className="eyebrow">Summary</div>
+          <InfoTooltip text="The headline snapshot of your portfolio — cash, total invested value, today's profit/loss and total gain. The numbers that tell you where you stand right now." />
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
         {/* Kontoguthaben (cash) — neutral/cool, distinct from the azure invested pool */}
         <MetricCard
           icon={Wallet}
@@ -350,6 +356,7 @@ export function Dashboard() {
           delta={totalGainPct != null ? <DeltaPill value={totalGainPct} /> : undefined}
           sub={`incl. ${fmtCHF(totals.netDividendsCHF)} dividends`}
         />
+        </div>
       </section>
 
       {/* Proactive strategy surface — most important decision, if any */}
@@ -420,6 +427,7 @@ export function Dashboard() {
             }
             action={<TimeRangeSelector value={range} onChange={setRange} />}
             className="mb-4"
+            info="How the total value of your portfolio has moved over the selected period, including the change versus the start of that window."
           />
           <ValueChart series={series} height={280} />
           <div className="mt-4 pt-3 border-t border-hairline">
@@ -435,6 +443,7 @@ export function Dashboard() {
             icon={Globe2}
             eyebrow="Where you’re invested"
             title="Global exposure"
+            info="Where your money is invested across the world and across sectors, combining every holding into one picture of your true diversification."
             action={
               <span className="text-[11px] text-text-faint text-right">
                 {exposure!.countries.length} countr{exposure!.countries.length === 1 ? 'y' : 'ies'} · top holding{' '}
@@ -460,6 +469,7 @@ export function Dashboard() {
             icon={History}
             eyebrow="Account history"
             title="Timeline"
+            info="A chronological record of your account activity — deposits, trades, dividends and other events — showing how your portfolio was built over time."
             action={
               <>
                 <span className="text-xs text-text-faint">{timeline.count} events</span>
@@ -489,6 +499,10 @@ export function Dashboard() {
           {/* Filter by Stock / ETF / delisted + profit-loss counts for the group */}
           <div className="px-4 py-3 border-b border-hairline flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-3 flex-wrap">
+              <div className="flex items-center gap-1.5">
+                <div className="eyebrow">Holdings</div>
+                <InfoTooltip text="Every position you currently own, with its value, weight and performance. Search or filter to focus on individual securities." />
+              </div>
               <Segmented value={holdFilter} onChange={setHoldFilter} options={holdFilters} />
               <div className="relative">
                 <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-faint pointer-events-none" />
@@ -634,7 +648,10 @@ export function Dashboard() {
       {data.accountDividends.length > 0 && (
         <section id="ov-dividends" className="scroll-mt-24 card !p-0 overflow-hidden mt-6">
           <div className="px-4 py-3 border-b border-hairline flex items-center justify-between">
-            <div className="eyebrow">Dividends by security · net CHF</div>
+            <div className="flex items-center gap-1.5">
+              <div className="eyebrow">Dividends by security · net CHF</div>
+              <InfoTooltip text="The income your holdings have paid, per security, net of tax in CHF — the cash your portfolio generates on top of price gains." />
+            </div>
             <div className="text-xs text-text-faint">from account statement</div>
           </div>
           <div className="overflow-x-auto">

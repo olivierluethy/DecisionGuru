@@ -112,15 +112,16 @@ competitors(symbol)
   gedrosselt — begrenzt auf die paar Peer-Symbole, kein Massen-Fan-out.
 - Discovery-Ergebnis-Cache (TTL) verhindert wiederholte Industry-Calls beim erneuten Öffnen.
 
-## Teststrategie
+## Verifikation
 
-- Unit: `discover_peers` mit gemocktem `yf.Industry` → TTWO(industryKey) liefert EA/RBLX/…
-- Unit: Fallback — Discovery wirft/leer → Pool nutzt `UNIVERSE_SEED`.
-- Unit: `same_market`-Guard bleibt wirksam (Fremd-Industry-Peer wird gefiltert).
-- Unit: On-Demand-Fetch — Discovery-Peer ohne Cache löst `get_fundamentals` aus und cacht.
-- Integration: `GET /research/market/TTWO` (bzw. `/research/competitors/TTWO`) mit gemocktem
-  Provider liefert nicht-leere Peers inkl. EA.
-- Regression: Titel, die heute schon Peers zeigen (z. B. ein SMI-Wert), bleiben korrekt.
+Automatisierte Tests sind auf Wunsch des Nutzers **nicht Teil dieses Umfangs**. Verifikation
+erfolgt manuell nach der Implementierung:
+
+- `GET /research/market/TTWO` (bzw. `/research/competitors/TTWO`) aufrufen und prüfen, dass
+  nicht-leere Peers inkl. EA zurückkommen.
+- In der App eine Aktie ohne bisher gecachte Peers öffnen → Peers erscheinen (ggf. nach kurzer
+  Wartezeit durch den On-Demand-Fetch).
+- Kurz gegenprüfen, dass ein Titel, der heute schon Peers zeigt, weiterhin korrekt bleibt.
 
 ## Nicht im Umfang (YAGNI)
 

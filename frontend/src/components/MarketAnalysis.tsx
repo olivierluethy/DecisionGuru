@@ -28,7 +28,7 @@ const LINE_COLORS = ['#4FD0E0', '#D9A94E', '#A98BFF', '#B6D94E', '#EC6DB0'];
 
 export function MarketAnalysis({ symbol }: { symbol: string }) {
   const [range, setRange] = useState<MarketRange>('1Y');
-  const researchSymbolView = useApp((s) => s.researchSymbolView);
+  const openModal = useApp((s) => s.openModal);
   const defaultBenchmark = useApp((s) => s.benchmark);
   // Comparison lines are user-selectable: seed with the global benchmark (e.g. VWRL.SW), then
   // freely add/remove ETFs or companies — even from another market — via the selector below.
@@ -167,8 +167,8 @@ export function MarketAnalysis({ symbol }: { symbol: string }) {
                       <td className="td">
                         <button
                           type="button"
-                          onClick={() => researchSymbolView(c.symbol)}
-                          title={`Open ${c.symbol} in Research`}
+                          onClick={() => openModal({ kind: 'opportunity', symbol: c.symbol, name: c.name, currency: c.currency })}
+                          title={`Open ${c.symbol}`}
                           className="group inline-flex items-center gap-2 text-left cursor-pointer"
                         >
                           <span className="font-mono text-text group-hover:text-azure underline-offset-2 group-hover:underline">{c.symbol}</span>

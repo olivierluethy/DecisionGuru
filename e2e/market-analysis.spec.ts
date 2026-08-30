@@ -6,7 +6,8 @@ import path from 'node:path';
  * "Market Analysis" competitor table:
  *  - autonomous discovery lists same-industry peers (EA, RBLX, …), not just the subject;
  *  - the table shows market-cap and return numbers;
- *  - each company row is clickable and navigates into Research for that symbol.
+ *  - each company row is clickable and opens the OpportunityModal for that symbol
+ *    (from where the user can still choose "Open Research").
  *
  * The research endpoints are stubbed with captured fixtures so the test is deterministic
  * and independent of the rate-limited live provider. The app has no URL routing; we
@@ -16,7 +17,7 @@ import path from 'node:path';
 const fixture = (name: string) =>
   readFileSync(path.join(process.cwd(), 'e2e', 'fixtures', name), 'utf-8');
 
-test('Market Analysis fills the table and rows open Research', async ({ page }) => {
+test('Market Analysis fills the table and rows open the OpportunityModal', async ({ page }) => {
   await page.route('**/research/asset/**', (route) =>
     route.fulfill({ contentType: 'application/json', body: fixture('asset-TTWO.json') }));
   await page.route('**/research/market/**', (route) =>
@@ -40,12 +41,13 @@ test('Market Analysis fills the table and rows open Research', async ({ page }) 
 
   await page.screenshot({ path: 'e2e/screenshots/ttwo-market-analysis.png' });
 
-  // Company rows are clickable → navigate into Research for that symbol.
+  // Company rows are clickable → open the OpportunityModal for that symbol
+  // (the modal's footer still offers "Open Research"; we stay in the current view).
   await page.getByRole('button', { name: /Electronic Arts/ }).first().click();
   await expect
-    .poll(() => page.evaluate(() => (window as any).__app.getState().researchSymbol), { timeout: 10_000 })
-    .toBe('EA');
+    .poll(() => page.evaluate(() => (window as any).__app.getState().modal?.kind), { timeout: 10_000 })
+    .toBe('opportunity');
   await expect
-    .poll(() => page.evaluate(() => (window as any).__app.getState().view), { timeout: 10_000 })
-    .toBe('research');
+    .poll(() => page.evaluate(() => (window as any).__app.getState().modal?.symbol), { timeout: 10_000 })
+    .toBe('EA');
 });

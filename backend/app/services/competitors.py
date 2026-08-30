@@ -19,7 +19,8 @@ from datetime import datetime, timezone
 
 from . import repo
 from .watchlist import list_watchlist
-from .fundamentals import get_cached_fundamentals
+from .fundamentals import get_cached_fundamentals, get_fundamentals
+from .peer_discovery import discover_peers
 from .fx import get_fx_rate
 from ..reference.universe import UNIVERSE_SEED
 from ..reference.classification import same_market
@@ -45,15 +46,25 @@ def _peer(sym: str, snap: dict, is_subject: bool, market_cap_chf: float | None) 
 def competitors(symbol: str) -> dict:
     subject = get_cached_fundamentals(symbol)
     subj_snap = (subject or {}).get("snapshot")
+    # industryKey treibt die autonome Discovery. Ältere Cache-Einträge kennen das Feld noch
+    # nicht → Subjekt einmal on-demand nachladen, damit Discovery greifen kann.
+    if subj_snap is not None and not subj_snap.get("industryKey"):
+        subject = get_fundamentals(symbol) or subject
+        subj_snap = (subject or {}).get("snapshot")
     sector = (subj_snap or {}).get("sector")
     industry = (subj_snap or {}).get("industry")
     if not subj_snap or not sector:
         return {"symbol": symbol, "sector": sector, "industry": industry,
                 "peers": [], "peerCount": 0, "subjectRank": None}
 
+    # Autonome Peers aus der Industry des Subjekts; Fallback-Quellen dahinter.
+    discovered = discover_peers((subj_snap or {}).get("industryKey"))
+    discovered_set = set(discovered)
+
     holdings = [i["symbol"] for i in repo.list_instruments() if i.get("symbol")]
     watch = [w["symbol"] for w in list_watchlist() if w.get("symbol")]
-    pool = list(dict.fromkeys([symbol, *UNIVERSE_SEED, *holdings, *watch]))
+    # Discovery zuerst, dann Holdings/Watchlist, dann die kuratierte Liste als Fallback.
+    pool = list(dict.fromkeys([symbol, *discovered, *holdings, *watch, *UNIVERSE_SEED]))
 
     # FX to CHF for the market-cap ranking — cached ECB rates, memoised per currency so the
     # loop resolves at most one rate per distinct currency (no per-peer live provider call).
@@ -73,7 +84,9 @@ def competitors(symbol: str) -> dict:
 
     peers: list[dict] = []
     for sym in pool:
-        data = get_cached_fundamentals(sym)
+        # Discovery-Peers on-demand live holen (+ cachen); alle übrigen bleiben cache-only,
+        # damit die kuratierte Universe nicht in hunderte rate-limitierte Calls ausfächert.
+        data = get_fundamentals(sym) if sym in discovered_set else get_cached_fundamentals(sym)
         snap = (data or {}).get("snapshot")
         if not snap:
             continue

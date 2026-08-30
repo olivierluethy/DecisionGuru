@@ -4,6 +4,7 @@ import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tool
 import { api, type MarketAnalysisResult, type MarketClassification } from '../lib/api';
 import { Spinner, EmptyState } from './ui';
 import { fmtPct, fmtPctSigned, fmtMoney, fmtDate } from '../lib/format';
+import { useApp } from '../store';
 
 const RANGES = ['1M', '3M', '6M', '1Y', '3Y', '5Y'] as const;
 type MarketRange = (typeof RANGES)[number];
@@ -26,11 +27,21 @@ const LINE_COLORS = ['#4FD0E0', '#D9A94E', '#A98BFF', '#B6D94E', '#EC6DB0'];
 
 export function MarketAnalysis({ symbol }: { symbol: string }) {
   const [range, setRange] = useState<MarketRange>('1Y');
+  const researchSymbolView = useApp((s) => s.researchSymbolView);
   const { data, isLoading, isError } = useQuery({
     queryKey: ['market-analysis', symbol, range],
     queryFn: () => api.marketAnalysis(symbol, range),
     staleTime: 60 * 60_000,
     retry: 1,
+    // Peer price history is warmed in the background on first open; poll until peer returns
+    // land (or give up after a bounded number of tries) so the table fills in on its own.
+    refetchInterval: (query) => {
+      const d = query.state.data as MarketAnalysisResult | undefined;
+      if (!d) return false;
+      const peers = d.competitors.filter((c) => !c.isSubject);
+      const incomplete = peers.length > 0 && peers.some((c) => c.returns[d.range] == null);
+      return incomplete && query.state.dataUpdateCount < 12 ? 4000 : false;
+    },
   });
 
   if (isLoading) return <Spinner label="Reading the market…" />;
@@ -125,7 +136,7 @@ export function MarketAnalysis({ symbol }: { symbol: string }) {
                 <thead>
                   <tr>
                     <th className="th">Company</th>
-                    <th className="th text-right">Mkt cap (CHF)</th>
+                    <th className="th text-right">Mkt cap</th>
                     <th className="th text-right">P/E</th>
                     <th className="th text-right">Net margin</th>
                     <th className="th text-right">{range} return</th>
@@ -136,11 +147,24 @@ export function MarketAnalysis({ symbol }: { symbol: string }) {
                   {data.competitors.map((c) => (
                     <tr key={c.symbol} className={c.isSubject ? 'bg-surface-2' : ''}>
                       <td className="td">
-                        <span className="font-mono text-text">{c.symbol}</span>
-                        {c.isSubject && <span className="ml-2 text-[10px] uppercase text-azure">this</span>}
-                        {c.name && <span className="ml-2 text-text-faint truncate">{c.name}</span>}
+                        <button
+                          type="button"
+                          onClick={() => researchSymbolView(c.symbol)}
+                          title={`Open ${c.symbol} in Research`}
+                          className="group inline-flex items-center gap-2 text-left cursor-pointer"
+                        >
+                          <span className="font-mono text-text group-hover:text-azure underline-offset-2 group-hover:underline">{c.symbol}</span>
+                          {c.isSubject && <span className="text-[10px] uppercase text-azure">this</span>}
+                          {c.name && <span className="text-text-faint truncate group-hover:text-text-muted">{c.name}</span>}
+                        </button>
                       </td>
-                      <td className="td text-right font-mono tnum">{c.marketCapCHF != null ? fmtMoney(c.marketCapCHF, 'CHF', false) : '—'}</td>
+                      <td className="td text-right font-mono tnum">
+                        {c.marketCapCHF != null
+                          ? fmtMoney(c.marketCapCHF, 'CHF', false)
+                          : c.marketCap != null
+                            ? fmtMoney(c.marketCap, c.currency ?? 'USD', false)
+                            : '—'}
+                      </td>
                       <td className="td text-right font-mono tnum">{c.trailingPE != null ? c.trailingPE.toFixed(1) : '—'}</td>
                       <td className="td text-right font-mono tnum">{fmtPct(c.profitMargins, 1)}</td>
                       <td className={`td text-right font-mono tnum ${c.returns[range] == null ? 'text-text-faint' : c.returns[range]! < 0 ? 'text-loss' : 'text-gain'}`}>{fmtPctSigned(c.returns[range] ?? null)}</td>

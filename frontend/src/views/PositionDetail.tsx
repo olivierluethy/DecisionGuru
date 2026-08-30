@@ -23,6 +23,7 @@ import {
   Newspaper,
   StickyNote,
   Radar,
+  PieChart,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { api } from '../lib/api';
@@ -53,7 +54,7 @@ import { catchUp } from '../lib/rebase';
 import { PeriodReturns } from '../components/PeriodReturns';
 import { NewsFeed } from '../components/NewsFeed';
 import { Globe } from '../components/Globe';
-import { Segmented, Spinner, Stat, KindBadge, StaleDot, DataStatusBadge, SectionHeader } from '../components/ui';
+import { Segmented, Spinner, Stat, KindBadge, StaleDot, DataStatusBadge, SectionHeader, InfoTooltip } from '../components/ui';
 import { BenchmarkSelect } from '../components/BenchmarkSelect';
 import { NotesPanel } from '../components/NotesPanel';
 import { MarketStatusChip } from '../components/MarketStatusChip';
@@ -324,8 +325,9 @@ export function PositionDetail() {
       <section id="sec-opportunity" className={`card mb-6 scroll-mt-24 border-l-2 ${aheadOfEtf ? 'border-l-gain' : 'border-l-loss'}`}>
         <div className="grid lg:grid-cols-[minmax(300px,1fr)_2fr] gap-6">
           <div className="flex flex-col justify-center">
-            <div className="eyebrow mb-2">
-              Opportunity cost vs {c.benchmarkSymbol} · {preTax ? 'pre-tax' : 'after-tax'} · CHF
+            <div className="eyebrow mb-2 flex items-center gap-1.5">
+              <span>Opportunity cost vs {c.benchmarkSymbol} · {preTax ? 'pre-tax' : 'after-tax'} · CHF</span>
+              <InfoTooltip text={`The core decision — this holding's after-tax value against the same money invested in ${c.benchmarkSymbol}, tracked over time. Green means you're ahead of the ETF; red means it would have done better.`} />
             </div>
             <div className={`font-mono font-semibold text-display-xl tnum leading-none ${plClass(delta)}`}>
               {fmtCHFSigned(delta)}
@@ -409,6 +411,7 @@ export function PositionDetail() {
           eyebrow={`${preTax ? 'Pre-tax' : 'After-tax'} · CHF`}
           title="Opportunity cost vs alternatives"
           className="mb-4"
+          info="The same after-tax opportunity-cost read, but against any alternative you choose — the configured benchmark ETFs and any individual stock you add — so you can weigh this holding against real substitutes, not just one ETF."
         />
         <OpportunityCostVsAlternatives
           id={id!}
@@ -427,6 +430,7 @@ export function PositionDetail() {
             eyebrow={inst.symbol}
             title="Full price history"
             className="mb-3"
+            info="The security's entire price record. Use it to see long-run trends and judge how today's price sits against past highs, lows, and periods of surge or stagnation."
             action={
               <div className="flex items-center gap-3 text-[11px] text-text-faint flex-wrap">
                 <span className="flex items-center gap-1"><span className="w-4 h-0.5 bg-azure inline-block" /> {inst.symbol}</span>
@@ -522,7 +526,8 @@ export function PositionDetail() {
       {/* Company fundamentals — valuation, profitability, multi-year figures, index weight */}
       {!delisted && inst.kind === 'stock' && (
         <section id="sec-fundamentals" className="card mb-6 scroll-mt-24">
-          <SectionHeader icon={Building2} eyebrow={inst.symbol} title="Company fundamentals" className="mb-4" />
+          <SectionHeader icon={Building2} eyebrow={inst.symbol} title="Company fundamentals" className="mb-4"
+            info="The business behind the stock — market cap, valuation multiples like P/E, profit margins, revenue history and the analyst view. Shows whether the price is backed by real earnings." />
           <Fundamentals symbol={inst.symbol} domicile={inst.domicile} name={inst.name} currency={inst.currency} />
         </section>
       )}
@@ -530,7 +535,8 @@ export function PositionDetail() {
       {/* Value-investing analysis — intrinsic value, quality, ETF-realism verdict */}
       {!delisted && inst.kind === 'stock' && (
         <section id="sec-value" className="card mb-6 scroll-mt-24">
-          <SectionHeader icon={Gem} eyebrow={`What ${inst.symbol} is really worth`} title="Value analysis" className="mb-4" />
+          <SectionHeader icon={Gem} eyebrow={`What ${inst.symbol} is really worth`} title="Value analysis" className="mb-4"
+            info="An estimate of what the company is intrinsically worth versus its current price — fair-value band, margin of safety and a quality scorecard — to judge whether it looks cheap or expensive." />
           <ValueAnalysis
             symbol={inst.symbol}
             price={p.currentPrice}
@@ -545,14 +551,17 @@ export function PositionDetail() {
       {/* Market analysis — sector, competitors & relative performance */}
       {!delisted && inst.kind === 'stock' && (
         <section id="sec-market" className="card mb-6 scroll-mt-24">
-          <SectionHeader icon={Radar} eyebrow="Sector · competitors · relative performance" title="Market analysis" className="mb-4" />
+          <SectionHeader icon={Radar} eyebrow="Sector · competitors · relative performance" title="Market analysis" className="mb-4"
+            info="How this stock stacks up against its sector and closest competitors, and whether recent weakness or strength is company-specific or market-wide." />
           <MarketAnalysis symbol={inst.symbol} />
         </section>
       )}
 
       {/* Portfolio fit — direct + indirect ETF exposure and diversification context. */}
       <section id="sec-fit" className="card mb-6 scroll-mt-24">
-        <PortfolioFit symbol={inst.symbol} />
+        <SectionHeader icon={PieChart} title="Portfolio fit" className="mb-4"
+          info="How much of this company you already hold — directly and through your ETFs — and whether adding to it would diversify or concentrate your portfolio." />
+        <PortfolioFit symbol={inst.symbol} hideEyebrow />
         {(() => {
           const y = yahooUrl(inst.symbol);
           const g = googleUrl(inst.symbol);
@@ -608,13 +617,15 @@ export function PositionDetail() {
 
       {!delisted && (
         <section id="sec-news" className="card mt-6 scroll-mt-24">
-          <SectionHeader icon={Newspaper} eyebrow={inst.symbol} title="Latest headlines" className="mb-4" />
+          <SectionHeader icon={Newspaper} eyebrow={inst.symbol} title="Latest headlines" className="mb-4"
+            info="Recent news for this company or fund, so you can read price moves in the context of what's actually happening." />
           <NewsFeed symbol={inst.symbol} limit={6} />
         </section>
       )}
 
       <section id="sec-notes" className="card mt-6 scroll-mt-24">
-        <SectionHeader icon={StickyNote} title="Notes" className="mb-4" />
+        <SectionHeader icon={StickyNote} title="Notes" className="mb-4"
+          info="Your own notes on this position — a place to record why you bought, your thesis, and what would change your mind." />
         <NotesPanel target="instrument" targetId={id} />
       </section>
     </div>
@@ -765,7 +776,10 @@ function ProjectionSection({ id, benchmark }: { id: number; benchmark: string })
   return (
     <section className="card">
       <div className="flex items-center justify-between mb-1">
-        <h3 className="font-display text-base font-semibold">Forward projection</h3>
+        <div className="flex items-center gap-1.5">
+          <h3 className="font-display text-base font-semibold">Forward projection</h3>
+          <InfoTooltip text="A forward estimate of where this holding could go over several horizons — holding on versus selling now and buying the benchmark, both starting from today's value. A projection, not a promise." />
+        </div>
         <span className="chip">hypothetical</span>
       </div>
       <p className="text-xs text-text-muted mb-4">
@@ -837,6 +851,7 @@ function DividendShockSection({ id }: { id: number }) {
       <div className="flex items-center gap-2 mb-1">
         <TrendingDown size={16} className="text-loss" />
         <h3 className="font-display text-base font-semibold">Dividend-shock scenario</h3>
+        <InfoTooltip text="A stress test: what this holding's income and value would look like if the dividend were cut by a given amount." />
       </div>
       <p className="text-xs text-text-muted mb-4">
         What if this stock cuts or eliminates its dividend? Annual income effect, after tax.
@@ -898,7 +913,10 @@ function WhatIfSaleSection({
   return (
     <section className="card">
       <div className="flex items-center justify-between mb-1">
-        <h3 className="font-display text-base font-semibold">What if I'd sold &amp; reinvested?</h3>
+        <div className="flex items-center gap-1.5">
+          <h3 className="font-display text-base font-semibold">What if I'd sold &amp; reinvested?</h3>
+          <InfoTooltip text="A counterfactual: had you sold on a chosen date and reinvested the proceeds in the benchmark, where would you stand today — versus simply holding on." />
+        </div>
         <span className="chip">hypothetical</span>
       </div>
       <p className="text-xs text-text-muted mb-4">
@@ -1023,7 +1041,10 @@ function TransactionsCard({
 }) {
   return (
     <section className="card !p-0 overflow-hidden">
-      <h3 className="font-display text-base font-semibold px-5 pt-4 pb-3">Transactions</h3>
+      <div className="flex items-center gap-1.5 px-5 pt-4 pb-3">
+        <h3 className="font-display text-base font-semibold">Transactions</h3>
+        <InfoTooltip text="Every buy, sell and dividend recorded for this holding — the raw trail behind the numbers above." />
+      </div>
       <div className="overflow-x-auto max-h-[360px] overflow-y-auto">
         <table className="w-full text-sm">
           <thead className="sticky top-0">
@@ -1096,7 +1117,10 @@ function AllocationCard({ instrumentId }: { instrumentId: number }) {
   const a = alloc.data;
   return (
     <section className="card flex flex-col items-center">
-      <h3 className="font-display text-base font-semibold self-start mb-1">Geographic exposure</h3>
+      <div className="flex items-center gap-1.5 self-start mb-1">
+        <h3 className="font-display text-base font-semibold">Geographic exposure</h3>
+        <InfoTooltip text="What you're actually invested in beneath the ticker — the mix of countries and sectors this holding gives you exposure to." />
+      </div>
       <p className="text-xs text-text-muted self-start mb-3">
         {a ? `Source: ${a.source}` : 'Loading allocation…'}
       </p>

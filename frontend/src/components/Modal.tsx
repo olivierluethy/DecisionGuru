@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode, type Ref } from 'react';
 import { X } from 'lucide-react';
 
 interface ModalProps {
@@ -8,6 +8,11 @@ interface ModalProps {
   children: ReactNode;
   footer?: ReactNode;
   size?: 'sm' | 'md' | 'lg' | 'xl';
+  /** Padding for the scroll body. Override (e.g. `p-0`) when the content manages its own
+   *  layout — a modal with a sticky side rail needs the rail flush to the scroll edges. */
+  bodyClassName?: string;
+  /** Ref to the scroll container, so content can drive scroll-spy against it. */
+  bodyRef?: Ref<HTMLDivElement>;
 }
 
 const SIZES = {
@@ -17,7 +22,7 @@ const SIZES = {
   xl: 'max-w-6xl',
 };
 
-export function Modal({ title, subtitle, onClose, children, footer, size = 'md' }: ModalProps) {
+export function Modal({ title, subtitle, onClose, children, footer, size = 'md', bodyClassName = 'px-5 py-4', bodyRef }: ModalProps) {
   const panelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -63,7 +68,7 @@ export function Modal({ title, subtitle, onClose, children, footer, size = 'md' 
             <X size={18} />
           </button>
         </header>
-        <div className="px-5 py-4 max-h-[70vh] overflow-y-auto">{children}</div>
+        <div ref={bodyRef} className={`max-h-[70vh] overflow-y-auto ${bodyClassName}`}>{children}</div>
         {footer && (
           <footer className="flex items-center justify-end gap-2 px-5 py-3.5 border-t border-hairline bg-bg-elev/50 rounded-b-lg">
             {footer}

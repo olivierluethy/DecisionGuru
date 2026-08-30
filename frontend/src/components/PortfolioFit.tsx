@@ -5,7 +5,7 @@ import { fmtPct } from '../lib/format';
 
 /** "Does buying this improve MY portfolio?" — ownership, direct + indirect ETF exposure,
  *  and a diversification read. Unavailable data is labelled, never fabricated. */
-export function PortfolioFit({ symbol }: { symbol: string }) {
+export function PortfolioFit({ symbol, hideEyebrow = false }: { symbol: string; hideEyebrow?: boolean }) {
   const { data, isLoading, isError } = useQuery({
     queryKey: ['fit', symbol],
     queryFn: () => api.fit(symbol),
@@ -20,7 +20,7 @@ export function PortfolioFit({ symbol }: { symbol: string }) {
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-2">
-        <span className="eyebrow">Portfolio fit</span>
+        {!hideEyebrow && <span className="eyebrow">Portfolio fit</span>}
         <span className="chip !py-0 !px-2">{data.owned ? 'Owned' : 'Not owned'}</span>
       </div>
       <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-[13px]">

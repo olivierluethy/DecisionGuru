@@ -46,9 +46,9 @@ def _peer(sym: str, snap: dict, is_subject: bool, market_cap_chf: float | None) 
 def competitors(symbol: str) -> dict:
     subject = get_cached_fundamentals(symbol)
     subj_snap = (subject or {}).get("snapshot")
-    # industryKey treibt die autonome Discovery. Ältere Cache-Einträge kennen das Feld noch
-    # nicht → Subjekt einmal on-demand nachladen, damit Discovery greifen kann.
-    if subj_snap is not None and not subj_snap.get("industryKey"):
+    # industryKey drives the autonomous discovery. Fetch on-demand when the subject is
+    # uncached entirely, or when its cached snapshot predates the industryKey field.
+    if subj_snap is None or not subj_snap.get("industryKey"):
         subject = get_fundamentals(symbol) or subject
         subj_snap = (subject or {}).get("snapshot")
     sector = (subj_snap or {}).get("sector")

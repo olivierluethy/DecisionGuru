@@ -12,9 +12,13 @@
     "dev:backend": "cd backend && uv run uvicorn app.main:app --reload --host 127.0.0.1 --port 5178",
     "dev:frontend": "npm --workspace frontend run dev",
     "build": "npm --workspace frontend run build",
-    "start": "cd backend && uv run gunicorn app.main:app -k uvicorn.workers.UvicornWorker -w 1 -b 0.0.0.0:5178"
+    "start": "cd backend && uv run gunicorn app.main:app -k uvicorn.workers.UvicornWorker -w 1 -b 0.0.0.0:5178",
+    "test:e2e": "playwright test",
+    "test:e2e:headed": "playwright test --headed",
+    "e2e:report": "playwright show-report"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "concurrently": "^9.1.0"
   },
   "engines": {

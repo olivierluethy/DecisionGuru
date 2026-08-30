@@ -15,6 +15,7 @@ log = get_logger("peer_discovery")
 
 # Industry-Zusammensetzung ändert sich selten → großzügiger In-Memory-TTL.
 _TTL_S = 24 * 3600
+_MAX_PEERS = 20
 _cache: dict[str, tuple[float, list[str]]] = {}
 
 
@@ -26,6 +27,11 @@ def discover_peers(industry_key: str | None) -> list[str]:
     hit = _cache.get(industry_key)
     if hit is not None and (now - hit[0]) < _TTL_S:
         return hit[1]
-    peers = provider.industry_peers(industry_key)
-    _cache[industry_key] = (now, peers)
+    peers = provider.industry_peers(industry_key)[:_MAX_PEERS]
+    if peers:
+        _cache[industry_key] = (now, peers)
+    else:
+        # Don't cache an empty/failed lookup — the provider may just be rate-limited;
+        # let the next call retry instead of pinning this industry to "no peers".
+        log.debug("no peers discovered for industry %s (not cached)", industry_key)
     return peers

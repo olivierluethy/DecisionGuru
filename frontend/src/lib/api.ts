@@ -915,7 +915,8 @@ export type MarketClassification =
 export interface MarketSeriesPoint { date: string; value: number }
 export interface MarketCompetitor {
   symbol: string; name: string | null; isSubject: boolean;
-  marketCapCHF: number | null; trailingPE: number | null; priceToBook: number | null;
+  marketCapCHF: number | null; marketCap: number | null; currency: string | null;
+  trailingPE: number | null; priceToBook: number | null;
   profitMargins: number | null; revenueGrowth: number | null;
   returns: Record<string, number | null>; relativeToSubjectPct: number | null;
 }

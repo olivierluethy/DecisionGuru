@@ -156,6 +156,10 @@ def market_analysis(symbol: str, range_key: str = "1Y", settings: dict | None = 
 
     # Per-security cached returns (subject + peers), computed once.
     peers = comp.get("peers") or []
+    # Warm the (bounded) peer set's price history in the background so their returns fill in
+    # on a following poll — peers are now a small, intentional discovered set, not the old
+    # unbounded universe, so warming them no longer risks a fan-out.
+    _warm_background([p["symbol"] for p in peers if p.get("symbol")])
     returns_by_symbol: dict[str, dict] = {p["symbol"]: returns_for(p["symbol"]) for p in peers}
     if symbol not in returns_by_symbol:
         returns_by_symbol[symbol] = returns_for(symbol)
@@ -168,8 +172,10 @@ def market_analysis(symbol: str, range_key: str = "1Y", settings: dict | None = 
         peer_pct = r.get(range_key)
         competitors_out.append({
             "symbol": p["symbol"], "name": p.get("name"), "isSubject": p.get("isSubject", False),
-            # CHF-normalised cap computed once in competitors() (also drives the peer ranking).
+            # CHF-normalised cap computed once in competitors() (also drives the peer ranking);
+            # native cap + currency travel too so the UI can still show a value when no FX rate.
             "marketCapCHF": p.get("marketCapCHF"),
+            "marketCap": p.get("marketCap"), "currency": p.get("currency"),
             "trailingPE": p.get("trailingPE"), "priceToBook": p.get("priceToBook"),
             "profitMargins": p.get("profitMargins"), "revenueGrowth": p.get("revenueGrowth"),
             "returns": r,

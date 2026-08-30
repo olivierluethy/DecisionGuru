@@ -38,7 +38,7 @@ test('Market Analysis fills the table and rows open Research', async ({ page }) 
   await expect(page.getByText(/69\.6\s*%/).first()).toBeVisible(); // RBLX 1Y return
   await expect(page.getByText(/69\.8\s*%/).first()).toBeVisible(); // RBLX vs this stock
 
-  await page.screenshot({ path: 'e2e/screenshots/ttwo-market-analysis.png', fullPage: true });
+  await page.screenshot({ path: 'e2e/screenshots/ttwo-market-analysis.png' });
 
   // Company rows are clickable → navigate into Research for that symbol.
   await page.getByRole('button', { name: /Electronic Arts/ }).first().click();

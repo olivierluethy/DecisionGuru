@@ -1,14 +1,35 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient } from '@tanstack/react-query';
+import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
+import { createAsyncStoragePersister } from '@tanstack/query-async-storage-persister';
+import { get, set, del } from 'idb-keyval';
 import App from './App';
 import { initRouter } from './lib/router';
 import './index.css';
 
+const DAY = 24 * 60 * 60 * 1000;
+
 const queryClient = new QueryClient({
   defaultOptions: {
-    queries: { staleTime: 30_000, retry: 1, refetchOnWindowFocus: false },
+    queries: {
+      // Recent values are reused instead of refetched on every mount; still refreshed
+      // in the background once past staleTime (stale-while-revalidate).
+      staleTime: 5 * 60_000,
+      // Inactive data is kept long enough to be persisted and rehydrated after a reload.
+      gcTime: DAY,
+      retry: 1,
+      refetchOnWindowFocus: false,
+    },
   },
+});
+
+// Persist the query cache in IndexedDB so a full page reload paints the last-known
+// values instantly (no all-from-scratch spinner), then revalidates in the background.
+const persister = createAsyncStoragePersister({
+  storage: { getItem: get, setItem: set, removeItem: del },
+  key: 'decisionguru-query-cache',
+  throttleTime: 1_000,
 });
 
 // Bind the URL hash to the navigation store before the first render so a shared
@@ -17,8 +38,19 @@ initRouter();
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <QueryClientProvider client={queryClient}>
+    <PersistQueryClientProvider
+      client={queryClient}
+      persistOptions={{
+        persister,
+        maxAge: DAY,
+        // Bump when cached shapes change so stale persisted data is discarded on deploy.
+        buster: 'v1',
+        dehydrateOptions: {
+          shouldDehydrateQuery: (query) => query.state.status === 'success',
+        },
+      }}
+    >
       <App />
-    </QueryClientProvider>
+    </PersistQueryClientProvider>
   </React.StrictMode>,
 );

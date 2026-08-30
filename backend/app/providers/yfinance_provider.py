@@ -228,6 +228,7 @@ class YFinanceProvider(MarketDataProvider):
                 "currency": info.get("currency") or info.get("financialCurrency"),
                 "sector": info.get("sector"),
                 "industry": info.get("industry"),
+                "industryKey": info.get("industryKey"),
                 "country": info.get("country"),
                 "exchange": info.get("exchange"),
                 "marketCap": num("marketCap"),
@@ -433,6 +434,28 @@ class YFinanceProvider(MarketDataProvider):
             return self._call(f"search {query}", _fetch)
         except Exception as exc:  # noqa: BLE001
             log.warning("search failed for %s: %s", query, exc)
+            return []
+
+    # ---- industry peers (autonomous competitor discovery) ----
+    def industry_peers(self, industry_key: str) -> list[str]:
+        """Ticker symbols in a Yahoo industry (kebab-case key, e.g.
+        'electronic-gaming-multimedia'), ranked by Yahoo's market weight. This is the
+        autonomous peer source: keyed off the subject's own industryKey, no curated list.
+        Returns [] on any failure so callers can fall back to the curated universe."""
+        if not industry_key:
+            return []
+
+        def _fetch() -> list[str]:
+            ind = yf.Industry(industry_key)
+            tc = ind.top_companies
+            if tc is None or tc.empty:
+                return []
+            return [str(s) for s in tc.index]
+
+        try:
+            return self._call(f"industry_peers {industry_key}", _fetch) or []
+        except Exception as exc:  # noqa: BLE001
+            log.warning("industry_peers failed for %s: %s", industry_key, exc)
             return []
 
 

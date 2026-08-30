@@ -586,7 +586,23 @@ export function Dashboard() {
                           <KindBadge kind={p.instrument.kind} />
                           <div className="min-w-0">
                             <div className="flex items-center gap-2">
-                              <span className="font-mono text-text">{p.instrument.symbol}</span>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openModal({
+                                    kind: 'opportunity',
+                                    symbol: p.instrument.symbol,
+                                    name: p.instrument.name,
+                                    price: p.currentPrice,
+                                    currency: p.instrument.currency,
+                                  });
+                                }}
+                                title={`Open ${p.instrument.symbol}`}
+                                className="font-mono text-text hover:text-azure cursor-pointer"
+                              >
+                                {p.instrument.symbol}
+                              </button>
                               {sold && (
                                 <span className="chip !py-0 !px-1.5 text-gold border-gold/40">sold</span>
                               )}

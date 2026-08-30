@@ -1,3 +1,4 @@
+import { useId } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   ComposedChart, Line, ReferenceArea, ReferenceLine, ReferenceDot, CartesianGrid,
@@ -21,6 +22,23 @@ const C = {
   surface2: '#1A2331',
   bg: '#0A0E15',
 } as const;
+
+/** Left→right fade gradients for the valuation zones and their boundary lines. The zones are a
+ *  snapshot of *today's* fair value, so they are fully opaque at the right edge (now) and dissolve
+ *  toward the left (the past) — the price line stays solid because it is real history. `z*` fill the
+ *  areas, `l*` stroke the dashed threshold/fair-value lines (stronger max opacity). `userSpaceOnUse`
+ *  with percentages spans the whole SVG width, so the flat horizontal lines fade too — an
+ *  objectBoundingBox gradient collapses on a zero-height line and would hide it. */
+const FADE_GRADS: { id: string; color: string; max: number }[] = [
+  { id: 'zbuy', color: C.gain, max: 0.15 },
+  { id: 'zfair', color: C.azure, max: 0.08 },
+  { id: 'zover', color: C.warn, max: 0.14 },
+  { id: 'zsell', color: C.loss, max: 0.18 },
+  { id: 'lentry', color: C.gain, max: 0.85 },
+  { id: 'lover', color: C.warn, max: 0.75 },
+  { id: 'lsell', color: C.loss, max: 0.85 },
+  { id: 'lfair', color: C.textFaint, max: 0.9 },
+];
 
 /** Band → semantic colour + copy. Reuses the reserved gain/loss/warn tokens: a cheap
  *  price is a gain, an expensive one a loss, with gold marking the overvalued step. */
@@ -64,6 +82,10 @@ export function PriceBandChart({
     retry: 1,
   });
 
+  // Unique, colon-free prefix so this instance's gradient ids never clash with another chart's.
+  const uid = useId().replace(/:/g, '');
+  const todayISO = new Date().toISOString().slice(0, 10);
+
   // Convert every monetary figure by the same scalar FX rate so the chart matches the
   // CHF headline; a scalar multiply preserves the zone shape and all relationships. When
   // no rate is supplied the chart stays in the native currency (unchanged behavior).
@@ -95,6 +117,9 @@ export function PriceBandChart({
             fair value {fmtMoney(fairValue, ccy)} · MoS {fmtPct(band.marginOfSafetyPct, 0)}
           </span>
         </div>
+        <p className="mt-1.5 text-[10px] leading-snug text-text-faint/90 italic">
+          Zones reflect today's fair value ({fmtDate(todayISO)}).
+        </p>
       </div>
     );
   }
@@ -107,23 +132,41 @@ export function PriceBandChart({
   const data = (history ?? []).map((h) => ({ date: h.date, close: h.close * k }));
   const lastDate = data.length ? data[data.length - 1].date : undefined;
 
-  const zone = (y1: number, y2: number, fill: string, opacity: number, key: string) => (
-    <ReferenceArea key={key} y1={Math.max(y1, lo)} y2={Math.min(y2, hi)} fill={fill}
-      fillOpacity={opacity} ifOverflow="hidden" stroke="none" />
+  // Fill each zone with its left→right fade gradient (opacity is baked into the gradient stops).
+  // An optional right-edge label turns the right margin into a legible "today's scale" column.
+  const zone = (
+    y1: number, y2: number, gradId: string, key: string,
+    label?: string, labelColor?: string,
+  ) => (
+    <ReferenceArea key={key} y1={Math.max(y1, lo)} y2={Math.min(y2, hi)}
+      fill={`url(#${uid}-${gradId})`} fillOpacity={1} ifOverflow="hidden" stroke="none"
+      label={label ? { value: label, position: 'right', fill: labelColor, fontSize: 10 } : undefined} />
   );
 
   return (
     <div>
       <div style={{ width: '100%', height }}>
         <ResponsiveContainer>
-          <ComposedChart data={data} margin={{ top: 6, right: 8, bottom: 0, left: 0 }}>
+          <ComposedChart data={data} margin={{ top: 6, right: 46, bottom: 0, left: 0 }}>
+            {/* Zone/line fade gradients: transparent in the past (left), full at today (right). */}
+            <defs>
+              {FADE_GRADS.map((g) => (
+                <linearGradient key={g.id} id={`${uid}-${g.id}`}
+                  gradientUnits="userSpaceOnUse" x1="0%" y1="0%" x2="100%" y2="0%">
+                  <stop offset="0%" stopColor={g.color} stopOpacity={0} />
+                  <stop offset="72%" stopColor={g.color} stopOpacity={g.max * 0.06} />
+                  <stop offset="100%" stopColor={g.color} stopOpacity={g.max} />
+                </linearGradient>
+              ))}
+            </defs>
             {/* Subtle horizontal grid, kept behind the bands so it never competes. */}
             <CartesianGrid stroke={C.hairline} strokeDasharray="2 4" strokeOpacity={0.5} vertical={false} />
-            {/* Zones, cheapest at the bottom. */}
-            {zone(0, entryTarget, C.gain, 0.15, 'buy')}
-            {zone(entryTarget, overvaluedAt, C.azure, 0.08, 'fair')}
-            {zone(overvaluedAt, sellZoneAt, C.warn, 0.14, 'over')}
-            {zone(sellZoneAt, hi * 2, C.loss, 0.18, 'sell')}
+            {/* Zones, cheapest at the bottom — each fades into the past (see gradients above) and
+                carries a right-edge tag, so the right margin reads as today's valuation scale. */}
+            {zone(0, entryTarget, 'zbuy', 'buy', 'Buy', C.gain)}
+            {zone(entryTarget, overvaluedAt, 'zfair', 'fair', 'Fair', C.textFaint)}
+            {zone(overvaluedAt, sellZoneAt, 'zover', 'over', 'Over', C.warn)}
+            {zone(sellZoneAt, hi * 2, 'zsell', 'sell', 'Sell', C.loss)}
             <XAxis dataKey="date" tick={{ fontSize: 10, fill: C.textFaint }}
               tickFormatter={(d) => fmtDate(d).replace(/ \d{4}$/, '')} minTickGap={48}
               stroke={C.hairline} />
@@ -135,16 +178,19 @@ export function PriceBandChart({
               labelStyle={{ color: C.textFaint }}
               formatter={(v: number) => [fmtMoney(v, ccy), 'Price']}
               labelFormatter={(d) => fmtDate(d as string)} />
-            {/* Band-boundary dividers at entry / overvalued / sell thresholds. */}
-            <ReferenceLine y={entryTarget} stroke={C.gain} strokeDasharray="4 3" strokeOpacity={0.8} />
-            <ReferenceLine y={overvaluedAt} stroke={C.warn} strokeDasharray="4 3" strokeOpacity={0.7} />
-            <ReferenceLine y={sellZoneAt} stroke={C.loss} strokeDasharray="4 3" strokeOpacity={0.8} />
-            {/* Fair value: distinct dashed reference, labelled with its value. */}
-            <ReferenceLine y={fairValue} stroke={C.textFaint} strokeDasharray="2 3"
-              label={{ value: `Fair ${fmtMoney(fairValue, ccy, false)}`, position: 'insideTopLeft',
-                fill: C.textFaint, fontSize: 10 }} />
+            {/* Band-boundary dividers — faded like the zones, crisp only at today (right edge). */}
+            <ReferenceLine y={entryTarget} stroke={`url(#${uid}-lentry)`} strokeDasharray="4 3" />
+            <ReferenceLine y={overvaluedAt} stroke={`url(#${uid}-lover)`} strokeDasharray="4 3" />
+            <ReferenceLine y={sellZoneAt} stroke={`url(#${uid}-lsell)`} strokeDasharray="4 3" />
+            {/* Fair value: distinct dashed reference (value shown in the legend below). */}
+            <ReferenceLine y={fairValue} stroke={`url(#${uid}-lfair)`} strokeDasharray="2 3" />
             <Line type="monotone" dataKey="close" stroke={C.azure} strokeWidth={2.2} dot={false}
               isAnimationActive={false} />
+            {/* "Today" divider — separates real history from today's valuation scale; the fade points here. */}
+            {lastDate !== undefined && (
+              <ReferenceLine x={lastDate} stroke={C.textFaint} strokeOpacity={0.55} strokeDasharray="3 3"
+                label={{ value: 'today', position: 'top', fill: C.textFaint, fontSize: 9 }} />
+            )}
             {/* Latest price — bright marker so "where it is now" reads instantly. */}
             {lastDate !== undefined && (
               <ReferenceDot x={lastDate} y={lastPrice} r={3.5} fill={C.azure}
@@ -162,6 +208,10 @@ export function PriceBandChart({
           fair value {fmtMoney(fairValue, ccy)} · MoS {fmtPct(band.marginOfSafetyPct, 0)}
         </span>
       </div>
+      <p className="mt-1.5 text-[10px] leading-snug text-text-faint/90 italic">
+        Zones are a snapshot of today's fair value ({fmtDate(todayISO)}). The price line is real history —
+        earlier prices were valued against different fundamentals, so the zones fade into the past.
+      </p>
     </div>
   );
 }

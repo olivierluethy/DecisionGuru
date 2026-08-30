@@ -21,7 +21,7 @@ import { BenchmarkSelect } from '../components/BenchmarkSelect';
 import { NewsFeed } from '../components/NewsFeed';
 import { Globe } from '../components/Globe';
 import { MarketStatusChip } from '../components/MarketStatusChip';
-import { Stat, Spinner, Segmented, EmptyState, KindBadge, SectionHeader } from '../components/ui';
+import { Stat, Spinner, Segmented, EmptyState, KindBadge, SectionHeader, InfoTooltip } from '../components/ui';
 import { fmtCHF, fmtCHFSigned, fmtPct, fmtPctSigned, fmtNum, plClass, priceFreshnessLabel } from '../lib/format';
 
 const WINDOWS = [
@@ -175,7 +175,10 @@ function ProspectiveSection({ symbol }: { symbol: string }) {
   return (
     <div className="card">
       <div className="flex items-center justify-between mb-3 flex-wrap gap-3">
-        <div className="eyebrow">Opportunity cost · invest {fmtCHF(amount)} today vs {benchmark}</div>
+        <div className="flex items-center gap-1.5">
+          <div className="eyebrow">Opportunity cost · invest {fmtCHF(amount)} today vs {benchmark}</div>
+          <InfoTooltip text="What a given amount invested here today might become over your chosen horizon, compared with putting the same money in a benchmark ETF. A model estimate, pre-tax — not advice." />
+        </div>
         <div className="flex items-center gap-3">
           <label className="flex items-center gap-2 text-[13px] text-text-muted">
             CHF
@@ -343,7 +346,16 @@ function AssetView({ symbol, onReset }: { symbol: string; onReset: () => void })
 
       <SectionNav sections={navSections} asset={stickyAsset} />
 
-      <div id="res-metrics" className="card scroll-mt-24">{metricCells(m)}</div>
+      <div id="res-metrics" className="card scroll-mt-24">
+        <SectionHeader
+          icon={Gauge}
+          eyebrow={data.symbol}
+          title="Key metrics"
+          className="mb-4"
+          info="Headline risk-and-return stats for this asset over the selected window — annualised return, total return, volatility, worst drawdown, Sharpe ratio and yield. A quick read on how rewarding, and how bumpy, it has been."
+        />
+        {metricCells(m)}
+      </div>
 
       <div id="res-history" className="card scroll-mt-24">
         <SectionHeader
@@ -351,6 +363,7 @@ function AssetView({ symbol, onReset }: { symbol: string; onReset: () => void })
           eyebrow={data.symbol}
           title="Full-history price"
           className="mb-3"
+          info="The security's entire price record. Use it to see long-run trends and judge how today's price sits against past highs, lows, and periods of surge or stagnation."
           action={
             <div className="flex items-center gap-3 text-[11px] text-text-faint flex-wrap">
               <span className="flex items-center gap-1"><span className="w-4 h-0.5 bg-azure inline-block" /> {data.symbol}</span>
@@ -394,7 +407,8 @@ function AssetView({ symbol, onReset }: { symbol: string; onReset: () => void })
           P/E, margins, revenue history, analyst view). Stock-only, matching Overview. */}
       {data.kind === 'stock' && (
         <div id="res-fundamentals" className="card scroll-mt-24">
-          <SectionHeader icon={Building2} eyebrow={data.symbol} title="Company fundamentals" className="mb-4" />
+          <SectionHeader icon={Building2} eyebrow={data.symbol} title="Company fundamentals" className="mb-4"
+            info="The business behind the stock — market cap, valuation multiples like P/E, profit margins, revenue history and the analyst view. Shows whether the price is backed by real earnings." />
           <Fundamentals symbol={data.symbol} name={data.name} currency={data.currency} />
         </div>
       )}
@@ -402,7 +416,8 @@ function AssetView({ symbol, onReset }: { symbol: string; onReset: () => void })
       {/* Market analysis — sector, competitors & relative performance. */}
       {data.kind === 'stock' && (
         <div id="res-market" className="card scroll-mt-24">
-          <SectionHeader icon={Radar} eyebrow="Sector · competitors · relative performance" title="Market analysis" className="mb-4" />
+          <SectionHeader icon={Radar} eyebrow="Sector · competitors · relative performance" title="Market analysis" className="mb-4"
+            info="How this stock stacks up against its sector and closest competitors, and whether recent weakness or strength is company-specific or market-wide." />
           <MarketAnalysis symbol={data.symbol} />
         </div>
       )}
@@ -410,7 +425,8 @@ function AssetView({ symbol, onReset }: { symbol: string; onReset: () => void })
       {/* Value-investing analysis — intrinsic value, margin of safety, Buffett quality. */}
       {data.kind === 'stock' && (
         <div id="res-value" className="card scroll-mt-24">
-          <SectionHeader icon={Gem} eyebrow={`What ${data.symbol} is really worth`} title="Value analysis" className="mb-4" />
+          <SectionHeader icon={Gem} eyebrow={`What ${data.symbol} is really worth`} title="Value analysis" className="mb-4"
+            info="An estimate of what the company is intrinsically worth versus its current price — fair-value band, margin of safety and a quality scorecard — to judge whether it looks cheap or expensive." />
           <ValueAnalysis symbol={data.symbol} price={data.currentPrice ?? null} currency={data.currency}
             priceAsOf={data.priceAsOf} priceFreshness={data.priceFreshness} />
         </div>
@@ -423,7 +439,10 @@ function AssetView({ symbol, onReset }: { symbol: string; onReset: () => void })
 
       <div id="res-ranked" className="grid lg:grid-cols-[1fr_360px] gap-6 scroll-mt-24">
         <div className="card">
-          <div className="eyebrow mb-4">Ranked vs your portfolio</div>
+          <div className="flex items-center gap-1.5 mb-4">
+            <div className="eyebrow">Ranked vs your portfolio</div>
+            <InfoTooltip text="Where this asset would rank if added to your portfolio, scored on the same metrics as your existing holdings — so you can see whether it would strengthen or dilute what you already own." />
+          </div>
           <UniversalCompare symbol={data.symbol} name={data.name} kind={data.kind} window={window} />
         </div>
         <div className="card">
@@ -433,7 +452,8 @@ function AssetView({ symbol, onReset }: { symbol: string; onReset: () => void })
 
       <div className="grid lg:grid-cols-[360px_1fr] gap-6">
         <div id="res-exposure" className="card scroll-mt-24">
-          <SectionHeader icon={PieChart} eyebrow="Where it invests" title="Exposure" className="mb-4" />
+          <SectionHeader icon={PieChart} eyebrow="Where it invests" title="Exposure" className="mb-4"
+            info="What you're actually invested in beneath the ticker — the mix of countries and sectors this asset gives you exposure to." />
           {data.allocation.countries?.length ? (
             <>
               <div className="flex justify-center mb-4">
@@ -446,7 +466,8 @@ function AssetView({ symbol, onReset }: { symbol: string; onReset: () => void })
           )}
         </div>
         <div id="res-news" className="card scroll-mt-24">
-          <SectionHeader icon={Newspaper} eyebrow={data.symbol} title="Latest headlines" className="mb-4" />
+          <SectionHeader icon={Newspaper} eyebrow={data.symbol} title="Latest headlines" className="mb-4"
+            info="Recent news for this company or fund, so you can read price moves in the context of what's actually happening." />
           <NewsFeed symbol={data.symbol} limit={8} />
         </div>
       </div>

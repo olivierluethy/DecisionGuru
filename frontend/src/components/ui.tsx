@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Loader2, ArrowUpRight, ArrowDownRight, type LucideIcon } from 'lucide-react';
+import { Loader2, ArrowUpRight, ArrowDownRight, Info, type LucideIcon } from 'lucide-react';
 import clsx from 'clsx';
 import type { InstrumentDataStatus } from '@decisionguru/shared';
 import { fmtPctSigned } from '../lib/format';
@@ -151,21 +151,52 @@ export function KindBadge({ kind }: { kind: string }) {
  * ───────────────────────────────────────────────────────────────────────── */
 
 /**
+ * Small help affordance: an info glyph that reveals a short plain-language
+ * explanation on hover and on keyboard focus (CSS-only, no popover library).
+ * Use it next to a section title so people who don't know what a section is —
+ * or what it's telling them — can find out without leaving the page.
+ */
+export function InfoTooltip({ text, label = 'More info', className }: { text: ReactNode; label?: string; className?: string }) {
+  return (
+    <span className={clsx('relative inline-flex shrink-0 align-middle group', className)}>
+      <button
+        type="button"
+        aria-label={label}
+        className="grid place-items-center text-text-faint hover:text-text-muted focus:text-text-muted rounded-full outline-none focus-visible:ring-1 focus-visible:ring-azure/50 cursor-help transition-colors"
+      >
+        <Info size={13} />
+      </button>
+      {/* Anchored to the icon's left edge and extending rightward, so it never
+          clips against a card's left edge or an overflow-hidden section. */}
+      <span
+        role="tooltip"
+        className="pointer-events-none absolute left-0 top-full z-30 mt-1.5 w-max max-w-[min(260px,60vw)] translate-y-1 rounded-md border border-hairline bg-surface-2 px-3 py-2 text-[12px] font-normal normal-case tracking-normal leading-snug text-text-muted opacity-0 shadow-lg transition-all duration-150 group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:translate-y-0 group-focus-within:opacity-100"
+      >
+        {text}
+      </span>
+    </span>
+  );
+}
+
+/**
  * Section title with a real display-face heading over an uppercase eyebrow
  * kicker, plus an optional trailing action/control cluster. Gives every section
- * the same head so the eye learns the rhythm of the page.
+ * the same head so the eye learns the rhythm of the page. Pass `info` to append
+ * an InfoTooltip next to the title.
  */
 export function SectionHeader({
   title,
   eyebrow,
   icon: Icon,
   action,
+  info,
   className,
 }: {
   title: ReactNode;
   eyebrow?: ReactNode;
   icon?: LucideIcon;
   action?: ReactNode;
+  info?: ReactNode;
   className?: string;
 }) {
   return (
@@ -178,7 +209,10 @@ export function SectionHeader({
         )}
         <div className="min-w-0">
           {eyebrow && <div className="eyebrow mb-0.5">{eyebrow}</div>}
-          <h2 className="font-display text-[15px] font-semibold text-text leading-tight truncate">{title}</h2>
+          <div className="flex items-center gap-1.5 min-w-0">
+            <h2 className="font-display text-[15px] font-semibold text-text leading-tight truncate min-w-0">{title}</h2>
+            {info && <InfoTooltip text={info} />}
+          </div>
         </div>
       </div>
       {action && <div className="flex items-center gap-2 shrink-0">{action}</div>}

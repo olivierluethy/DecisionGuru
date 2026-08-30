@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import clsx from 'clsx';
 import { api, type PeriodReturn } from '../lib/api';
 import { fmtPctSigned, fmtDate, plClass } from '../lib/format';
+import { InfoTooltip } from './ui';
 
 /**
  * Short/medium/long-term price performance side by side: 1Y / 2Y / 3Y / 5Y and
@@ -28,7 +29,10 @@ export function PeriodReturns({ symbol, entry }: { symbol: string; entry?: strin
   return (
     <div>
       <div className="flex items-center justify-between mb-3">
-        <div className="eyebrow">Performance by horizon · price return</div>
+        <div className="flex items-center gap-1.5">
+          <div className="eyebrow">Performance by horizon · price return</div>
+          <InfoTooltip text="Price performance over several trailing windows (1Y, 2Y, 3Y, 5Y and the full holding period) side by side, so a recent spike can be judged against the long run. Excludes dividends and tax." />
+        </div>
         <div className="text-[11px] text-text-faint">as of {fmtDate(data?.asOf)}</div>
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">

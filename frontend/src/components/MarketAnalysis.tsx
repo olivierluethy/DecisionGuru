@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
 import { api, type MarketAnalysisResult, type MarketClassification } from '../lib/api';
 import { Spinner, EmptyState } from './ui';
 import { fmtPct, fmtPctSigned, fmtMoney, fmtDate } from '../lib/format';
 import { useApp } from '../store';
+import { ComparisonSelect } from './ComparisonSelect';
 
 const RANGES = ['1M', '3M', '6M', '1Y', '3Y', '5Y'] as const;
 type MarketRange = (typeof RANGES)[number];
@@ -28,11 +29,22 @@ const LINE_COLORS = ['#4FD0E0', '#D9A94E', '#A98BFF', '#B6D94E', '#EC6DB0'];
 export function MarketAnalysis({ symbol }: { symbol: string }) {
   const [range, setRange] = useState<MarketRange>('1Y');
   const researchSymbolView = useApp((s) => s.researchSymbolView);
+  const defaultBenchmark = useApp((s) => s.benchmark);
+  // Comparison lines are user-selectable: seed with the global benchmark (e.g. VWRL.SW), then
+  // freely add/remove ETFs or companies — even from another market — via the selector below.
+  const [compare, setCompare] = useState<string[]>(defaultBenchmark ? [defaultBenchmark] : []);
+  const compareColorOf = (sym: string) => {
+    const i = compare.indexOf(sym);
+    return i >= 0 ? LINE_COLORS[(i + 1) % LINE_COLORS.length] : '#5F6E82';
+  };
   const { data, isLoading, isError } = useQuery({
-    queryKey: ['market-analysis', symbol, range],
-    queryFn: () => api.marketAnalysis(symbol, range),
+    queryKey: ['market-analysis', symbol, range, compare.join(',')],
+    queryFn: () => api.marketAnalysis(symbol, range, compare),
     staleTime: 60 * 60_000,
     retry: 1,
+    // Keep the prior chart on screen while a changed comparison set reloads, so the selector
+    // never flashes back to a spinner mid-edit.
+    placeholderData: keepPreviousData,
     // Peer price history is warmed in the background on first open; poll until peer returns
     // land (or give up after a bounded number of tries) so the table fills in on its own.
     refetchInterval: (query) => {
@@ -68,6 +80,12 @@ export function MarketAnalysis({ symbol }: { symbol: string }) {
 
   return (
     <div className="space-y-5">
+      {/* Comparison selector — subject vs. any benchmark ETFs and/or companies (any market). */}
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="eyebrow mr-1">Compare</span>
+        <ComparisonSelect subject={data.symbol} selected={compare} onChange={setCompare} colorOf={compareColorOf} />
+      </div>
+
       {/* Company context */}
       <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
         <div><span className="eyebrow mr-2">Company</span><span className="text-text">{data.name}</span></div>

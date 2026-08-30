@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
 import {
   Check, X, CircleHelp, RefreshCw, Eye,
@@ -10,6 +10,7 @@ import { useApp } from '../store';
 import { SectionNav, type NavSection, type AssetContext } from '../components/SectionNav';
 import { SymbolSearch } from '../components/SymbolSearch';
 import { PriceMovementChart } from '../components/PriceMovementChart';
+import { ComparisonSelect, COMPARE_COLORS } from '../components/ComparisonSelect';
 import { ExposureBars } from '../components/ExposureBars';
 import { PeriodReturns } from '../components/PeriodReturns';
 import { Fundamentals } from '../components/Fundamentals';
@@ -254,9 +255,33 @@ function AssetView({ symbol, onReset }: { symbol: string; onReset: () => void })
   const { data: history } = useQuery({ queryKey: ['history', symbol], queryFn: () => api.marketHistory(symbol) });
   const { data: hours } = useQuery({ queryKey: ['hours', symbol], queryFn: () => api.marketHoursSymbol(symbol) });
 
+  // Rebased comparison overlays for the full-history chart — seed with the global benchmark,
+  // then add/remove any ETF or company (any market) through the selector below.
+  const benchmark = useApp((s) => s.benchmark);
+  const [overlaySymbols, setOverlaySymbols] = useState<string[]>(benchmark ? [benchmark] : []);
+  const overlayHistories = useQueries({
+    queries: overlaySymbols.map((sym) => ({
+      queryKey: ['research-history-cmp', sym],
+      queryFn: () => api.marketHistory(sym),
+      enabled: !!sym,
+      staleTime: 5 * 60_000,
+    })),
+  });
+
   if (isLoading) return <Spinner label={`Researching ${symbol}…`} />;
   if (!data) return null;
   const m = data.metrics;
+  const priceOverlays = overlaySymbols
+    .map((sym, i) => ({
+      symbol: sym,
+      series: (overlayHistories[i]?.data ?? []) as Array<{ date: string; close: number }>,
+      color: COMPARE_COLORS[i % COMPARE_COLORS.length],
+    }))
+    .filter((o) => o.series.length > 1);
+  const overlayColorOf = (sym: string) => {
+    const i = overlaySymbols.indexOf(sym);
+    return i >= 0 ? COMPARE_COLORS[i % COMPARE_COLORS.length] : '#5F6E82';
+  };
   const isStock = data.kind === 'stock';
   // "On this page" rail — same component, anchor convention and icons the position
   // detail view uses; stock-only chapters drop for ETFs just as they do there.
@@ -327,14 +352,38 @@ function AssetView({ symbol, onReset }: { symbol: string; onReset: () => void })
           title="Full-history price"
           className="mb-3"
           action={
-            <div className="flex items-center gap-3 text-[11px] text-text-faint">
+            <div className="flex items-center gap-3 text-[11px] text-text-faint flex-wrap">
+              <span className="flex items-center gap-1"><span className="w-4 h-0.5 bg-azure inline-block" /> {data.symbol}</span>
+              {priceOverlays.map((o) => (
+                <span key={o.symbol} className="flex items-center gap-1">
+                  <span className="w-4 h-0 border-t-2 border-dashed inline-block" style={{ borderColor: o.color }} /> {o.symbol}
+                </span>
+              ))}
               <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-gain" /> surge</span>
               <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-loss" /> drop</span>
               <span className="flex items-center gap-1"><span className="w-3 h-2 bg-warn/20 border border-warn/30" /> stagnation</span>
             </div>
           }
         />
-        <PriceMovementChart series={history ?? []} movements={data.movements} currency={data.currency} height={300} />
+
+        {/* Compare-with toolbar: the subject vs. any benchmark ETFs and/or companies. */}
+        <div className="flex flex-wrap items-center gap-2 mb-3">
+          <span className="eyebrow mr-1">Compare</span>
+          <ComparisonSelect subject={data.symbol} selected={overlaySymbols} onChange={setOverlaySymbols} colorOf={overlayColorOf} />
+        </div>
+
+        <PriceMovementChart
+          series={history ?? []}
+          movements={data.movements}
+          currency={data.currency}
+          height={300}
+          overlays={priceOverlays}
+        />
+        {priceOverlays.length > 0 && (
+          <p className="text-[11px] text-text-faint mt-2">
+            Comparison lines are rebased to each series’ start, so every line begins level and you see who pulled ahead.
+          </p>
+        )}
       </div>
 
       <div id="res-returns" className="card scroll-mt-24">

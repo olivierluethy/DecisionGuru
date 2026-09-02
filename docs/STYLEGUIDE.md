@@ -101,6 +101,43 @@ mono for dense numeric tables and the big delta numbers.
 - **Borders:** hairline `1px solid var(--hairline)` is the primary separation device — this is a Swiss-grid product, structure is drawn with rules, not shadows.
 - **Elevation:** minimal. Modals: `box-shadow: 0 24px 60px -20px rgba(0,0,0,.7)` + hairline. Accent glow (used sparingly on the hero delta / focus): `0 0 0 1px + 0 0 20px -6px` of the accent at low alpha. Never drop-shadow cards.
 
+## 4b. App shell & scroll architecture
+
+The app is a **fixed chassis, not a scrolling document**. `#root` is exactly `100dvh`
+and `body` is `overflow: hidden`, so the page itself can never scroll. Scrolling only
+ever happens *inside* a pane, and panes are independent — moving one never moves another.
+
+```
+┌──────────────┬──────────────────────────────────┐
+│ brand lockup │  (mobile app bar)                │  ← pinned
+├──────────────┼──────────────────────────────────┤
+│  nav rail    │  main content well               │
+│  ▲ its own   │  ▲ its own scroll                │
+│  ▼ scroll    │  ▼                               │
+├──────────────┤                                  │  ← pinned
+│ settings     │                                  │
+└──────────────┴──────────────────────────────────┘
+```
+
+- Every scroll pane carries `.pane` (`min-h-0 overflow-y-auto overscroll-contain`).
+  **`min-h-0` is load-bearing**: without it a tall child grows a flex column past the
+  viewport, the document gains a scrollbar, and scrolling the rail drags the whole shell
+  — the exact bug this architecture exists to prevent. `overscroll-contain` stops a pane
+  that has hit its end from handing the wheel to its neighbour.
+- Narrow panes add `.scroll-slim` (6px bar) — the 10px default eats a 240px rail.
+- **Never** set a fixed pixel height to make a pane fit. Panes size from the flex column.
+- The **sidebar** is three zones: pinned brand lockup, a `.pane` holding nav + add-data +
+  the markets strip (`min-h-full` inner column so the strip sits at the bottom when there
+  is slack and simply flows when there is not), and a pinned foot with settings + the
+  disclaimer. Rail rows are `h-9` (touch) and `lg:h-8` (pointer).
+- The **active destination** is marked by a 2px azure rule flush to the rail's inner edge
+  — "azure means you are here", the navigational sibling of "azure means you" on charts
+  and metric cards. It costs no vertical space, which is why a dense rail can afford it.
+- A long view's page header may be `sticky top-0` **within the main pane**, full-bleed via
+  `-mx-6 px-6` over `bg-bg/90 backdrop-blur-md` + a bottom hairline (see `SectionNav`,
+  and the Alerts page head). Only ever one sticky bar per view — a page with a
+  `SectionNav` rail does not also pin its title.
+
 ## 5. Structural devices (encode meaning, don't decorate)
 
 - **Eyebrows** label a data region's *unit / basis* (e.g. `AFTER-TAX · CHF`), not decoration.
@@ -116,6 +153,17 @@ mono for dense numeric tables and the big delta numbers.
 - **Tables.** Header row `--surface-2`, `label` uppercase-ish, sticky. Rows hairline-separated, hover `--surface-2`. Numeric columns right-aligned, mono, tabular. Gain/loss coloured per §2.
 - **Inputs.** `--surface-2`, `1px --hairline`, `--r-sm`, focus → `--azure` ring (`0 0 0 2px azure@40%`). Labels `label` above.
 - **Modals.** All create/edit/import/settings/scenario flows are **modals, never route changes**. Backdrop `rgba(6,9,14,.66)` + blur(2px). Panel `--surface`, `--r-lg`, max-w per content, hairline header/footer, `Esc`/backdrop close, focus-trapped.
+- **Tabs (`Tabs`).** Page-level sub-navigation for a view whose panels each want the whole
+  content area — not a control (that's `Segmented`) and not a scroll-spy (that's
+  `SectionNav`). Height 40, active tab carries a **2px azure bottom rule** (same "azure
+  marks where you are" device as the rail's active row) and a live count pill; inactive is
+  `--text-muted` with a `--hairline-strong` underline on hover. Full WAI-ARIA tabs pattern
+  incl. arrow-key roving focus. **Counts are always derived from the real data** — never a
+  constant. Sits on a container hairline via `-mb-px` so the active rule replaces it.
+- **Empty states (`EmptyState`).** An empty screen is an invitation to act, never an
+  apology: optional glyph in a hairline ring, a plain-language title, one sentence saying
+  what will fill it and what to do, and the action itself where there is one. Wrap in a
+  `border-dashed border-hairline` panel so the region reads as defined rather than adrift.
 - **Chips / tags.** `rounded-full`, `--surface-2`, `label` 11px. Status dot 6px: gain/loss/azure/gold/warn.
 - **Staleness / data source.** Small `--warn` dot + timestamp caption when cached market data is old; `--text-faint` "live" otherwise.
 - **The delta panel.** Big number (`display-xl`, gain/loss coloured), eyebrow basis line, sub-line "ETF would recover this in ~N months". This is the per-position decision panel's crown.

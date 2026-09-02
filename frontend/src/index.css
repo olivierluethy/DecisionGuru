@@ -21,11 +21,19 @@ body,
   height: 100%;
 }
 
+/* The app is a fixed chassis, not a scrolling document: the shell fills the
+   viewport exactly once and never grows. Every scroll happens inside a pane
+   (the sidebar rail, the main content well), so no pane can drag another.
+   `dvh` tracks mobile browser chrome; the `%` above is the fallback. */
+#root {
+  height: 100dvh;
+}
+
 body {
   @apply bg-bg text-text font-sans antialiased;
   font-feature-settings: 'cv05' 1, 'ss01' 1;
   /* Wide content scrolls inside its own container — never the page itself. */
-  overflow-x: hidden;
+  overflow: hidden;
 }
 
 /* Numeric alignment everywhere financial figures live */
@@ -67,6 +75,24 @@ body {
   }
   .no-scrollbar::-webkit-scrollbar {
     display: none;
+  }
+  /* An independent scroll pane. `min-h-0` lets it actually shrink inside a flex
+     column (without it a tall child pushes the pane past the viewport, which is
+     what used to make the sidebar scroll the whole document); `overscroll-contain`
+     stops a pane that has hit its end from handing the wheel to its neighbour. */
+  .pane {
+    @apply min-h-0 overflow-y-auto overscroll-contain;
+  }
+  /* Narrower scrollbar for narrow panes — the 10px default eats a 240px rail. */
+  .scroll-slim {
+    scrollbar-width: thin;
+  }
+  .scroll-slim::-webkit-scrollbar {
+    width: 6px;
+  }
+  .scroll-slim::-webkit-scrollbar-thumb {
+    border: 1px solid transparent;
+    background-clip: padding-box;
   }
   .card {
     @apply bg-surface border border-hairline rounded p-5;

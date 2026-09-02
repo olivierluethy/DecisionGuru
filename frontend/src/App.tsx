@@ -40,7 +40,7 @@ export default function App() {
   }, [navOpen]);
 
   return (
-    <div className="flex h-full bg-bg text-text">
+    <div className="flex h-full overflow-hidden bg-bg text-text">
       <Sidebar />
       {navOpen && (
         <div
@@ -49,7 +49,8 @@ export default function App() {
           aria-hidden
         />
       )}
-      <div className="flex-1 flex flex-col min-w-0">
+      {/* The content well: its own column, its own scroll. Nothing here can move the rail. */}
+      <div className="flex-1 flex flex-col min-w-0 min-h-0">
         <header className="lg:hidden flex items-center gap-3 px-4 h-14 border-b border-hairline bg-bg-elev shrink-0">
           <button
             className="p-1.5 -ml-1.5 rounded text-text-muted hover:text-text hover:bg-surface-2"
@@ -62,7 +63,7 @@ export default function App() {
             Decision<span className="text-azure">Guru</span>
           </span>
         </header>
-        <main ref={mainRef} className="flex-1 overflow-y-auto">
+        <main ref={mainRef} className="flex-1 pane">
           {view === 'dashboard' && <Dashboard />}
           {view === 'position' && <PositionDetail />}
           {view === 'scenarios' && <Scenarios />}

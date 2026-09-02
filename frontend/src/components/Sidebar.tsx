@@ -1,3 +1,4 @@
+import type { LucideIcon } from 'lucide-react';
 import {
   LayoutDashboard,
   GitCompareArrows,
@@ -16,21 +17,40 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useQuery } from '@tanstack/react-query';
-import { useApp } from '../store';
+import { useApp, type View } from '../store';
 import { api } from '../lib/api';
 import { MarketHoursStrip } from './MarketHoursStrip';
 
-const NAV = [
-  { view: 'dashboard', label: 'Overview', icon: LayoutDashboard },
-  { view: 'decisions', label: 'Decisions', icon: Compass },
-  { view: 'advisory', label: 'Advisory', icon: Sparkles },
-  { view: 'research', label: 'Research', icon: Telescope },
-  { view: 'watchlist', label: 'Watchlist', icon: Eye },
-  { view: 'screener', label: 'Discover', icon: Globe2 },
-  { view: 'alerts', label: 'Alerts', icon: Bell },
-  { view: 'scenarios', label: 'Scenarios', icon: GitCompareArrows },
-  { view: 'plans', label: 'Plans', icon: ClipboardList },
-] as const;
+type NavItem = { label: string; icon: LucideIcon; view: View } | { label: string; icon: LucideIcon; view?: undefined };
+
+/**
+ * Two groups, and the split is the product's own: the top half is about the money
+ * you already hold, the bottom half about the market you're reading. Labels earn
+ * their height by telling you that; they are not decoration.
+ */
+const NAV: { label: string; items: readonly NavItem[] }[] = [
+  {
+    label: 'Portfolio',
+    items: [
+      { view: 'dashboard', label: 'Overview', icon: LayoutDashboard },
+      { view: 'decisions', label: 'Decisions', icon: Compass },
+      { view: 'advisory', label: 'Advisory', icon: Sparkles },
+      { view: 'scenarios', label: 'Scenarios', icon: GitCompareArrows },
+      { view: 'plans', label: 'Plans', icon: ClipboardList },
+    ],
+  },
+  {
+    label: 'Market',
+    items: [
+      { view: 'research', label: 'Research', icon: Telescope },
+      { view: 'watchlist', label: 'Watchlist', icon: Eye },
+      { view: 'screener', label: 'Discover', icon: Globe2 },
+      { view: 'alerts', label: 'Alerts', icon: Bell },
+      // Comparison is a modal (a secondary destination, not a landing page).
+      { label: 'Comparison', icon: Scale },
+    ],
+  },
+];
 
 export function Sidebar() {
   const { view, setView, openModal, navOpen, setNavOpen } = useApp();
@@ -55,82 +75,144 @@ export function Sidebar() {
         navOpen ? 'translate-x-0' : '-translate-x-full',
       )}
     >
-      <div className="px-5 py-5 border-b border-hairline">
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <TrendingUpDown size={20} className="text-azure" />
-            <span className="font-display text-lg font-semibold tracking-tight">
-              Decision<span className="text-azure">Guru</span>
-            </span>
-          </div>
-          {/* Header bell → alert centre, with an unread badge. */}
-          <button
-            onClick={() => go(() => setView('alerts'))}
-            title="Alerts & notifications"
-            className="relative p-1.5 rounded text-text-muted hover:text-text hover:bg-surface-2 transition-colors"
-          >
-            <Bell size={17} className={unreadCount > 0 ? 'text-azure' : ''} />
-            {unreadCount > 0 && (
-              <span className="absolute -top-0.5 -right-0.5 min-w-[15px] h-[15px] px-1 rounded-full bg-loss text-bg text-[9px] font-semibold flex items-center justify-center tnum">
-                {unreadCount > 9 ? '9+' : unreadCount}
-              </span>
-            )}
-          </button>
+      {/* Brand lockup — pinned, so the rail always identifies itself. */}
+      <div className="shrink-0 flex items-center justify-between gap-2 px-4 h-14 border-b border-hairline">
+        <div className="flex items-center gap-2 min-w-0">
+          <TrendingUpDown size={19} className="text-azure shrink-0" />
+          <span className="font-display text-[17px] font-semibold tracking-tight truncate">
+            Decision<span className="text-azure">Guru</span>
+          </span>
         </div>
-        <p className="text-[11px] text-text-faint mt-1">Portfolio overview · after Swiss tax</p>
-      </div>
-
-      <nav className="p-3 flex flex-col gap-1">
-        {NAV.map((n) => {
-          const Icon = n.icon;
-          const active = view === n.view || (n.view === 'dashboard' && view === 'position');
-          return (
-            <button
-              key={n.view}
-              onClick={() => go(() => setView(n.view))}
-              className={clsx(
-                'flex items-center gap-3 px-3 h-9 rounded text-sm transition-colors text-left',
-                active ? 'bg-surface-2 text-text' : 'text-text-muted hover:text-text hover:bg-surface-2/60',
-              )}
-            >
-              <Icon size={16} className={active ? 'text-azure' : ''} />
-              {n.label}
-            </button>
-          );
-        })}
-        {/* Comparison is a modal (secondary destination, not the landing page). */}
+        {/* The bell → alert centre, with the app's one permitted red badge. */}
         <button
-          onClick={() => go(() => openModal({ kind: 'compare', instrumentIds: [] }))}
-          className="flex items-center gap-3 px-3 h-9 rounded text-sm transition-colors text-left text-text-muted hover:text-text hover:bg-surface-2/60"
+          onClick={() => go(() => setView('alerts'))}
+          title="Alerts & notifications"
+          aria-label={unreadCount > 0 ? `Alerts — ${unreadCount} unread` : 'Alerts'}
+          className="relative shrink-0 p-1.5 -mr-1.5 rounded text-text-muted hover:text-text hover:bg-surface-2 transition-colors"
         >
-          <Scale size={16} />
-          Comparison
-        </button>
-      </nav>
-
-      <div className="p-3 mt-2 flex flex-col gap-2">
-        <div className="eyebrow px-2 mb-1">Add data</div>
-        <button className="btn-secondary w-full justify-start" onClick={() => go(() => openModal({ kind: 'import' }))}>
-          <Upload size={15} /> Import data
-        </button>
-        <button className="btn-secondary w-full justify-start" onClick={() => go(() => openModal({ kind: 'manual-add' }))}>
-          <Plus size={15} /> Add position
+          <Bell size={17} className={unreadCount > 0 ? 'text-azure' : ''} />
+          {unreadCount > 0 && (
+            <span className="absolute -top-0.5 -right-0.5 min-w-[15px] h-[15px] px-1 rounded-full bg-loss text-bg text-[9px] font-semibold flex items-center justify-center tnum">
+              {unreadCount > 9 ? '9+' : unreadCount}
+            </span>
+          )}
         </button>
       </div>
 
-      <div className="mt-auto">
-        <MarketHoursStrip />
+      {/* The rail's own scroll well. `min-h-full` on the inner column lets the
+          markets strip sit at the bottom when there's slack and simply flow when
+          there isn't — no fixed heights, any viewport. */}
+      <div className="flex-1 pane scroll-slim">
+        <div className="flex flex-col min-h-full px-2.5 py-2.5">
+          <nav aria-label="Main">
+            {NAV.map((group, gi) => (
+              <div key={group.label} className={gi > 0 ? 'mt-3.5' : undefined}>
+                <div className="eyebrow px-2.5 pb-1.5">{group.label}</div>
+                <div className="flex flex-col gap-px">
+                  {group.items.map((item) => (
+                    <NavRow
+                      key={item.label}
+                      item={item}
+                      active={
+                        item.view != null &&
+                        (view === item.view || (item.view === 'dashboard' && view === 'position'))
+                      }
+                      onSelect={() =>
+                        go(() =>
+                          item.view
+                            ? setView(item.view)
+                            : openModal({ kind: 'compare', instrumentIds: [] }),
+                        )
+                      }
+                    />
+                  ))}
+                </div>
+              </div>
+            ))}
+          </nav>
+
+          <div className="mt-3.5">
+            <div className="eyebrow px-2.5 pb-1.5">Add data</div>
+            <div className="flex flex-col gap-1.5">
+              <button
+                className="btn-secondary w-full justify-start lg:h-8"
+                onClick={() => go(() => openModal({ kind: 'import' }))}
+              >
+                <Upload size={15} /> Import data
+              </button>
+              <button
+                className="btn-secondary w-full justify-start lg:h-8"
+                onClick={() => go(() => openModal({ kind: 'manual-add' }))}
+              >
+                <Plus size={15} /> Add position
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-auto pt-3">
+            <MarketHoursStrip />
+          </div>
+        </div>
       </div>
 
-      <div className="p-3 border-t border-hairline">
-        <button className="btn-ghost w-full justify-start" onClick={() => go(() => openModal({ kind: 'settings' }))}>
-          <Settings size={15} /> Tax & settings
+      {/* Pinned foot: settings stay one click away from anywhere in the rail. */}
+      <div className="shrink-0 px-2.5 py-2.5 border-t border-hairline">
+        <button
+          className="btn-ghost w-full justify-start lg:h-8"
+          onClick={() => go(() => openModal({ kind: 'settings' }))}
+        >
+          <Settings size={15} /> Tax &amp; settings
         </button>
-        <p className="text-[10px] text-text-faint px-2 mt-3 leading-relaxed">
-          Not financial advice. Figures are model estimates — private-investor Swiss tax
-          assumptions apply.
+        <p className="text-[10px] text-text-faint px-2.5 mt-2 leading-relaxed">
+          Not financial advice — model estimates on Swiss private-investor assumptions.
         </p>
       </div>
     </aside>
+  );
+}
+
+/**
+ * One destination. The active row is marked by a 2px azure rule flush to the rail's
+ * inner edge — the same "azure means you are here" grammar the metric cards use for
+ * "azure means you", and it costs no vertical space in a rail this dense.
+ */
+function NavRow({
+  item,
+  active,
+  onSelect,
+}: {
+  item: NavItem;
+  active: boolean;
+  onSelect: () => void;
+}) {
+  const Icon = item.icon;
+  return (
+    <button
+      onClick={onSelect}
+      aria-current={active ? 'page' : undefined}
+      className={clsx(
+        'group relative flex items-center gap-2.5 h-9 lg:h-8 pl-3 pr-2.5 rounded-sm',
+        'text-[13px] text-left transition-colors',
+        active
+          ? 'bg-surface-2 text-text font-medium'
+          : 'text-text-muted hover:text-text hover:bg-surface-2/50',
+      )}
+    >
+      <span
+        aria-hidden
+        className={clsx(
+          'absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-full bg-azure transition-opacity',
+          active ? 'opacity-100' : 'opacity-0',
+        )}
+      />
+      <Icon
+        size={15}
+        className={clsx(
+          'shrink-0 transition-colors',
+          active ? 'text-azure' : 'text-text-faint group-hover:text-text-muted',
+        )}
+      />
+      <span className="truncate">{item.label}</span>
+    </button>
   );
 }

@@ -32,9 +32,9 @@ export function MarketHoursStrip() {
   if (!exchanges.length) return null;
 
   return (
-    <div className="px-4 py-3 border-t border-hairline">
-      <div className="eyebrow mb-2">Markets</div>
-      <div className="flex flex-col gap-2">
+    <div className="px-2.5 pt-2.5 border-t border-hairline">
+      <div className="eyebrow mb-1.5">Markets</div>
+      <div className="flex flex-col gap-1.5">
         {exchanges.map((ex) => {
           const live = liveExchange(ex, now, skew);
           // `nextChange` is the state the countdown runs toward (the opposite of

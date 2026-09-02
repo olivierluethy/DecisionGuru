@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import type { ReactNode, KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { Loader2, ArrowUpRight, ArrowDownRight, Info, type LucideIcon } from 'lucide-react';
 import clsx from 'clsx';
 import type { InstrumentDataStatus } from '@decisionguru/shared';
@@ -62,12 +62,100 @@ export function Spinner({ label }: { label?: string }) {
   );
 }
 
-export function EmptyState({ title, hint, action }: { title: string; hint?: string; action?: ReactNode }) {
+export function EmptyState({
+  title,
+  hint,
+  action,
+  icon: Icon,
+}: {
+  title: string;
+  hint?: string;
+  action?: ReactNode;
+  icon?: LucideIcon;
+}) {
   return (
     <div className="flex flex-col items-center justify-center text-center py-16 px-6">
+      {Icon && (
+        <span className="grid place-items-center w-11 h-11 rounded-full border border-hairline bg-surface-2/50 text-text-faint mb-3">
+          <Icon size={19} />
+        </span>
+      )}
       <h3 className="font-display text-lg text-text mb-1">{title}</h3>
       {hint && <p className="text-sm text-text-muted max-w-md mb-4">{hint}</p>}
       {action}
+    </div>
+  );
+}
+
+/**
+ * Page-level sub-navigation. Where `Segmented` toggles an option and `SectionNav`
+ * spies on scroll position, this switches between panels of a page that each want
+ * the whole content area. The active tab carries a 2px azure underline — the same
+ * "azure rule marks where you are" device the sidebar uses for the active
+ * destination, so the app reads as one navigation system at both scales.
+ *
+ * `count` is rendered as a live pill; pass the real length, never a constant.
+ * Implements the WAI-ARIA tabs pattern including arrow-key roving focus.
+ */
+export function Tabs<T extends string>({
+  tabs,
+  value,
+  onChange,
+  className,
+}: {
+  tabs: { value: T; label: string; count?: number; icon?: LucideIcon }[];
+  value: T;
+  onChange: (v: T) => void;
+  className?: string;
+}) {
+  const onKeyDown = (e: ReactKeyboardEvent) => {
+    const delta = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
+    if (!delta) return;
+    e.preventDefault();
+    const i = tabs.findIndex((t) => t.value === value);
+    const next = tabs[(i + delta + tabs.length) % tabs.length];
+    onChange(next.value);
+    document.getElementById(`tab-${next.value}`)?.focus();
+  };
+
+  return (
+    <div role="tablist" onKeyDown={onKeyDown} className={clsx('flex items-center gap-1 -mb-px', className)}>
+      {tabs.map((t) => {
+        const on = t.value === value;
+        const Icon = t.icon;
+        return (
+          <button
+            key={t.value}
+            id={`tab-${t.value}`}
+            role="tab"
+            type="button"
+            aria-selected={on}
+            aria-controls={`panel-${t.value}`}
+            tabIndex={on ? 0 : -1}
+            onClick={() => onChange(t.value)}
+            className={clsx(
+              'inline-flex items-center gap-2 h-10 px-3 text-[13px] whitespace-nowrap',
+              'border-b-2 transition-colors',
+              on
+                ? 'border-azure text-text font-medium'
+                : 'border-transparent text-text-muted hover:text-text hover:border-hairline-strong',
+            )}
+          >
+            {Icon && <Icon size={15} className={clsx('shrink-0', on && 'text-azure')} />}
+            {t.label}
+            {t.count != null && (
+              <span
+                className={clsx(
+                  'font-mono tnum rounded-full px-1.5 min-w-[22px] text-center text-[11px] leading-[17px]',
+                  on ? 'bg-azure/15 text-azure' : 'bg-surface-2 text-text-faint',
+                )}
+              >
+                {t.count}
+              </span>
+            )}
+          </button>
+        );
+      })}
     </div>
   );
 }

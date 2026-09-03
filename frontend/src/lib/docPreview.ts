@@ -126,6 +126,8 @@ export async function renderDocx(
     experimental: true,
   });
 
+  paginate(container);
+
   const pages = Array.from(container.querySelectorAll<HTMLElement>('section.docx'));
   pages.forEach((el, i) => {
     el.classList.add(PAGE_CLASS);
@@ -139,4 +141,78 @@ export async function renderDocx(
     thumbnails: [],
     destroy: () => undefined,
   };
+}
+
+/** A4 aspect: page height as a multiple of page width. */
+const A4_RATIO = 297 / 210;
+/** Fill a page to this share of its usable height before breaking. The remainder absorbs the
+ *  difference between our measurement and a real layout engine's, so content rarely spills. */
+const FILL = 0.94;
+
+/**
+ * Slice the continuous flow docx-preview produced into page-shaped sections.
+ *
+ * A .docx stores a flow of paragraphs and ONE page-geometry declaration; it records nowhere
+ * that "page 1 ends here". Word computes that when it opens the file and writes the result
+ * back as `lastRenderedPageBreak` hints — which is why a Word-saved file looks paginated in a
+ * web viewer and a generated one does not. Rather than forge those hints into the file (they
+ * would be our guess, permanently, in a document the reader may edit), the split happens here,
+ * in the view only. The downloaded file stays exactly what Word would paginate itself.
+ *
+ * The break points are therefore approximate: Word may move a line or two. The rail says so.
+ */
+function paginate(container: HTMLElement): void {
+  const source = container.querySelector<HTMLElement>('section.docx');
+  if (!source) return;
+  const host = source.querySelector<HTMLElement>('article') ?? source;
+  const blocks = Array.from(host.children) as HTMLElement[];
+  if (blocks.length === 0) return;
+
+  const style = getComputedStyle(source);
+  const pageHeight = Math.round(source.offsetWidth * A4_RATIO);
+  const usable =
+    (pageHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom)) * FILL;
+  if (!(usable > 0)) return;
+
+  // Measure everything BEFORE moving anything: relocating a block changes the layout the
+  // remaining measurements would be taken from.
+  const heights = blocks.map((el) => {
+    const box = el.getBoundingClientRect().height;
+    const cs = getComputedStyle(el);
+    return box + parseFloat(cs.marginTop || '0') + parseFloat(cs.marginBottom || '0');
+  });
+
+  const groups: HTMLElement[][] = [[]];
+  let used = 0;
+  blocks.forEach((el, i) => {
+    const h = heights[i];
+    const current = groups[groups.length - 1];
+    // A block taller than a page cannot be split here (that is layout-engine work), so it
+    // gets a page of its own and is allowed to overflow it.
+    if (current.length > 0 && used + h > usable) {
+      groups.push([el]);
+      used = h;
+    } else {
+      current.push(el);
+      used += h;
+    }
+  });
+
+  const parent = source.parentElement;
+  if (!parent || groups.length <= 1) {
+    source.style.minHeight = `${pageHeight}px`;
+    return;
+  }
+
+  const made: HTMLElement[] = [];
+  for (const group of groups) {
+    const page = source.cloneNode(false) as HTMLElement;
+    page.style.minHeight = `${pageHeight}px`;
+    const article = host === source ? page : (host.cloneNode(false) as HTMLElement);
+    if (article !== page) page.appendChild(article);
+    group.forEach((el) => article.appendChild(el));
+    made.push(page);
+  }
+  made.forEach((pageEl) => parent.insertBefore(pageEl, source));
+  source.remove();
 }

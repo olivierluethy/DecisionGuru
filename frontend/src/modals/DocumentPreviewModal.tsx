@@ -251,7 +251,9 @@ export function DocumentPreviewModal({ doc }: { doc: ExportDoc }) {
       subtitle={doc.title}
       onClose={closeModal}
       size="xl"
-      bodyClassName="p-0"
+      // The viewer owns its layout and its panes scroll individually; letting the modal
+      // body scroll too would put a second scrollbar beside the page pane.
+      bodyClassName="p-0 !overflow-hidden"
       footer={
         <>
           <span className="mr-auto text-[11px] text-text-faint">
@@ -268,7 +270,8 @@ export function DocumentPreviewModal({ doc }: { doc: ExportDoc }) {
       }
     >
       {/* Toolbar */}
-      <div className="border-b border-hairline px-3 py-2 flex flex-wrap items-center gap-x-3 gap-y-2 dg-doc-chrome">
+      <div className="flex flex-col h-[70vh]">
+      <div className="shrink-0 border-b border-hairline px-3 py-2 flex flex-wrap items-center gap-x-3 gap-y-2 dg-doc-chrome">
         <div className="flex items-center gap-1 rounded bg-surface-2 border border-hairline p-0.5">
           <FormatTab active={format === 'pdf'} onClick={() => setFormat('pdf')} icon={FileText} label="PDF" />
           <FormatTab active={format === 'docx'} onClick={() => setFormat('docx')} icon={FileType} label="Word" />
@@ -332,7 +335,8 @@ export function DocumentPreviewModal({ doc }: { doc: ExportDoc }) {
         </div>
       </div>
 
-      <div className="flex" style={{ height: '68vh' }}>
+      {/* min-h-0 is what lets the panes scroll instead of stretching the column. */}
+      <div className="flex flex-1 min-h-0">
         {/* Thumbnails */}
         <aside className="w-[132px] shrink-0 border-r border-hairline overflow-y-auto bg-bg-elev p-2 space-y-2 dg-doc-chrome">
           {Array.from({ length: pageCount }, (_, i) => i + 1).map((n) => (
@@ -415,6 +419,7 @@ export function DocumentPreviewModal({ doc }: { doc: ExportDoc }) {
             </p>
           </aside>
         )}
+      </div>
       </div>
     </Modal>
   );

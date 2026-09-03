@@ -201,9 +201,19 @@ def _build_docx(body: dict) -> bytes:
     """
     from docx import Document
     from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.oxml.ns import qn
     from docx.shared import Cm, Emu, Inches, Pt, RGBColor
 
     doc = Document()
+
+    # Word's Title style paints blue text under a horizontal rule, and Subtitle is italic.
+    # Both are kept for their STRUCTURE — Word's navigation pane and any table of contents
+    # read the style, not the formatting — but their looks are stripped, because the PDF and
+    # the Word file are meant to be one document in two formats, not two different-looking
+    # documents.
+    title_pPr = doc.styles["Title"].element.get_or_add_pPr()
+    for border in title_pPr.findall(qn("w:pBdr")):
+        title_pPr.remove(border)
 
     section = doc.sections[0]
     section.page_width, section.page_height = Cm(21.0), Cm(29.7)   # A4, like the PDF
@@ -216,7 +226,7 @@ def _build_docx(body: dict) -> bytes:
     normal = doc.styles["Normal"].paragraph_format
     normal.space_after = Pt(8)
     normal.line_spacing = 1.15
-    doc.styles["Normal"].font.size = Pt(10.5)
+    doc.styles["Normal"].font.size = Pt(9.5)   # same as the PDF's body text
 
     # Style AND explicit run formatting. The style is what Word reads as structure (its
     # navigation pane, a table of contents); the explicit size/weight is what any other
@@ -225,10 +235,12 @@ def _build_docx(body: dict) -> bytes:
     tp = doc.add_paragraph(style="Title")
     tr = tp.add_run(str(body.get("title") or ""))
     tr.bold = True
-    tr.font.size = Pt(20)
+    tr.font.size = Pt(18)                       # same as the PDF's title
+    tr.font.color.rgb = RGBColor(0x00, 0x00, 0x00)
     if body.get("subtitle"):
         sp = doc.add_paragraph(style="Subtitle")
         sr = sp.add_run(str(body["subtitle"]))
+        sr.italic = False
         sr.font.size = Pt(11)
         sr.font.color.rgb = RGBColor(0x66, 0x66, 0x66)
 
@@ -245,8 +257,8 @@ def _build_docx(body: dict) -> bytes:
         h.paragraph_format.space_after = Pt(4)
         run = h.add_run(str(text))
         run.bold = True
-        run.font.size = Pt(13)
-        run.font.color.rgb = RGBColor(0x1A, 0x1A, 0x1A)
+        run.font.size = Pt(12)                  # same as the PDF's section headings
+        run.font.color.rgb = RGBColor(0x00, 0x00, 0x00)
 
     for block in _blocks_of(body):
         kind = block.get("kind")

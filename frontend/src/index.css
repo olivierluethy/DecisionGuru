@@ -234,6 +234,19 @@ body {
   box-shadow: 0 6px 24px -8px rgba(0, 0, 0, 0.6);
 }
 
+/* A Word thumbnail is a clone of the real page placed inside a <button>, and a button's
+   UA stylesheet centres its text. The page it copies does not, so without this reset the
+   thumbnail misrepresents the very thing it is a picture of. */
+.dg-doc-thumb {
+  /* On the wrapper only: descendants with their own alignment — a centred chart — must keep
+     it, so this resets what is INHERITED, not what the document actually specifies. */
+  text-align: start;
+  /* docx-preview's wrapper carries its own padding and grey desk colour. Left in place they
+     scale down with the clone and the page floats inside its own thumbnail. */
+  padding: 0;
+  background: transparent;
+}
+
 /* Search hits.
    Painted over Ranges, so they sit exactly on the glyphs regardless of the per-span
    transforms pdf.js applies to its text layer. Yellow for every hit, a stronger amber for

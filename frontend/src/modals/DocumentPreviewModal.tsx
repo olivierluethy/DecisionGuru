@@ -49,7 +49,6 @@ export function DocumentPreviewModal({ doc }: { doc: ExportDoc }) {
   const [pageCount, setPageCount] = useState(0);
   const [thumbs, setThumbs] = useState<string[]>([]);
   const [renderNonce, setRenderNonce] = useState(0);
-  const [outline, setOutline] = useState<{ key: string; title: string; el: HTMLElement }[]>([]);
   const [showPicker, setShowPicker] = useState(false);
 
   const [query, setQuery] = useState('');
@@ -106,16 +105,6 @@ export function DocumentPreviewModal({ doc }: { doc: ExportDoc }) {
         setPage(1);
         setThumbs(rendered.thumbnails);
         setRenderNonce((n) => n + 1);
-        // Read the headings back out of the rendered document rather than trusting the
-        // blocks we sent: what the reader navigates is what the file actually contains.
-        // docx-preview maps Word's Heading styles onto `docx_heading*` classes.
-        setOutline(
-          Array.from(container.querySelectorAll<HTMLElement>(
-            'h1, h2, h3, [class*="heading1"], [class*="heading2"], [class*="heading3"]',
-          ))
-            .map((el, i) => ({ key: `${i}`, title: (el.textContent ?? '').trim(), el }))
-            .filter((o) => o.title.length > 0),
-        );
       } catch (err) {
         // The reason never reaches the reader, but it must reach the console — an
         // unrenderable document is otherwise a dead end with no way to diagnose it.
@@ -249,9 +238,6 @@ export function DocumentPreviewModal({ doc }: { doc: ExportDoc }) {
     }
   };
 
-  // Word documents built by python-docx have no rendered page breaks, so the viewer gets a
-  // single flowing page rather than a paginated one.
-  const continuous = format === 'docx' && pageCount <= 1;
   const ready = built?.format === format;
   const busy = building || (!ready && !error);
   const blob = ready ? built!.blob : null;
@@ -302,19 +288,10 @@ export function DocumentPreviewModal({ doc }: { doc: ExportDoc }) {
 
         <div className="flex items-center gap-1">
           <IconBtn onClick={() => goToPage(page - 1)} title="Previous page" disabled={page <= 1}><ChevronLeft size={14} /></IconBtn>
-          {continuous ? (
-            // A .docx carries no page breaks until Word lays it out, so docx-preview renders
-            // one continuous page. Saying "Page 1 of 1" for a long document would be a lie.
-            <span className="text-[12px] text-text-muted whitespace-nowrap"
-              title="Word decides the page breaks when it opens the file; this preview shows the document as one flow.">
-              Continuous
-            </span>
-          ) : (
-            <span className="text-[12px] text-text-muted whitespace-nowrap">
-              Page <span className="font-mono tnum text-text">{page}</span> of{' '}
-              <span className="font-mono tnum">{pageCount || '–'}</span>
-            </span>
-          )}
+          <span className="text-[12px] text-text-muted whitespace-nowrap">
+            Page <span className="font-mono tnum text-text">{page}</span> of{' '}
+            <span className="font-mono tnum">{pageCount || '–'}</span>
+          </span>
           <IconBtn onClick={() => goToPage(page + 1)} title="Next page" disabled={page >= pageCount}><ChevronRight size={14} /></IconBtn>
         </div>
 
@@ -348,56 +325,29 @@ export function DocumentPreviewModal({ doc }: { doc: ExportDoc }) {
 
       {/* min-h-0 is what lets the panes scroll instead of stretching the column. */}
       <div className="flex flex-1 min-h-0">
-        {/* Left rail: page thumbnails when the document has pages, an outline when it does
-            not. A continuous Word document rendered as a single "thumbnail" is a squashed
-            ribbon of the whole file — unreadable and unclickable; its headings are not. */}
-        <aside className={`shrink-0 border-r border-hairline overflow-y-auto bg-bg-elev p-2 dg-doc-chrome ${
-          continuous ? 'w-[184px] space-y-1' : 'w-[132px] space-y-2'}`}>
-          {continuous ? (
-            <>
-              <div className="eyebrow px-1 pb-1">Outline</div>
-              {outline.length === 0 && (
-                <p className="text-[11px] text-text-faint px-1">This document has no headings.</p>
-              )}
-              {outline.map((o) => (
-                <button
-                  key={o.key}
-                  onClick={() => o.el.scrollIntoView({ block: 'start', behavior: 'smooth' })}
-                  title={`Jump to “${o.title}”`}
-                  className="block w-full text-left px-2 py-1.5 rounded-sm text-[12px] text-text-muted hover:text-text hover:bg-surface-2 truncate"
-                >
-                  {o.title}
-                </button>
-              ))}
-              <p className="text-[10px] text-text-faint px-1 pt-2 leading-snug">
-                Word decides the page breaks when it opens the file, so there are no pages to
-                show here yet.
-              </p>
-            </>
-          ) : (
-            <>
-              {Array.from({ length: pageCount }, (_, i) => i + 1).map((n) => (
-                <button
-                  key={n}
-                  onClick={() => goToPage(n)}
-                  className={`block w-full rounded border overflow-hidden transition-colors ${
-                    n === page ? 'border-azure' : 'border-hairline hover:border-hairline-strong'}`}
-                  title={`Page ${n}`}
-                >
-                  {thumbs[n - 1]
-                    ? <img src={thumbs[n - 1]} alt={`Page ${n}`} className="w-full block bg-white" />
-                    : <DocxThumbnail pagesRef={pagesRef} page={n} nonce={renderNonce} />}
-                  <span className="block text-[10px] text-text-faint py-0.5">{n}</span>
-                </button>
-              ))}
-              {pageCount === 0 && <p className="text-[11px] text-text-faint px-1">No pages yet.</p>}
-              {format === 'docx' && pageCount > 0 && (
-                <p className="text-[10px] text-text-faint px-1 pt-1 leading-snug">
-                  Approximate pages — the file carries no breaks of its own, so Word may move a
-                  line or two when it opens it.
-                </p>
-              )}
-            </>
+        {/* Left rail: one thumbnail per page, in both formats. A PDF page arrives as a small
+            rasterised image; a Word page is live DOM, so its thumbnail is a scaled clone. */}
+        <aside className="shrink-0 w-[132px] space-y-2 border-r border-hairline overflow-y-auto bg-bg-elev p-2 dg-doc-chrome">
+          {Array.from({ length: pageCount }, (_, i) => i + 1).map((n) => (
+            <button
+              key={n}
+              onClick={() => goToPage(n)}
+              className={`block w-full rounded border overflow-hidden transition-colors ${
+                n === page ? 'border-azure' : 'border-hairline hover:border-hairline-strong'}`}
+              title={`Page ${n}`}
+            >
+              {thumbs[n - 1]
+                ? <img src={thumbs[n - 1]} alt={`Page ${n}`} className="w-full block bg-white" />
+                : <DocxThumbnail pagesRef={pagesRef} page={n} nonce={renderNonce} />}
+              <span className="block text-[10px] text-text-faint py-0.5">{n}</span>
+            </button>
+          ))}
+          {pageCount === 0 && <p className="text-[11px] text-text-faint px-1">No pages yet.</p>}
+          {format === 'docx' && pageCount > 0 && (
+            <p className="text-[10px] text-text-faint px-1 pt-1 leading-snug">
+              Approximate pages — the file carries no breaks of its own, so Word may move a
+              line or two when it opens it.
+            </p>
           )}
         </aside>
 
@@ -491,6 +441,20 @@ function DocxThumbnail({ pagesRef, page, nonce }: {
     const wrapper = document.createElement('div');
     wrapper.className = 'docx-wrapper dg-doc-thumb';
     wrapper.appendChild(clone);
+
+    // That same stylesheet also lays the wrapper out as a CENTRED flex column with 30px of
+    // padding — sized for a page pane, not for a 130px rail. Around a full-width page in a
+    // narrow wrapper it shifted the page hundreds of pixels to the left before the scale was
+    // applied, which is what cropped a third of every thumbnail and left the rest blank.
+    // These go inline rather than in a class because docx-preview injects its stylesheet at
+    // runtime, after the app's, and would otherwise win the tie on source order.
+    wrapper.style.width = `${src.offsetWidth}px`;
+    wrapper.style.display = 'block';
+    wrapper.style.padding = '0';
+    wrapper.style.margin = '0';
+    wrapper.style.background = 'transparent';
+    // `.docx-wrapper > section.docx` adds a 30px gap meant to separate pages in the pane.
+    clone.style.margin = '0';
 
     const scale = host.clientWidth / src.offsetWidth;
     wrapper.style.transform = `scale(${scale})`;

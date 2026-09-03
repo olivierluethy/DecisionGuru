@@ -1,7 +1,7 @@
 import type { PortfolioResponse, PortfolioFit } from './api';
 import { api } from './api';
 import type { AppSettings, CounterfactualResult, Position, Transaction } from '@decisionguru/shared';
-import { fmtCHF, fmtPct } from './format';
+import { fmtCHF, fmtDate, fmtPct } from './format';
 import { compactBlocks, tableBlock, type ExportDoc } from './exportDoc';
 
 /** Wire shape for `/export/excel`: one sheet per table. Spreadsheets carry no layout, so
@@ -89,6 +89,25 @@ function txRows(symbol: string, txs: Transaction[]) {
     round(t.fees),
     t.note ?? '',
   ]);
+}
+
+/** Column headers whose cells hold a date. */
+const DATE_COLUMN = /\bdate\b|\bas of\b/i;
+
+/**
+ * A copy of `rows` with every date column written the way the rest of the app writes dates.
+ *
+ * Only documents get this. In a spreadsheet a date is data — `2026-09-03` sorts correctly
+ * and a reader can pivot on it — but a document is something a person reads, and an ISO
+ * stamp in the middle of one reads as a serial number rather than as a day.
+ */
+function withReadableDates(
+  headers: string[], rows: (string | number)[][],
+): (string | number)[][] {
+  const columns = new Set(headers.flatMap((h, i) => (DATE_COLUMN.test(h) ? [i] : [])));
+  if (columns.size === 0) return rows;
+  return rows.map((row) => row.map(
+    (cell, i) => (columns.has(i) && typeof cell === 'string' ? fmtDate(cell) : cell)));
 }
 
 function taxRows(s: AppSettings): (string | number)[][] {
@@ -182,7 +201,7 @@ export async function buildPortfolioDoc(data: PortfolioResponse): Promise<Export
     subtitle: `${data.preTax ? 'Pre-tax' : 'After-tax'} · opportunity cost ${fmtCHF(data.aggregate.deltaCHF)} · ${fmtPct(data.aggregate.deltaPct)}`,
     filename: `portfolio-vs-${data.benchmark}`,
     meta: [
-      { label: 'As of', value: new Date().toISOString().slice(0, 10) },
+      { label: 'As of', value: fmtDate(new Date()) },
       { label: 'Benchmark', value: data.benchmark },
       { label: 'Basis', value: data.preTax ? 'Pre-tax' : 'After-tax' },
     ],
@@ -190,7 +209,8 @@ export async function buildPortfolioDoc(data: PortfolioResponse): Promise<Export
       chartImage ? { id: 'chart', kind: 'chart', title: 'Portfolio vs benchmark', image: chartImage } : null,
       tableBlock('summary', 'Summary', ['Metric', 'Value'], summaryRows),
       tableBlock('positions', 'Positions', POSITION_HEADERS, rows),
-      tableBlock('transactions', 'Transactions', TX_HEADERS, allTxRows),
+      tableBlock('transactions', 'Transactions', TX_HEADERS,
+        withReadableDates(TX_HEADERS, allTxRows)),
       settings ? tableBlock('tax', 'Tax assumptions', ['Assumption', 'Value'], taxRows(settings)) : null,
     ]),
   };
@@ -254,7 +274,7 @@ export async function buildPositionDoc(
     subtitle: `vs ${cf.benchmarkName} · opportunity cost ${fmtCHF(cf.deltaCHF)}`,
     filename: `${p.instrument.symbol}-vs-${cf.benchmarkSymbol}`,
     meta: [
-      { label: 'As of', value: new Date().toISOString().slice(0, 10) },
+      { label: 'As of', value: fmtDate(new Date()) },
       { label: 'Benchmark', value: cf.benchmarkSymbol },
       { label: 'ISIN', value: p.instrument.isin ?? '—' },
     ],
@@ -263,7 +283,8 @@ export async function buildPositionDoc(
       tableBlock('analysis', 'Analysis', ['Metric', 'Value'], summaryRows),
       tableBlock('recommendation', 'Recommendation', ['Field', 'Value'], recommendationRows(p)),
       tableBlock('fit', 'Portfolio fit', ['Field', 'Value'], fitRows(fit)),
-      tableBlock('transactions', 'Transactions', TX_HEADERS, txTable.rows),
+      tableBlock('transactions', 'Transactions', TX_HEADERS,
+        withReadableDates(TX_HEADERS, txTable.rows)),
       settings ? tableBlock('tax', 'Tax assumptions', ['Assumption', 'Value'], taxRows(settings)) : null,
       notes.length ? { id: 'notes', kind: 'notes', title: 'Notes', items: notes } : null,
     ]),

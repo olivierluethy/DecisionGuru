@@ -186,25 +186,91 @@ def _build_pdf(body: dict) -> bytes:
     return buf.getvalue()
 
 
+# The PDF is set in Helvetica; Arial is its metric twin and is present on every machine
+# Word runs on, so the two formats put the same words in the same places.
+DOCX_FONT = "Arial"
+
+
+def _pin_fonts(doc, name: str) -> None:
+    """Replace every THEME font reference in the template with one explicit family.
+
+    The default python-docx template names no fonts: it points at the Office theme, whose
+    major/minor faces are Calibri and the SERIF Cambria. A machine without those — every
+    Mac, every Linux box, every web preview — substitutes its own, which is how the Word
+    file ended up in a serif face while the PDF stayed in Helvetica. A theme reference also
+    WINS over an explicit family, so the reference has to go, not just be overridden.
+    """
+    from docx.oxml.ns import qn
+
+    themed = (qn("w:asciiTheme"), qn("w:hAnsiTheme"), qn("w:eastAsiaTheme"), qn("w:cstheme"))
+    explicit = (qn("w:ascii"), qn("w:hAnsi"), qn("w:eastAsia"), qn("w:cs"))
+
+    targets = [doc.styles.element.find(qn("w:docDefaults"))]
+    targets += [style.element for style in doc.styles]
+    for target in targets:
+        if target is None:
+            continue
+        for rPr in target.iter(qn("w:rPr")):
+            rFonts = rPr.find(qn("w:rFonts"))
+            if rFonts is None:
+                rFonts = rPr.makeelement(qn("w:rFonts"), {})
+                rPr.insert(0, rFonts)
+            for attr in themed:
+                rFonts.attrib.pop(attr, None)
+            for attr in explicit:
+                rFonts.set(attr, name)
+
+
+def _shade(cell, hex_color: str) -> None:
+    """Fill one table cell — Word has no cell background outside the shading element."""
+    from docx.oxml.ns import qn
+
+    tcPr = cell._tc.get_or_add_tcPr()
+    shd = tcPr.makeelement(qn("w:shd"), {})
+    shd.set(qn("w:val"), "clear")
+    shd.set(qn("w:color"), "auto")
+    shd.set(qn("w:fill"), hex_color)
+    tcPr.append(shd)
+
+
+def _table_borders(table, hex_color: str) -> None:
+    """A hairline grid in the PDF's own grey, on every edge."""
+    from docx.oxml.ns import qn
+
+    tblPr = table._tbl.tblPr
+    borders = tblPr.makeelement(qn("w:tblBorders"), {})
+    for edge in ("top", "left", "bottom", "right", "insideH", "insideV"):
+        el = borders.makeelement(qn(f"w:{edge}"), {})
+        el.set(qn("w:val"), "single")
+        el.set(qn("w:sz"), "4")        # eighths of a point → 0.5pt, as in the PDF
+        el.set(qn("w:space"), "0")
+        el.set(qn("w:color"), hex_color)
+        borders.append(el)
+    tblPr.append(borders)
+
+
 def _build_docx(body: dict) -> bytes:
     """A real Word document, not a text dump with bold lines.
 
-    The default python-docx template is US Letter with 1.25" margins and a `Normal` style
-    that sets neither paragraph spacing nor line spacing — which is why the output used to
-    read as one unbroken wall of text on the wrong paper. The page is set to A4 to match the
-    PDF, and the document uses Word's OWN styles (Title, Heading 1, Normal) rather than
+    The PDF is the reference: same A4 page, same 40pt margins, same Helvetica-metric face,
+    same type sizes, same grey table grid. The two are meant to be one document in two
+    formats, and every constant below has a twin in `_build_pdf`.
+
+    Structure still comes from Word's OWN styles (Title, Heading 1, Normal) rather than
     ad-hoc bold runs: that is what makes Word's navigation pane, table of contents and style
-    pane work on the file, and what lets a preview find its headings.
+    pane work on the file, and what lets a preview find its headings. The looks are pinned
+    on top of them, because no other renderer resolves the template's theme.
 
     Pagination stays Word's job. A .docx carries no page breaks until Word lays it out, and
     guessing them here would produce breaks in places Word would not choose.
     """
     from docx import Document
-    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING
     from docx.oxml.ns import qn
-    from docx.shared import Cm, Emu, Inches, Pt, RGBColor
+    from docx.shared import Emu, Inches, Pt, RGBColor
 
     doc = Document()
+    _pin_fonts(doc, DOCX_FONT)
 
     # Word's Title style paints blue text under a horizontal rule, and Subtitle is italic.
     # Both are kept for their STRUCTURE — Word's navigation pane and any table of contents
@@ -216,29 +282,43 @@ def _build_docx(body: dict) -> bytes:
         title_pPr.remove(border)
 
     section = doc.sections[0]
-    section.page_width, section.page_height = Cm(21.0), Cm(29.7)   # A4, like the PDF
-    section.left_margin = section.right_margin = Cm(2.0)
-    section.top_margin = section.bottom_margin = Cm(2.0)
+    section.page_width, section.page_height = Pt(595), Pt(842)     # A4, like the PDF
+    # 46pt, not 40: the PDF asks SimpleDocTemplate for a 40pt margin and reportlab then adds
+    # its frame's own 6pt padding inside it, so the first glyph on a PDF page sits 46pt from
+    # the edge (measured, not assumed). Matching the PDF's stated margin instead of its real
+    # text column would leave the two formats visibly out of register.
+    section.left_margin = section.right_margin = Pt(46)
+    section.top_margin = section.bottom_margin = Pt(46)
     # Length arithmetic yields a plain EMU int, so convert explicitly.
     content_width_in = Emu(section.page_width - section.left_margin - section.right_margin).inches
 
-    # Body text that breathes. Without these two the paragraphs sit flush against each other.
+    # Body text that breathes, on the PDF's own metrics: 9.5pt on 13pt leading, 6pt after.
     normal = doc.styles["Normal"].paragraph_format
-    normal.space_after = Pt(8)
-    normal.line_spacing = 1.15
+    normal.space_after = Pt(6)
+    normal.line_spacing_rule = WD_LINE_SPACING.EXACTLY
+    normal.line_spacing = Pt(13)
     doc.styles["Normal"].font.size = Pt(9.5)   # same as the PDF's body text
+    # `_pin_fonts` covers Normal through the document defaults it inherits, but Normal is the
+    # style a reader opens the style pane to check, so name the face on it directly too.
+    doc.styles["Normal"].font.name = DOCX_FONT
 
     # Style AND explicit run formatting. The style is what Word reads as structure (its
     # navigation pane, a table of contents); the explicit size/weight is what any other
     # renderer shows, because they do not all resolve the template's theme fonts — leaving
     # a heading indistinguishable from body text in a preview.
     tp = doc.add_paragraph(style="Title")
+    # The Title and Subtitle styles carry the template's own generous spacing (15pt after a
+    # title); the PDF sets 2pt and 8pt. Pin them so the two openings line up.
+    tp.paragraph_format.space_before = Pt(0)
+    tp.paragraph_format.space_after = Pt(2)     # PDF: dgTitle
     tr = tp.add_run(str(body.get("title") or ""))
     tr.bold = True
     tr.font.size = Pt(18)                       # same as the PDF's title
     tr.font.color.rgb = RGBColor(0x00, 0x00, 0x00)
     if body.get("subtitle"):
         sp = doc.add_paragraph(style="Subtitle")
+        sp.paragraph_format.space_before = Pt(0)
+        sp.paragraph_format.space_after = Pt(8)  # PDF: dgSubtitle
         sr = sp.add_run(str(body["subtitle"]))
         sr.italic = False
         sr.font.size = Pt(11)
@@ -247,13 +327,22 @@ def _build_docx(body: dict) -> bytes:
     meta = [m for m in (body.get("meta") or []) if isinstance(m, dict) and m.get("label")]
     if meta:
         mp = doc.add_paragraph()
-        mr = mp.add_run("   ·   ".join(f"{m['label']} {m.get('value', '')}" for m in meta))
-        mr.font.size = Pt(8.5)
-        mr.font.color.rgb = RGBColor(0x55, 0x55, 0x55)
+        mp.paragraph_format.space_after = Pt(10)
+        for i, m in enumerate(meta):
+            # Bold label, plain value — the PDF marks up its meta line the same way, and it
+            # is what makes the line read as provenance rather than as a sentence.
+            if i:
+                mp.add_run("   ·   ").font.size = Pt(8.5)
+            label = mp.add_run(f"{m['label']} ")
+            label.bold = True
+            value = mp.add_run(str(m.get("value", "")))
+            for run in (label, value):
+                run.font.size = Pt(8.5)
+                run.font.color.rgb = RGBColor(0x55, 0x55, 0x55)
 
     def _heading(text: str) -> None:
         h = doc.add_heading(level=1)
-        h.paragraph_format.space_before = Pt(14)
+        h.paragraph_format.space_before = Pt(12)   # PDF: spaceBefore=12
         h.paragraph_format.space_after = Pt(4)
         run = h.add_run(str(text))
         run.bold = True
@@ -290,23 +379,37 @@ def _build_docx(body: dict) -> bytes:
         elif kind == "notes":
             _heading(block.get("title") or "Notes")
             for n in (block.get("items") or []):
-                doc.add_paragraph(str(n), style="List Bullet")
+                np = doc.add_paragraph()
+                np.paragraph_format.space_after = Pt(4)
+                nr = np.add_run(str(n))
+                nr.italic = True
+                nr.font.size = Pt(9)
+                nr.font.color.rgb = RGBColor(0x33, 0x33, 0x33)
         else:  # table
             if block.get("title"):
                 _heading(block["title"])
             headers = block.get("headers") or []
             rows = block.get("rows") or []
             tbl = doc.add_table(rows=1, cols=max(len(headers), 1))
-            tbl.style = "Light Grid Accent 1"
+            # "Table Grid" carries no colour of its own, so the borders set below are the
+            # only ones the reader sees — the PDF's 0.5pt #cccccc grid, on a #f0f0f0 header.
+            tbl.style = "Table Grid"
             tbl.autofit = True
+            _table_borders(tbl, "CCCCCC")
+            # Repeat the header on every page the table spills onto, as the PDF's
+            # `repeatRows=1` does.
+            tbl.rows[0]._tr.get_or_add_trPr().append(
+                tbl.rows[0]._tr.makeelement(qn("w:tblHeader"), {}))
             for i, htext in enumerate(headers):
                 cell = tbl.rows[0].cells[i]
                 cell.text = str(htext)
+                _shade(cell, "F0F0F0")
                 for para in cell.paragraphs:
                     para.paragraph_format.space_after = Pt(2)
+                    para.paragraph_format.line_spacing = 1
                     for r in para.runs:
                         r.bold = True
-                        r.font.size = Pt(9)
+                        r.font.size = Pt(8)   # PDF: dgTh
             for row in rows:
                 cells = tbl.add_row().cells
                 for i, val in enumerate(row):
@@ -315,16 +418,18 @@ def _build_docx(body: dict) -> bytes:
                     cells[i].text = str(val)
                     for para in cells[i].paragraphs:
                         para.paragraph_format.space_after = Pt(2)
+                        para.paragraph_format.line_spacing = 1
                         for r in para.runs:
-                            r.font.size = Pt(9)
+                            r.font.size = Pt(8)   # PDF: dgTd
             # A table butted straight against the next heading reads as one blob.
             doc.add_paragraph()
 
     disc = doc.add_paragraph(
         str(body.get("disclaimer")
             or "Not financial advice. Figures are model estimates — see docs/TAX-MODEL.md."))
+    disc.paragraph_format.space_before = Pt(24)   # PDF: dgDisc
     disc.runs[0].italic = True
-    disc.runs[0].font.size = Pt(7.5)
+    disc.runs[0].font.size = Pt(7)
     disc.runs[0].font.color.rgb = RGBColor(0x99, 0x99, 0x99)
 
     buf = io.BytesIO()

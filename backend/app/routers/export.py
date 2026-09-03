@@ -187,17 +187,50 @@ def _build_pdf(body: dict) -> bytes:
 
 
 def _build_docx(body: dict) -> bytes:
+    """A real Word document, not a text dump with bold lines.
+
+    The default python-docx template is US Letter with 1.25" margins and a `Normal` style
+    that sets neither paragraph spacing nor line spacing — which is why the output used to
+    read as one unbroken wall of text on the wrong paper. The page is set to A4 to match the
+    PDF, and the document uses Word's OWN styles (Title, Heading 1, Normal) rather than
+    ad-hoc bold runs: that is what makes Word's navigation pane, table of contents and style
+    pane work on the file, and what lets a preview find its headings.
+
+    Pagination stays Word's job. A .docx carries no page breaks until Word lays it out, and
+    guessing them here would produce breaks in places Word would not choose.
+    """
     from docx import Document
-    from docx.shared import Inches, Pt, RGBColor
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.shared import Cm, Emu, Inches, Pt, RGBColor
 
     doc = Document()
-    title = doc.add_paragraph()
-    run = title.add_run(str(body.get("title") or ""))
-    run.bold = True
-    run.font.size = Pt(18)
+
+    section = doc.sections[0]
+    section.page_width, section.page_height = Cm(21.0), Cm(29.7)   # A4, like the PDF
+    section.left_margin = section.right_margin = Cm(2.0)
+    section.top_margin = section.bottom_margin = Cm(2.0)
+    # Length arithmetic yields a plain EMU int, so convert explicitly.
+    content_width_in = Emu(section.page_width - section.left_margin - section.right_margin).inches
+
+    # Body text that breathes. Without these two the paragraphs sit flush against each other.
+    normal = doc.styles["Normal"].paragraph_format
+    normal.space_after = Pt(8)
+    normal.line_spacing = 1.15
+    doc.styles["Normal"].font.size = Pt(10.5)
+
+    # Style AND explicit run formatting. The style is what Word reads as structure (its
+    # navigation pane, a table of contents); the explicit size/weight is what any other
+    # renderer shows, because they do not all resolve the template's theme fonts — leaving
+    # a heading indistinguishable from body text in a preview.
+    tp = doc.add_paragraph(style="Title")
+    tr = tp.add_run(str(body.get("title") or ""))
+    tr.bold = True
+    tr.font.size = Pt(20)
     if body.get("subtitle"):
-        sub = doc.add_paragraph(str(body["subtitle"]))
-        sub.runs[0].font.color.rgb = RGBColor(0x66, 0x66, 0x66)
+        sp = doc.add_paragraph(style="Subtitle")
+        sr = sp.add_run(str(body["subtitle"]))
+        sr.font.size = Pt(11)
+        sr.font.color.rgb = RGBColor(0x66, 0x66, 0x66)
 
     meta = [m for m in (body.get("meta") or []) if isinstance(m, dict) and m.get("label")]
     if meta:
@@ -207,13 +240,14 @@ def _build_docx(body: dict) -> bytes:
         mr.font.color.rgb = RGBColor(0x55, 0x55, 0x55)
 
     def _heading(text: str) -> None:
-        h = doc.add_paragraph()
-        hr = h.add_run(str(text))
-        hr.bold = True
-        hr.font.size = Pt(12)
+        h = doc.add_heading(level=1)
+        h.paragraph_format.space_before = Pt(14)
+        h.paragraph_format.space_after = Pt(4)
+        run = h.add_run(str(text))
+        run.bold = True
+        run.font.size = Pt(13)
+        run.font.color.rgb = RGBColor(0x1A, 0x1A, 0x1A)
 
-    # Same block list, same order, same titles as the PDF — the two documents are meant to
-    # be the same document in two formats, and the preview lets the reader flip between them.
     for block in _blocks_of(body):
         kind = block.get("kind")
         if kind == "chart":
@@ -223,13 +257,16 @@ def _build_docx(body: dict) -> bytes:
             if block.get("title"):
                 _heading(block["title"])
             try:
-                # Same rule as the PDF: cap at the text width, never upscale a small image.
-                from PIL import Image as _PILImage  # bundled with python-docx's deps
+                from PIL import Image as _PILImage
                 try:
                     px_w = _PILImage.open(io.BytesIO(raw)).width
                 except Exception:  # noqa: BLE001
                     px_w = 0
-                doc.add_picture(io.BytesIO(raw), width=Inches(_image_width(px_w) / 72))
+                # Never wider than the text column, never upscaled past its own size.
+                width_in = min(content_width_in, _image_width(px_w) / 72)
+                pic = doc.add_paragraph()
+                pic.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                pic.add_run().add_picture(io.BytesIO(raw), width=Inches(width_in))
             except Exception:  # noqa: BLE001
                 pass
         elif kind == "text":
@@ -241,7 +278,7 @@ def _build_docx(body: dict) -> bytes:
         elif kind == "notes":
             _heading(block.get("title") or "Notes")
             for n in (block.get("items") or []):
-                doc.add_paragraph(str(n))
+                doc.add_paragraph(str(n), style="List Bullet")
         else:  # table
             if block.get("title"):
                 _heading(block["title"])
@@ -249,23 +286,33 @@ def _build_docx(body: dict) -> bytes:
             rows = block.get("rows") or []
             tbl = doc.add_table(rows=1, cols=max(len(headers), 1))
             tbl.style = "Light Grid Accent 1"
+            tbl.autofit = True
             for i, htext in enumerate(headers):
                 cell = tbl.rows[0].cells[i]
                 cell.text = str(htext)
                 for para in cell.paragraphs:
+                    para.paragraph_format.space_after = Pt(2)
                     for r in para.runs:
                         r.bold = True
+                        r.font.size = Pt(9)
             for row in rows:
                 cells = tbl.add_row().cells
                 for i, val in enumerate(row):
-                    if i < len(cells):
-                        cells[i].text = str(val)
+                    if i >= len(cells):
+                        continue
+                    cells[i].text = str(val)
+                    for para in cells[i].paragraphs:
+                        para.paragraph_format.space_after = Pt(2)
+                        for r in para.runs:
+                            r.font.size = Pt(9)
+            # A table butted straight against the next heading reads as one blob.
+            doc.add_paragraph()
 
     disc = doc.add_paragraph(
         str(body.get("disclaimer")
             or "Not financial advice. Figures are model estimates — see docs/TAX-MODEL.md."))
     disc.runs[0].italic = True
-    disc.runs[0].font.size = Pt(7)
+    disc.runs[0].font.size = Pt(7.5)
     disc.runs[0].font.color.rgb = RGBColor(0x99, 0x99, 0x99)
 
     buf = io.BytesIO()

@@ -1,9 +1,9 @@
-import {
-  ResponsiveContainer, ScatterChart, Scatter, XAxis, YAxis, ZAxis, ReferenceLine, Tooltip, Cell,
-} from 'recharts';
+import type { RefObject } from 'react';
+import clsx from 'clsx';
 import { TrendingUp, TrendingDown, Scale, AlertTriangle } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import type { MarketCompetitor, MarketPosition as MarketPositionData, MarketQuadrant } from '../lib/api';
+import type { MarketPosition as MarketPositionData, MarketQuadrant } from '../lib/api';
+import { MarketScatter, type MarketScatterPoint } from './MarketScatter';
 import { MiniBar } from './ui';
 import { useApp } from '../store';
 
@@ -15,6 +15,10 @@ import { useApp } from '../store';
  * percentiles inside the company's own market, names the corner it sits in, and — when
  * they exist — names the peers that beat it on BOTH axes. It states the finding; it never
  * tells anyone what to buy.
+ *
+ * The plane itself lives in MarketScatter; this card only frames it. Hover state is owned
+ * one level up in MarketAnalysis so the comparables table, this chart and the floating
+ * mini-map all point at the same company at the same time.
  */
 
 const QUADRANTS: Record<MarketQuadrant, {
@@ -45,23 +49,21 @@ const VALUE_BASIS: Record<string, string> = {
 };
 
 export function MarketPosition({
-  position, competitors, range,
+  position, points, range, active, onActiveChange, chartRef,
 }: {
   position: MarketPositionData;
-  competitors: MarketCompetitor[];
+  /** Plotted companies, derived once by the parent and shared with the mini-map. */
+  points: MarketScatterPoint[];
   range: string;
+  /** Symbol currently pointed at, from anywhere in the section. */
+  active: string | null;
+  onActiveChange: (symbol: string | null) => void;
+  /** Observed by the parent to know when this chart has scrolled out of view. */
+  chartRef?: RefObject<HTMLDivElement>;
 }) {
   const openModal = useApp((s) => s.openModal);
   const q = position.quadrant ? QUADRANTS[position.quadrant] : null;
   const Icon = q?.icon;
-
-  // Only companies scored on both axes can be placed; the rest simply aren't plotted.
-  const points = competitors
-    .filter((c) => c.valuePct != null && c.strengthPct != null)
-    .map((c) => ({
-      x: c.strengthPct as number, y: c.valuePct as number,
-      symbol: c.symbol, name: c.name, isSubject: c.isSubject, rank: c.rank ?? null,
-    }));
 
   return (
     <div className={`card !p-4 border-l-2 ${q ? q.border : 'border-l-hairline'}`}>
@@ -93,51 +95,20 @@ export function MarketPosition({
 
       {/* Where everyone in this market sits. Quadrants are split at the market median (50). */}
       {points.length > 2 && (
-        <div className="mt-4" style={{ width: '100%', height: 200 }}>
-          <ResponsiveContainer>
-            <ScatterChart margin={{ top: 8, right: 12, bottom: 16, left: 4 }}>
-              <XAxis
-                type="number" dataKey="x" domain={[0, 100]} ticks={[0, 25, 50, 75, 100]}
-                tick={{ fontSize: 10, fill: '#5F6E82' }} stroke="#243040"
-                label={{ value: 'Market strength →', position: 'insideBottom', offset: -8, fontSize: 10, fill: '#5F6E82' }}
-              />
-              <YAxis
-                type="number" dataKey="y" domain={[0, 100]} ticks={[0, 25, 50, 75, 100]}
-                tick={{ fontSize: 10, fill: '#5F6E82' }} stroke="#243040" width={34}
-                label={{ value: 'Value →', angle: -90, position: 'insideLeft', offset: 12, fontSize: 10, fill: '#5F6E82' }}
-              />
-              <ZAxis range={[70, 70]} />
-              <ReferenceLine x={50} stroke="#243040" strokeDasharray="3 3" />
-              <ReferenceLine y={50} stroke="#243040" strokeDasharray="3 3" />
-              <Tooltip
-                cursor={{ stroke: '#243040' }}
-                content={({ payload }) => {
-                  const p = payload?.[0]?.payload as (typeof points)[number] | undefined;
-                  if (!p) return null;
-                  return (
-                    <div className="bg-surface-2 border border-hairline rounded px-2.5 py-1.5 text-[11px]">
-                      <div className="font-mono text-text">{p.symbol}{p.isSubject ? ' · this' : ''}</div>
-                      {p.name && <div className="text-text-faint truncate max-w-[180px]">{p.name}</div>}
-                      <div className="text-text-muted mt-1">Value {p.y.toFixed(0)} · Strength {p.x.toFixed(0)}</div>
-                    </div>
-                  );
-                }}
-              />
-              <Scatter
-                data={points} isAnimationActive={false}
-                onClick={(p: { symbol?: string; name?: string | null }) =>
-                  p?.symbol && openModal({ kind: 'opportunity', symbol: p.symbol, name: p.name ?? null })}
-                className="cursor-pointer"
-              >
-                {points.map((p) => (
-                  <Cell key={p.symbol} fill={p.isSubject ? '#4FD0E0' : '#5F6E82'} />
-                ))}
-              </Scatter>
-            </ScatterChart>
-          </ResponsiveContainer>
+        <div ref={chartRef} className="mt-4">
+          <div style={{ width: '100%', height: 200 }}>
+            <MarketScatter
+              points={points}
+              active={active}
+              onActiveChange={onActiveChange}
+              onOpen={(p) => openModal({ kind: 'opportunity', symbol: p.symbol, name: p.name })}
+              variant="full"
+            />
+          </div>
           <p className="text-[11px] text-text-faint mt-1">
             Each dot is a company in this market; azure is this one. Top-right is cheap and strong,
-            top-left cheap but lagging. Click a dot to open it.
+            top-left cheap but lagging. Hover a row in the comparables table below to find that
+            company here — and hover a dot to find its row. Click a dot to open it.
           </p>
         </div>
       )}
@@ -152,7 +123,14 @@ export function MarketPosition({
                 key={a.symbol}
                 type="button"
                 onClick={() => openModal({ kind: 'opportunity', symbol: a.symbol, name: a.name, currency: a.currency })}
-                className="chip cursor-pointer hover:border-hairline-strong"
+                onMouseEnter={() => onActiveChange(a.symbol)}
+                onMouseLeave={() => onActiveChange(null)}
+                className={clsx(
+                  'chip cursor-pointer transition-colors duration-150 motion-reduce:transition-none',
+                  active === a.symbol
+                    ? '!border-gold/60 !text-text bg-gold/10'
+                    : 'hover:border-hairline-strong',
+                )}
                 title={`Open ${a.symbol}`}
               >
                 <span className="font-mono text-text">{a.symbol}</span>

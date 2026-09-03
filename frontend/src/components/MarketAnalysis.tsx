@@ -1,12 +1,17 @@
-import { useState } from 'react';
+import {
+  memo, useCallback, useEffect, useMemo, useRef, useState, type RefObject,
+} from 'react';
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
+import { X } from 'lucide-react';
+import clsx from 'clsx';
 import { api, type MarketAnalysisResult, type MarketClassification, type MarketCompetitor } from '../lib/api';
 import { Spinner, EmptyState } from './ui';
 import { fmtPct, fmtPctSigned, fmtMoney, fmtDate } from '../lib/format';
 import { useApp } from '../store';
 import { ComparisonSelect } from './ComparisonSelect';
 import { MarketPosition } from './MarketPosition';
+import { MarketScatter, marketScatterPoints, type MarketScatterPoint } from './MarketScatter';
 
 const RANGES = ['1M', '3M', '6M', '1Y', '3Y', '5Y'] as const;
 type MarketRange = (typeof RANGES)[number];
@@ -71,18 +76,10 @@ function SortableTh({ label, sortKey, title, sort, onSort }: {
 
 export function MarketAnalysis({ symbol }: { symbol: string }) {
   const [range, setRange] = useState<MarketRange>('1Y');
-  // Default to the composite rank — "who is the better bet here" is the question the table
-  // is there to answer; every other column stays one click away.
-  const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' }>({ key: 'rank', dir: 'asc' });
-  const openModal = useApp((s) => s.openModal);
   const defaultBenchmark = useApp((s) => s.benchmark);
   // Comparison lines are user-selectable: seed with the global benchmark (e.g. VWRL.SW), then
   // freely add/remove ETFs or companies — even from another market — via the selector below.
   const [compare, setCompare] = useState<string[]>(defaultBenchmark ? [defaultBenchmark] : []);
-  const compareColorOf = (sym: string) => {
-    const i = compare.indexOf(sym);
-    return i >= 0 ? LINE_COLORS[(i + 1) % LINE_COLORS.length] : '#5F6E82';
-  };
   const { data, isLoading, isError } = useQuery({
     queryKey: ['market-analysis', symbol, range, compare.join(',')],
     queryFn: () => api.marketAnalysis(symbol, range, compare),
@@ -105,35 +102,103 @@ export function MarketAnalysis({ symbol }: { symbol: string }) {
   if (isLoading) return <Spinner label="Reading the market…" />;
   if (isError || !data) return <EmptyState title="Market analysis unavailable" hint="Try again shortly." />;
 
+  return (
+    <MarketAnalysisBody
+      data={data} range={range} onRange={setRange} compare={compare} onCompare={setCompare}
+    />
+  );
+}
+
+/**
+ * The loaded section. Split out from the query wrapper so every hook below can assume real
+ * data — and so the hover state that binds the chart, the comparables table and the floating
+ * mini-map together has one owner with all three in scope.
+ */
+function MarketAnalysisBody({ data, range, onRange, compare, onCompare }: {
+  data: MarketAnalysisResult;
+  range: MarketRange;
+  onRange: (r: MarketRange) => void;
+  compare: string[];
+  onCompare: (c: string[]) => void;
+}) {
+  // Default to the composite rank — "who is the better bet here" is the question the table
+  // is there to answer; every other column stays one click away.
+  const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' }>({ key: 'rank', dir: 'asc' });
+  const openModal = useApp((s) => s.openModal);
+
+  // The company the pointer is on, wherever it came from: a table row, a dot in the chart,
+  // or a dot in the mini-map. A ticker, i.e. exactly the key the table rows already use —
+  // there is no second mapping between list and chart to fall out of sync.
+  const [active, setActive] = useState<string | null>(null);
+  useEffect(() => { setActive(null); }, [data.symbol]);
+
+  const compareColorOf = (sym: string) => {
+    const i = compare.indexOf(sym);
+    return i >= 0 ? LINE_COLORS[(i + 1) % LINE_COLORS.length] : '#5F6E82';
+  };
+
   const cls = data.classification ? CLASS_META[data.classification] : null;
 
   // Build a merged {date → {subject, sp500, world, sector}} for the multi-line chart.
-  const lines: { key: string; label: string; color: string; series: { date: string; value: number }[] }[] = [];
-  lines.push({ key: 'subject', label: data.symbol, color: '#4FD0E0', series: data.subject.series });
-  data.benchmarks.forEach((b, i) => {
-    if (b.series.length > 1) lines.push({ key: b.key, label: b.symbol, color: LINE_COLORS[(i + 1) % LINE_COLORS.length], series: b.series });
-  });
-  if (data.sectorLine.kind === 'etf' && data.sectorLine.series.length > 1) {
-    lines.push({ key: 'sector', label: data.sectorLine.label, color: '#B6D94E', series: data.sectorLine.series });
-  }
-  const byDate = new Map<string, Record<string, number | string>>();
-  for (const ln of lines) for (const p of ln.series) {
-    const row = byDate.get(p.date) ?? { date: p.date };
-    row[ln.key] = p.value;
-    byDate.set(p.date, row);
-  }
-  const chartData = [...byDate.values()].sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  // Memoised: hovering a company must not rebuild the rebased series.
+  const { lines, chartData } = useMemo(() => {
+    const ls: { key: string; label: string; color: string; series: { date: string; value: number }[] }[] = [];
+    ls.push({ key: 'subject', label: data.symbol, color: '#4FD0E0', series: data.subject.series });
+    data.benchmarks.forEach((b, i) => {
+      if (b.series.length > 1) ls.push({ key: b.key, label: b.symbol, color: LINE_COLORS[(i + 1) % LINE_COLORS.length], series: b.series });
+    });
+    if (data.sectorLine.kind === 'etf' && data.sectorLine.series.length > 1) {
+      ls.push({ key: 'sector', label: data.sectorLine.label, color: '#B6D94E', series: data.sectorLine.series });
+    }
+    const byDate = new Map<string, Record<string, number | string>>();
+    for (const ln of ls) for (const p of ln.series) {
+      const row = byDate.get(p.date) ?? { date: p.date };
+      row[ln.key] = p.value;
+      byDate.set(p.date, row);
+    }
+    return {
+      lines: ls,
+      chartData: [...byDate.values()].sort((a, b) => String(a.date).localeCompare(String(b.date))),
+    };
+  }, [data]);
 
   // Client-side sort so switching column never costs a request. Rows the column can't
   // compare (no data) always sink to the bottom, whichever direction is active.
-  const rows = [...data.competitors].sort((a, b) => {
+  const rows = useMemo(() => [...data.competitors].sort((a, b) => {
     const av = sortValue(a, sort.key, range);
     const bv = sortValue(b, sort.key, range);
     if (av == null && bv == null) return 0;
     if (av == null) return 1;
     if (bv == null) return -1;
     return sort.dir === 'asc' ? av - bv : bv - av;
-  });
+  }), [data.competitors, sort, range]);
+
+  // One derivation of the plotted set, shared by the full chart and the mini-map.
+  const points = useMemo(() => marketScatterPoints(data.competitors), [data.competitors]);
+  const plotted = useMemo(() => new Set(points.map((p) => p.symbol)), [points]);
+  const activePoint = useMemo(
+    () => (active ? points.find((p) => p.symbol === active) ?? null : null),
+    [points, active],
+  );
+  // MarketPosition only draws the plane above a handful of scored companies.
+  const hasScatter = Boolean(data.marketPosition) && points.length > 2;
+
+  const chartRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const showMini = useMiniMapVisibility({ chartRef, listRef, enabled: hasScatter });
+
+  const revealRow = useRevealRow(listRef);
+  const onRowHover = useCallback((sym: string | null) => setActive(sym), []);
+  const onRowOpen = useCallback((c: MarketCompetitor) => {
+    openModal({ kind: 'opportunity', symbol: c.symbol, name: c.name, currency: c.currency });
+  }, [openModal]);
+  // Only the mini-map scrolls the list: it is on screen next to the rows, so bringing a row
+  // into view is a small, legible move. Doing it from the full chart would scroll the chart
+  // itself out from under the pointer.
+  const onMiniActive = useCallback((sym: string | null) => {
+    setActive(sym);
+    revealRow(sym);
+  }, [revealRow]);
 
   const toggleSort = (key: SortKey) =>
     setSort((s) => (s.key === key
@@ -149,7 +214,7 @@ export function MarketAnalysis({ symbol }: { symbol: string }) {
       {/* Comparison selector — subject vs. any benchmark ETFs and/or companies (any market). */}
       <div className="flex flex-wrap items-center gap-2">
         <span className="eyebrow mr-1">Compare</span>
-        <ComparisonSelect subject={data.symbol} selected={compare} onChange={setCompare} colorOf={compareColorOf} />
+        <ComparisonSelect subject={data.symbol} selected={compare} onChange={onCompare} colorOf={compareColorOf} />
       </div>
 
       {/* Company context */}
@@ -162,14 +227,17 @@ export function MarketAnalysis({ symbol }: { symbol: string }) {
       {/* Range selector */}
       <div className="flex flex-wrap gap-1.5">
         {RANGES.map((r) => (
-          <button key={r} onClick={() => setRange(r)}
+          <button key={r} onClick={() => onRange(r)}
             className={`chip cursor-pointer ${range === r ? '!border-azure/50 !text-text' : 'opacity-50'}`}>{r}</button>
         ))}
       </div>
 
       {/* Is another company in this market the better bet? Value × strength, ranked. */}
       {data.marketPosition && (
-        <MarketPosition position={data.marketPosition} competitors={data.competitors} range={range} />
+        <MarketPosition
+          position={data.marketPosition} points={points} range={range}
+          active={active} onActiveChange={setActive} chartRef={chartRef}
+        />
       )}
 
       {/* Market-vs-company headline */}
@@ -189,29 +257,7 @@ export function MarketAnalysis({ symbol }: { symbol: string }) {
       )}
 
       {/* Rebased performance chart */}
-      {chartData.length > 1 ? (
-        <div style={{ width: '100%', height: 240 }}>
-          <ResponsiveContainer>
-            <LineChart data={chartData} margin={{ top: 6, right: 8, bottom: 0, left: 0 }}>
-              <CartesianGrid stroke="#243040" strokeDasharray="2 4" strokeOpacity={0.5} vertical={false} />
-              <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#5F6E82' }} minTickGap={48}
-                tickFormatter={(d) => fmtDate(d).replace(/ \d{4}$/, '')} stroke="#243040" />
-              <YAxis tick={{ fontSize: 10, fill: '#5F6E82' }} width={40} stroke="#243040"
-                tickFormatter={(v) => `${v}`} />
-              <Tooltip contentStyle={{ background: '#1A2331', border: '1px solid #243040', borderRadius: 6, fontSize: 12 }}
-                labelFormatter={(d) => fmtDate(d as string)} formatter={(v: number) => [`${Number(v).toFixed(1)}`, '']} />
-              <Legend wrapperStyle={{ fontSize: 11 }} />
-              {lines.map((ln) => (
-                <Line key={ln.key} type="monotone" dataKey={ln.key} name={ln.label} stroke={ln.color}
-                  strokeWidth={ln.key === 'subject' ? 2.4 : 1.5} dot={false} isAnimationActive={false} connectNulls />
-              ))}
-            </LineChart>
-          </ResponsiveContainer>
-          <p className="text-[11px] text-text-faint mt-1">Rebased to 100 at the start of the window · price return (currency-neutral).</p>
-        </div>
-      ) : (
-        <p className="text-[12px] text-text-faint">Not enough cached price history to chart this window yet — it fills in shortly.</p>
-      )}
+      <RebasedChart lines={lines} chartData={chartData} />
 
       {/* Competitor table */}
       <div>
@@ -221,7 +267,7 @@ export function MarketAnalysis({ symbol }: { symbol: string }) {
         {data.competitors.length === 0 ? (
           <p className="text-sm text-text-faint">No comparable companies with cached data yet. Open a few same-industry names in Research/Discover to build the peer set.</p>
         ) : (
-          <div className="border border-hairline rounded overflow-hidden">
+          <div ref={listRef} className="border border-hairline rounded overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
@@ -241,40 +287,19 @@ export function MarketAnalysis({ symbol }: { symbol: string }) {
                     {th('vs this stock', 'relative')}
                   </tr>
                 </thead>
-                <tbody>
+                <tbody onMouseLeave={() => setActive(null)}>
                   {rows.map((c) => (
-                    <tr key={c.symbol} className={c.isSubject ? 'bg-surface-2' : ''}>
-                      <td className="td">
-                        <button
-                          type="button"
-                          onClick={() => openModal({ kind: 'opportunity', symbol: c.symbol, name: c.name, currency: c.currency })}
-                          title={`Open ${c.symbol}`}
-                          className="group inline-flex items-center gap-2 text-left cursor-pointer"
-                        >
-                          <span className="font-mono text-text group-hover:text-azure underline-offset-2 group-hover:underline">{c.symbol}</span>
-                          {c.isSubject && <span className="text-[10px] uppercase text-azure">this</span>}
-                          {c.name && <span className="text-text-faint truncate group-hover:text-text-muted">{c.name}</span>}
-                        </button>
-                      </td>
-                      {data.marketPosition && (
-                        <>
-                          <td className="td text-right font-mono tnum text-text-muted">{c.rank ?? '—'}</td>
-                          <td className="td text-right font-mono tnum">{c.valuePct != null ? c.valuePct.toFixed(0) : '—'}</td>
-                          <td className="td text-right font-mono tnum">{c.strengthPct != null ? c.strengthPct.toFixed(0) : '—'}</td>
-                        </>
-                      )}
-                      <td className="td text-right font-mono tnum">
-                        {c.marketCapCHF != null
-                          ? fmtMoney(c.marketCapCHF, 'CHF', false)
-                          : c.marketCap != null
-                            ? fmtMoney(c.marketCap, c.currency ?? 'USD', false)
-                            : '—'}
-                      </td>
-                      <td className="td text-right font-mono tnum">{c.trailingPE != null ? c.trailingPE.toFixed(1) : '—'}</td>
-                      <td className="td text-right font-mono tnum">{fmtPct(c.profitMargins, 1)}</td>
-                      <td className={`td text-right font-mono tnum ${c.returns[range] == null ? 'text-text-faint' : c.returns[range]! < 0 ? 'text-loss' : 'text-gain'}`}>{fmtPctSigned(c.returns[range] ?? null)}</td>
-                      <td className={`td text-right font-mono tnum ${c.relativeToSubjectPct == null ? 'text-text-faint' : c.relativeToSubjectPct < 0 ? 'text-loss' : 'text-gain'}`}>{c.isSubject ? '—' : fmtPctSigned(c.relativeToSubjectPct)}</td>
-                    </tr>
+                    <CompetitorRow
+                      key={c.symbol}
+                      c={c}
+                      range={range}
+                      showPosition={Boolean(data.marketPosition)}
+                      showMarker={hasScatter}
+                      plotted={plotted.has(c.symbol)}
+                      isActive={active === c.symbol}
+                      onHover={onRowHover}
+                      onOpen={onRowOpen}
+                    />
                   ))}
                 </tbody>
               </table>
@@ -286,6 +311,8 @@ export function MarketAnalysis({ symbol }: { symbol: string }) {
           are percentile ranks <em>within this market</em> (higher is better); # weights them
           equally. Click any header to re-sort. Market cap is converted to CHF (omitted when no
           FX rate).
+          {hasScatter && <> Hover a row to light up that company in the market position chart; a
+            hollow marker means the company has no value × strength score yet, so it has no dot.</>}
         </p>
       </div>
 
@@ -301,6 +328,261 @@ export function MarketAnalysis({ symbol }: { symbol: string }) {
           </p>
         </div>
       )}
+
+      {/* The market plane, kept within reach while the table is being read. */}
+      {hasScatter && (
+        <MiniMarketMap
+          points={points} active={active} activePoint={activePoint}
+          onActiveChange={onMiniActive}
+          onOpen={(p) => openModal({ kind: 'opportunity', symbol: p.symbol, name: p.name })}
+          open={showMini}
+        />
+      )}
     </div>
   );
+}
+
+/** The rebased multi-line chart. Memoised so pointing at a company — which re-renders the
+ *  section on every crossing — never re-renders recharts' most expensive child here. */
+const RebasedChart = memo(function RebasedChart({ lines, chartData }: {
+  lines: { key: string; label: string; color: string }[];
+  chartData: Record<string, number | string>[];
+}) {
+  if (chartData.length <= 1) {
+    return <p className="text-[12px] text-text-faint">Not enough cached price history to chart this window yet — it fills in shortly.</p>;
+  }
+  return (
+    <div style={{ width: '100%', height: 240 }}>
+      <ResponsiveContainer>
+        <LineChart data={chartData} margin={{ top: 6, right: 8, bottom: 0, left: 0 }}>
+          <CartesianGrid stroke="#243040" strokeDasharray="2 4" strokeOpacity={0.5} vertical={false} />
+          <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#5F6E82' }} minTickGap={48}
+            tickFormatter={(d) => fmtDate(d).replace(/ \d{4}$/, '')} stroke="#243040" />
+          <YAxis tick={{ fontSize: 10, fill: '#5F6E82' }} width={40} stroke="#243040"
+            tickFormatter={(v) => `${v}`} />
+          <Tooltip contentStyle={{ background: '#1A2331', border: '1px solid #243040', borderRadius: 6, fontSize: 12 }}
+            labelFormatter={(d) => fmtDate(d as string)} formatter={(v: number) => [`${Number(v).toFixed(1)}`, '']} />
+          <Legend wrapperStyle={{ fontSize: 11 }} />
+          {lines.map((ln) => (
+            <Line key={ln.key} type="monotone" dataKey={ln.key} name={ln.label} stroke={ln.color}
+              strokeWidth={ln.key === 'subject' ? 2.4 : 1.5} dot={false} isAnimationActive={false} connectNulls />
+          ))}
+        </LineChart>
+      </ResponsiveContainer>
+      <p className="text-[11px] text-text-faint mt-1">Rebased to 100 at the start of the window · price return (currency-neutral).</p>
+    </div>
+  );
+});
+
+/**
+ * One comparables row. Memoised on its own inputs so pointing at a company re-renders the
+ * two rows that changed rather than the whole market — a peer set can run to hundreds.
+ */
+const CompetitorRow = memo(function CompetitorRow({
+  c, range, showPosition, showMarker, plotted, isActive, onHover, onOpen,
+}: {
+  c: MarketCompetitor;
+  range: string;
+  showPosition: boolean;
+  /** The market plane is drawn, so rows carry a marker saying whether they are on it. */
+  showMarker: boolean;
+  plotted: boolean;
+  isActive: boolean;
+  onHover: (symbol: string | null) => void;
+  onOpen: (c: MarketCompetitor) => void;
+}) {
+  return (
+    <tr
+      data-symbol={c.symbol}
+      onMouseEnter={() => onHover(c.symbol)}
+      className={clsx(
+        'transition-colors duration-150 motion-reduce:transition-none',
+        c.isSubject && 'bg-surface-2',
+        isActive && 'bg-gold/[0.09] shadow-[inset_2px_0_0_0_#D9A94E]',
+      )}
+    >
+      <td className="td">
+        <div className="flex items-center gap-2">
+          {showMarker && (
+            <span
+              aria-hidden
+              title={plotted
+                ? `Plotted in the market position chart · Value ${c.valuePct?.toFixed(0)} · Strength ${c.strengthPct?.toFixed(0)}`
+                : 'Not placed in the market position chart — no value × strength score yet'}
+              className={clsx(
+                'shrink-0 w-[7px] h-[7px] rounded-full border transition-colors duration-150 motion-reduce:transition-none',
+                !plotted && 'border-hairline-strong bg-transparent',
+                plotted && isActive && 'border-gold-bright bg-gold-bright',
+                plotted && !isActive && c.isSubject && 'border-[#4FD0E0] bg-[#4FD0E0]',
+                plotted && !isActive && !c.isSubject && 'border-text-faint bg-text-faint',
+              )}
+            />
+          )}
+          <button
+            type="button"
+            onClick={() => onOpen(c)}
+            onFocus={() => onHover(c.symbol)}
+            onBlur={() => onHover(null)}
+            title={`Open ${c.symbol}`}
+            className="group inline-flex items-center gap-2 text-left cursor-pointer min-w-0"
+          >
+            <span className="font-mono text-text group-hover:text-azure underline-offset-2 group-hover:underline">{c.symbol}</span>
+            {c.isSubject && <span className="text-[10px] uppercase text-azure">this</span>}
+            {c.name && <span className="text-text-faint truncate group-hover:text-text-muted">{c.name}</span>}
+          </button>
+        </div>
+      </td>
+      {showPosition && (
+        <>
+          <td className="td text-right font-mono tnum text-text-muted">{c.rank ?? '—'}</td>
+          <td className="td text-right font-mono tnum">{c.valuePct != null ? c.valuePct.toFixed(0) : '—'}</td>
+          <td className="td text-right font-mono tnum">{c.strengthPct != null ? c.strengthPct.toFixed(0) : '—'}</td>
+        </>
+      )}
+      <td className="td text-right font-mono tnum">
+        {c.marketCapCHF != null
+          ? fmtMoney(c.marketCapCHF, 'CHF', false)
+          : c.marketCap != null
+            ? fmtMoney(c.marketCap, c.currency ?? 'USD', false)
+            : '—'}
+      </td>
+      <td className="td text-right font-mono tnum">{c.trailingPE != null ? c.trailingPE.toFixed(1) : '—'}</td>
+      <td className="td text-right font-mono tnum">{fmtPct(c.profitMargins, 1)}</td>
+      <td className={`td text-right font-mono tnum ${c.returns[range] == null ? 'text-text-faint' : c.returns[range]! < 0 ? 'text-loss' : 'text-gain'}`}>{fmtPctSigned(c.returns[range] ?? null)}</td>
+      <td className={`td text-right font-mono tnum ${c.relativeToSubjectPct == null ? 'text-text-faint' : c.relativeToSubjectPct < 0 ? 'text-loss' : 'text-gain'}`}>{c.isSubject ? '—' : fmtPctSigned(c.relativeToSubjectPct)}</td>
+    </tr>
+  );
+});
+
+/**
+ * The market plane in miniature, pinned to the corner while the comparables table is being
+ * read and the full chart has scrolled away. Same points, same active symbol, same component
+ * — a contextual mini-map rather than a second chart with its own idea of the data.
+ */
+function MiniMarketMap({ points, active, activePoint, onActiveChange, onOpen, open }: {
+  points: MarketScatterPoint[];
+  active: string | null;
+  activePoint: MarketScatterPoint | null;
+  onActiveChange: (symbol: string | null) => void;
+  onOpen: (p: MarketScatterPoint) => void;
+  open: boolean;
+}) {
+  const [dismissed, setDismissed] = useState(false);
+  // A dismissal lasts until the full chart comes back — scrolling up and down again should
+  // not resurrect a panel the user just closed, but revisiting the chart is a fresh start.
+  useEffect(() => { if (!open) setDismissed(false); }, [open]);
+  const visible = open && !dismissed;
+
+  // The panel stays mounted once it has been shown, so re-appearing is a fade rather than a
+  // chart popping into existence. Before that it costs nothing: a reader who never scrolls
+  // this far never renders a second recharts tree.
+  const [everOpened, setEverOpened] = useState(false);
+  useEffect(() => { if (open) setEverOpened(true); }, [open]);
+
+  return (
+    <div
+      aria-hidden={!visible}
+      className={clsx(
+        // Sits above the content, below the back-to-top control that owns the corner.
+        'fixed z-30 bottom-20 right-4 sm:right-6 w-[184px] sm:w-[236px]',
+        'rounded-lg border border-hairline-strong bg-surface-2/95 backdrop-blur shadow-modal p-2 sm:p-2.5',
+        'transition-all duration-200 ease-out motion-reduce:transition-none',
+        visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-3 pointer-events-none',
+      )}
+    >
+      <div className="flex items-center justify-between gap-2 mb-1">
+        <span className="eyebrow text-[9px] leading-none truncate">Value ↑ · Strength →</span>
+        <button
+          type="button"
+          onClick={() => setDismissed(true)}
+          tabIndex={visible ? 0 : -1}
+          aria-label="Hide the market position mini-map"
+          title="Hide"
+          className="shrink-0 -mr-0.5 text-text-faint hover:text-text transition-colors"
+        >
+          <X size={12} />
+        </button>
+      </div>
+
+      <div className="h-[112px] sm:h-[146px]">
+        {everOpened && (
+          <MarketScatter
+            points={points} active={active} onActiveChange={onActiveChange}
+            onOpen={onOpen} variant="mini"
+          />
+        )}
+      </div>
+
+      <div className="mt-1 h-[26px] leading-tight">
+        {activePoint ? (
+          <>
+            <div className="font-mono text-[11px] text-gold-bright truncate">
+              {activePoint.symbol}{activePoint.isSubject ? ' · this' : ''}
+            </div>
+            <div className="text-[10px] text-text-faint tnum">
+              V {activePoint.y.toFixed(0)} · S {activePoint.x.toFixed(0)}
+              {activePoint.rank != null && <> · #{activePoint.rank}</>}
+            </div>
+          </>
+        ) : (
+          <div className="text-[10px] text-text-faint">
+            {active ? 'Not placed on this chart' : 'Hover a company to place it'}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Show the mini-map exactly while it is useful: the full chart is off screen and the
+ *  comparables table it belongs to is on screen. */
+function useMiniMapVisibility({ chartRef, listRef, enabled }: {
+  chartRef: RefObject<HTMLDivElement>;
+  listRef: RefObject<HTMLDivElement>;
+  enabled: boolean;
+}) {
+  const [chartInView, setChartInView] = useState(true);
+  const [listInView, setListInView] = useState(false);
+
+  useEffect(() => {
+    const chart = chartRef.current;
+    const list = listRef.current;
+    if (!enabled || !chart || !list || typeof IntersectionObserver === 'undefined') {
+      setChartInView(true);
+      setListInView(false);
+      return;
+    }
+    const io = new IntersectionObserver((entries) => {
+      for (const e of entries) {
+        if (e.target === chart) setChartInView(e.isIntersecting);
+        else if (e.target === list) setListInView(e.isIntersecting);
+      }
+    }, { threshold: 0 });
+    io.observe(chart);
+    io.observe(list);
+    return () => io.disconnect();
+  }, [chartRef, listRef, enabled]);
+
+  return enabled && !chartInView && listInView;
+}
+
+/** Bring a company's row into view, but only when it actually needs it. Debounced so
+ *  sweeping the pointer across a dense corner of the mini-map doesn't chase the list. */
+function useRevealRow(listRef: RefObject<HTMLElement>) {
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
+
+  return useCallback((symbol: string | null) => {
+    if (timer.current) clearTimeout(timer.current);
+    if (!symbol) return;
+    timer.current = setTimeout(() => {
+      const row = listRef.current?.querySelector(`[data-symbol="${CSS.escape(symbol)}"]`);
+      if (!row) return;
+      const r = row.getBoundingClientRect();
+      // A row already comfortably inside the viewport is left exactly where it is.
+      if (r.top >= 72 && r.bottom <= window.innerHeight - 16) return;
+      const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+      row.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'nearest' });
+    }, 140);
+  }, [listRef]);
 }

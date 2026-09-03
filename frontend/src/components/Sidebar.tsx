@@ -20,6 +20,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useApp, type View } from '../store';
 import { api } from '../lib/api';
 import { MarketHoursStrip } from './MarketHoursStrip';
+import { InstallAppButton } from './InstallAppButton';
 
 type NavItem = { label: string; icon: LucideIcon; view: View } | { label: string; icon: LucideIcon; view?: undefined };
 
@@ -157,6 +158,8 @@ export function Sidebar() {
 
       {/* Pinned foot: settings stay one click away from anywhere in the rail. */}
       <div className="shrink-0 px-2.5 py-2.5 border-t border-hairline">
+        {/* Only rendered once the browser says the app qualifies for installation. */}
+        <InstallAppButton />
         <button
           className="btn-ghost w-full justify-start lg:h-8"
           onClick={() => go(() => openModal({ kind: 'settings' }))}

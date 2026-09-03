@@ -252,6 +252,8 @@ export const api = {
     if (compare && compare.length) q.set('compare', compare.join(','));
     return req<MarketAnalysisResult>(`/research/market/${encodeURIComponent(symbol)}?${q.toString()}`);
   },
+  marketCombos: (symbol: string, years = 5) =>
+    req<MarketCombosResult>(`/research/market-combos/${encodeURIComponent(symbol)}?years=${years}`),
   validateClaim: (symbol: string, claim: string | ClaimSpec) =>
     req<ClaimResult>('/research/claim', { method: 'POST', body: JSON.stringify({ symbol, claim }) }),
   universalCompare: (entities: CompareEntity[], windowYears = 5) =>
@@ -922,6 +924,40 @@ export interface MarketCompetitor {
   trailingPE: number | null; priceToBook: number | null;
   profitMargins: number | null; revenueGrowth: number | null;
   returns: Record<string, number | null>; relativeToSubjectPct: number | null;
+  /** Value x strength percentiles inside this market (see services/market_position.py).
+   *  Absent when the market is too small to rank in, or null for a company with too
+   *  little cached data to score. */
+  valuePct?: number | null; strengthPct?: number | null;
+  compositeScore?: number | null; rank?: number | null;
+}
+/** Which value x strength corner the subject sits in; the median of its market is the axis. */
+export type MarketQuadrant =
+  | 'cheap-and-leading' | 'cheap-but-lagging'
+  | 'expensive-but-leading' | 'expensive-and-lagging';
+
+export interface MarketPositionAlternative {
+  symbol: string; name: string | null; currency: string | null;
+  valuePct: number | null; strengthPct: number | null;
+  compositeScore: number | null; rank: number | null;
+}
+/** Where this company stands among its actual competitors on value AND growth at once —
+ *  the read that tells a cheap leader apart from a cheap laggard. */
+export interface MarketPosition {
+  basis: {
+    horizon: string;
+    rankedCount: number;
+    valueBasis: 'margin-of-safety' | 'earnings-yield' | 'book-yield' | null;
+    weights: { return: number; revenueGrowth: number; profitMargins: number };
+  };
+  symbol: string;
+  rank: number | null;
+  of: number;
+  valuePct: number | null;
+  strengthPct: number | null;
+  compositeScore: number | null;
+  quadrant: MarketQuadrant | null;
+  /** Peers that beat the subject on BOTH axes, best first (at most three). */
+  strongerAlternatives: MarketPositionAlternative[];
 }
 export interface MarketAnalysisResult {
   symbol: string; name: string; sector: string | null; industry: string | null;
@@ -932,7 +968,63 @@ export interface MarketAnalysisResult {
   competitors: MarketCompetitor[];
   peerMedianReturnPct: number | null;
   classification: MarketClassification | null;
+  marketPosition: MarketPosition | null;
   valuation: { band: ValuationBand | null; marginOfSafety: number | null; fairValue: number | null } | null;
+}
+
+/** One historical mix: which companies, at which split (weights are fractions summing to 1). */
+export interface ComboLeg { symbol: string; name: string | null; weight: number }
+/** Why this mix beat holding the subject alone — see services/market_combos.py. */
+export type ComboWhy =
+  | 'subject-led' | 'partner-outperformed' | 'rebalancing-bonus' | 'risk-reduction' | 'mix-effect';
+export interface MarketCombo {
+  legs: ComboLeg[];
+  includesSubject: boolean;
+  totalReturn: number;
+  cagr: number;
+  volatility: number;
+  maxDrawdown: number;
+  returnPerRisk: number | null;
+  /** Correlation of the two legs' daily returns; only meaningful for a pair. */
+  correlation: number | null;
+  why: ComboWhy;
+}
+/** Historical sweep of every mix of this market's names on a 10% grid, rebalanced annually.
+ *  Backward-looking, price return only — the fields below `available` are absent when there
+ *  is not enough cached history to run it. */
+export interface MarketCombosResult {
+  symbol: string;
+  name: string | null;
+  sector?: string | null;
+  industry?: string | null;
+  years: number;
+  available: boolean;
+  reason?: string;
+  startDate: string | null;
+  endDate: string | null;
+  tradingDays: number;
+  spanYears?: number;
+  gridStepPct?: number;
+  rebalancing?: string;
+  combinationsTested?: number;
+  universe: { symbol: string; name: string | null; soloCagr: number; soloMaxDrawdown: number }[];
+  excluded: { symbol: string; name: string | null; reason: string }[];
+  solo?: MarketCombo;
+  soloRank?: number;
+  /** Best mix overall — may well be a competitor held alone, which is itself an answer. */
+  best?: MarketCombo;
+  /** Best mix that still holds this stock and has at least two legs — "combine it with what,
+   *  at what split?". Null when no such mix could be evaluated. */
+  bestWithSubject?: MarketCombo | null;
+  bestRiskAdjusted?: MarketCombo;
+  /** A mix that matched solo's return with a materially shallower drawdown, if one existed. */
+  safestMatch?: MarketCombo | null;
+  sectorEtf?: { symbol: string; cagr: number; volatility: number; maxDrawdown: number; totalReturn: number } | null;
+  top?: MarketCombo[];
+  verdict?: {
+    key: 'solo-held-up' | 'combination-led';
+    soloRank: number; of: number; cagrGap: number; drawdownGap: number;
+  };
 }
 /** Portfolio-fit read for a candidate symbol (see services/fit.py). Weights are fractions.
  *  Indirect exposure is limited to owned ETFs' top holdings — `available: false` when none

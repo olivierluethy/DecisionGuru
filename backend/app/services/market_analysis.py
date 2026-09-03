@@ -13,6 +13,7 @@ from ..core import db
 from .competitors import competitors
 from .fundamentals import get_cached_fundamentals
 from .marketdata import ensure_history, resolve_price
+from .market_position import market_position
 from .valuation import value_analysis
 from ..reference.sector_etfs import sector_etf_for, BROAD_BENCHMARKS
 
@@ -194,6 +195,17 @@ def market_analysis(symbol: str, range_key: str = "1Y", settings: dict | None = 
                                      if (peer_pct is not None and subject_pct is not None) else None),
         })
 
+    # Value x strength positioning inside this market: merges a per-company score onto every
+    # competitor row and yields the subject's verdict (rank, quadrant, better-positioned
+    # peers). Cached-only like everything above; None when the market is too small to rank in.
+    position = market_position(symbol, competitors_out, returns_by_symbol, range_key, settings)
+    if position:
+        for row in competitors_out:
+            row.update(position["scores"].get(row["symbol"], {}))
+        # Best-positioned first is the ordering the verdict talks about; unranked names (too
+        # little data to score) keep their market-cap order at the bottom.
+        competitors_out.sort(key=lambda r: (r.get("rank") is None, r.get("rank") or 0))
+
     peer_only = {s: r for s, r in returns_by_symbol.items() if s != symbol}
     peer_med = peer_median(peer_only, range_key)
 
@@ -240,5 +252,7 @@ def market_analysis(symbol: str, range_key: str = "1Y", settings: dict | None = 
         "competitors": competitors_out,
         "peerMedianReturnPct": peer_med,
         "classification": classification,
+        "marketPosition": ({"basis": position["basis"], **position["verdict"]}
+                           if position else None),
         "valuation": valuation,
     }

@@ -6,6 +6,7 @@ import { createAsyncStoragePersister } from '@tanstack/query-async-storage-persi
 import { get, set, del } from 'idb-keyval';
 import App from './App';
 import { initRouter } from './lib/router';
+import { initPwa } from './lib/pwa';
 import './index.css';
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -35,6 +36,10 @@ const persister = createAsyncStoragePersister({
 // Bind the URL hash to the navigation store before the first render so a shared
 // deep link (e.g. #/research/AAPL) lands on the right view immediately.
 initRouter();
+
+// Register the service worker and capture the install prompt. Must run before first paint:
+// `beforeinstallprompt` fires once and early, and a missed event cannot be recovered.
+initPwa();
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

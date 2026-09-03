@@ -158,6 +158,16 @@ async def market(symbol: str, range: str = "1Y", compare: str | None = None) -> 
     return await run_in_threadpool(market_analysis, symbol, range, settings, compare_list)
 
 
+@router.get("/market-combos/{symbol:path}")
+async def market_combos_route(symbol: str, years: int = 5) -> dict:
+    """Was holding this ONE company the best you could have done in its market, or would a
+    mix with a competitor — at which split — have beaten it? Sweeps single/pair/triple mixes
+    on a 10% grid with annual rebalancing over the trailing window, from cached closes only.
+    Backward-looking and price-return only; never a forecast."""
+    from ..services.market_combos import market_combos
+    return await run_in_threadpool(market_combos, symbol, years)
+
+
 @router.post("/claim")
 async def claim(request: Request) -> dict:
     body = await request.json() or {}

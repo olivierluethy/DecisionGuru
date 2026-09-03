@@ -46,6 +46,11 @@ lets you draw conclusions. A persistent "Not financial advice" note is shown thr
 - **Notes** anywhere; **export** any analysis to Excel and PDF.
 - **Local-first** — all your data stays in a local SQLite file. Only market data & FX are
   fetched (and cached aggressively in SQLite).
+- **Installable (PWA)** — an *Install app* button appears at the bottom of the sidebar once
+  the browser offers the prompt, and opens DecisionGuru in its own window. The service worker
+  caches only the app shell and hashed assets; **`/api` is never cached**, so the numbers you
+  see always come from your local backend. Works from `npm run dev` on `localhost` and from
+  any https host; Safari installs via *Share → Add to Dock/Home Screen* instead.
 
 ## Stack
 

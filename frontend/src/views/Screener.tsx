@@ -4,6 +4,7 @@ import clsx from 'clsx';
 import { ArrowUpRight, Eye, Info, Clock, Globe2, Sparkles, Loader2, DownloadCloud, ChevronDown } from 'lucide-react';
 import { api, type ScreenerRow } from '../lib/api';
 import { useApp } from '../store';
+import { ExportAction } from '../components/ExportAction';
 import { Spinner, EmptyState, Segmented } from '../components/ui';
 import { DiscoverMap } from '../components/DiscoverMap';
 import { VerdictBadge, VERDICT_META } from '../components/Verdict';
@@ -246,8 +247,9 @@ export function Screener() {
   const openReplay = (symbol: string, name?: string | null) => openModal({ kind: 'replay', symbol, name });
 
   return (
-    <div className="p-6 max-w-[1280px] mx-auto">
-      <header className="mb-4">
+    <div id="view-screener" className="p-6 max-w-[1280px] mx-auto">
+      <header className="mb-4 flex items-start justify-between gap-4">
+        <div>
         <div className="eyebrow mb-1">Discover</div>
         <h1 className="font-display text-2xl font-semibold">Undervalued opportunities</h1>
         <p className="text-sm text-text-muted mt-1 max-w-3xl">
@@ -257,6 +259,8 @@ export function Screener() {
           uses — being cheap is not enough, a low-quality bargain reads <span className="text-text-muted">Hold</span>
           (a value trap), not <span className="text-gain">Buy more</span>.
         </p>
+        </div>
+        <ExportAction target={() => document.getElementById('view-screener')} title="Undervalued opportunities" filename="screener" className="btn-secondary shrink-0" label="PDF / Word" />
       </header>
 
       {isLoading ? (

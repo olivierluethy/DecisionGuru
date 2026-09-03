@@ -1325,6 +1325,35 @@ export interface UniversalCompareResponse {
 }
 
 /** POST a JSON body and stream the response as a file download. */
+/**
+ * Build a document and hand back the bytes instead of saving them.
+ *
+ * The preview needs the real rendered file — anything else would be a mock-up of the
+ * document rather than the document — and the download then reuses exactly these bytes,
+ * so what was previewed and what lands on disk cannot diverge.
+ */
+export async function buildExportBlob(kind: 'excel' | 'pdf' | 'docx', body: unknown): Promise<Blob> {
+  const res = await fetch(api.exportUrl(kind), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error('Export failed');
+  return res.blob();
+}
+
+/** Save an already-built blob under `filename`. */
+export function saveBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 export async function downloadExport(kind: 'excel' | 'pdf' | 'docx', body: unknown, filename: string) {
   const res = await fetch(api.exportUrl(kind), {
     method: 'POST',

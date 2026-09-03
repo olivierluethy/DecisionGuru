@@ -4,6 +4,7 @@ import { Play, Save, Trash2, FolderOpen, Layers } from 'lucide-react';
 import { api } from '../lib/api';
 import type { ScenarioConfig, ScenarioResult } from '@decisionguru/shared';
 import { useApp } from '../store';
+import { ExportAction } from '../components/ExportAction';
 import { fmtCHF, fmtCHFSigned, fmtDurationMonths, fmtPct, plClass } from '../lib/format';
 import { DeltaChart } from '../components/DeltaChart';
 import { Segmented, Spinner, KindBadge } from '../components/ui';
@@ -65,13 +66,16 @@ export function Scenarios() {
   const included = config.sellAllToEtf ? allIds : config.includedInstrumentIds;
 
   return (
-    <div className="p-6 max-w-[1400px] mx-auto">
-      <header className="mb-6">
+    <div id="view-scenarios" className="p-6 max-w-[1400px] mx-auto">
+      <header className="mb-6 flex items-start justify-between gap-4">
+        <div>
         <div className="eyebrow mb-1">Workbench</div>
         <h1 className="font-display text-2xl font-semibold">Scenario comparisons</h1>
         <p className="text-sm text-text-muted mt-1">
           Compose baskets and test the "sell everything → ETF" thesis. Deltas are after Swiss tax.
         </p>
+        </div>
+        <ExportAction target={() => document.getElementById('view-scenarios')} title="Scenario comparisons" filename="scenarios" className="btn-secondary shrink-0" label="PDF / Word" />
       </header>
 
       <div className="grid lg:grid-cols-[360px_1fr] gap-6">

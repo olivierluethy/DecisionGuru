@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Download, Wallet, PieChart, AlertTriangle, Search, X, TrendingDown, LineChart, Globe2, History, Coins, Layers } from 'lucide-react';
+import { Download, Eye, Wallet, PieChart, AlertTriangle, Search, X, TrendingDown, LineChart, Globe2, History, Coins, Layers } from 'lucide-react';
 import type { RangeKey, AllocationBreakdown } from '@decisionguru/shared';
 import { api } from '../lib/api';
 import { useApp } from '../store';
@@ -28,7 +28,7 @@ import {
   MiniBar,
   Skeleton,
 } from '../components/ui';
-import { buildPortfolioExport } from '../lib/exporters';
+import { buildPortfolioDoc, buildPortfolioSheets } from '../lib/exporters';
 import { downloadExport } from '../lib/api';
 import { fuzzyScore } from '../lib/fuzzy';
 
@@ -209,9 +209,15 @@ export function Dashboard() {
   holdFilters.push({ value: 'etf', label: `ETFs ${groupCount('etf')}` });
   if (groupCount('delisted') > 0) holdFilters.push({ value: 'delisted', label: `Delisted ${groupCount('delisted')}` });
 
-  const doExport = async (kind: 'excel' | 'pdf') => {
-    const payload = await buildPortfolioExport(data, kind);
-    await downloadExport(kind, payload, `portfolio-${benchmark}`);
+  // Excel downloads straight away; the document formats go through the preview, where the
+  // reader picks PDF or Word and sees the result before saving it.
+  const doExport = async (kind: 'excel' | 'preview') => {
+    if (kind === 'excel') {
+      const payload = await buildPortfolioSheets(data);
+      await downloadExport('excel', payload, `portfolio-${benchmark}`);
+      return;
+    }
+    openModal({ kind: 'doc-preview', doc: await buildPortfolioDoc(data) });
   };
 
   // Contextual sub-navigation — only lists sections that actually render, so the
@@ -266,8 +272,8 @@ export function Dashboard() {
               <button className="btn-secondary" onClick={() => doExport('excel')} title="Export Excel">
                 <Download size={15} /> XLS
               </button>
-              <button className="btn-secondary" onClick={() => doExport('pdf')} title="Export PDF">
-                <Download size={15} /> PDF
+              <button className="btn-secondary" onClick={() => doExport('preview')} title="Preview and download as PDF or Word">
+                <Eye size={15} /> PDF / Word
               </button>
             </div>
           )}

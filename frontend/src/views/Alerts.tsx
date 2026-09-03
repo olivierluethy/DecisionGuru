@@ -6,6 +6,7 @@ import {
 import clsx from 'clsx';
 import { api, type PriceAlert, type AppNotification } from '../lib/api';
 import { useApp } from '../store';
+import { ExportAction } from '../components/ExportAction';
 import { Spinner, EmptyState, Tabs } from '../components/ui';
 import { fmtMoney, fmtDate } from '../lib/format';
 
@@ -92,7 +93,7 @@ export function Alerts() {
   }, [shown]);
 
   return (
-    <div className="p-6 max-w-[1120px] mx-auto">
+    <div id="view-alerts" className="p-6 max-w-[1120px] mx-auto">
       {/* Sticky page head: the title, the scan control and the tabs stay reachable
           however far the panel below is scrolled. Full-bleed so it meets the pane's
           edges rather than floating inside the page gutter. */}
@@ -112,6 +113,7 @@ export function Alerts() {
             <button className="btn-secondary" disabled={runScan.isPending} onClick={() => runScan.mutate()}>
               <RefreshCw size={15} className={runScan.isPending ? 'animate-spin' : ''} /> Scan now
             </button>
+            <ExportAction target={() => document.getElementById('view-alerts')} title="Alerts" filename="alerts" className="btn-secondary shrink-0" label="PDF / Word" />
           </div>
         </div>
 

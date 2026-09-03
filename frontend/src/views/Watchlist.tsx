@@ -5,6 +5,7 @@ import { Trash2, ArrowUpRight, TrendingUp, TrendingDown } from 'lucide-react';
 import { BellPlus, Check } from 'lucide-react';
 import { api, type CompareEntity, type WatchlistItem, type AssetMetrics, type WatchlistAnalysisItem } from '../lib/api';
 import { useApp } from '../store';
+import { ExportAction } from '../components/ExportAction';
 import { SymbolSearch, type SymbolPick } from '../components/SymbolSearch';
 import { BenchmarkSelect } from '../components/BenchmarkSelect';
 import { BandBadge } from '../components/ValuationBand';
@@ -78,14 +79,17 @@ export function Watchlist() {
   });
 
   return (
-    <div className="p-6 max-w-[1200px] mx-auto">
-      <header className="mb-6">
+    <div id="view-watchlist" className="p-6 max-w-[1200px] mx-auto">
+      <header className="mb-6 flex items-start justify-between gap-4">
+        <div>
         <div className="eyebrow mb-1">Monitoring</div>
         <h1 className="font-display text-2xl font-semibold">Watchlist</h1>
         <p className="text-sm text-text-muted mt-1 max-w-2xl">
           Track companies you don't own yet and see how they stack up against {benchmark} and your own
           portfolio over time — so genuine outperformers stand apart from the laggards.
         </p>
+        </div>
+        <ExportAction target={() => document.getElementById('view-watchlist')} title="Watchlist" filename="watchlist" className="btn-secondary shrink-0" label="PDF / Word" />
       </header>
 
       <div className="card mb-6">

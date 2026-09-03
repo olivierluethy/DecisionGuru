@@ -9,6 +9,7 @@ hammers the rate-limited provider:
      on a crossing;
   3. re-runs the **screener** and surfaces names that have *newly* become attractive since
      the previous scan into the notification feed as opportunities;
+  3b. races each holding against its market and warns when a rival is about to overtake it;
   4. records the run (time + summary) so the UI can show "last scanned N ago".
 """
 from __future__ import annotations
@@ -23,6 +24,7 @@ from . import screener_warm
 from .watchlist import list_watchlist
 from .screener import screen_universe
 from .fundamentals import get_cached_fundamentals
+from .rivalry import rivalry_alert_candidates
 
 # Fundamentals to warm per scan, so the screening universe fills over successive scans
 # without a single large burst against the rate-limited provider.
@@ -137,6 +139,61 @@ def _detect_new_opportunities(settings: dict) -> dict:
             "newSymbols": fresh, "analysed": result.get("analysedCount", 0)}
 
 
+def _rivalry_watch(settings: dict) -> dict:
+    """Warn when a competitor is about to overtake a holding you own.
+
+    Fires at most once per rival and per stage. Without that, a rival that stays 80 days out
+    would re-announce itself every six hours until the reader stopped reading alerts at all —
+    so what is remembered is the STAGE ('ahead', or the crossover bucketed to a fortnight),
+    and a notification goes out only when that stage changes.
+    """
+    fired = 0
+    try:
+        candidates = rivalry_alert_candidates(settings)
+    except Exception as exc:  # noqa: BLE001 — the race must never break the scan
+        log.warning("rivalry watch failed: %s", exc)
+        return {"rivalryAlerts": 0}
+
+    for c in candidates:
+        threat = c["threat"]
+        days = threat.get("daysToCrossover")
+        stage = "ahead" if threat["aheadOfYou"] else f"in-{(days // 14) if days is not None else '?'}"
+        key = f"rivalry.{c['symbol']}.{threat['symbol']}"
+        if get_state(key) == stage:
+            continue
+        set_state(key, stage)
+
+        cheaper = threat["verdict"].endswith("cheaper")
+        if threat["aheadOfYou"]:
+            headline = f"{threat['symbol']} has overtaken {c['symbol']}"
+            when = "It is now ahead of your holding since the day you bought."
+        else:
+            headline = f"{threat['symbol']} is closing on {c['symbol']}"
+            when = (f"On the current trend it overtakes your holding in about {days} days "
+                    f"({threat.get('crossoverDate')}).")
+        months = (threat.get("switch") or {}).get("monthsToRecoverFee")
+        cost = (f" Switching would take about {months} months to earn back its trading fees."
+                if months is not None else "")
+        value = (" It also trades further below its own fair value than your holding does."
+                 if cheaper else
+                 " But it is priced higher against its own fair value than your holding — "
+                 "momentum without the valuation behind it.")
+
+        alerts_svc.add_notification(
+            "rivalry",
+            title=headline,
+            body=f"{when}{value}{cost}",
+            symbol=c["symbol"],
+            payload={"instrumentId": c["instrumentId"], "rival": threat["symbol"],
+                     "gap": threat["gap"], "daysToCrossover": days,
+                     "crossoverDate": threat.get("crossoverDate"),
+                     "verdict": threat["verdict"],
+                     "closingSpeedPerYear": threat.get("closingSpeedPerYear")},
+        )
+        fired += 1
+    return {"rivalryAlerts": fired}
+
+
 def run_scan(trigger: str = "manual") -> dict:
     """One full scan pass. Serialised so a manual trigger can't overlap the timer."""
     with _lock:
@@ -152,6 +209,7 @@ def run_scan(trigger: str = "manual") -> dict:
         auto = _sync_auto_alerts(settings)
         fired = alerts_svc.evaluate_alerts()
         opps = _detect_new_opportunities(settings)
+        rivalry = _rivalry_watch(settings)
         summary = {
             "trigger": trigger,
             "finishedAt": _now_iso(),
@@ -161,6 +219,7 @@ def run_scan(trigger: str = "manual") -> dict:
             "firedSymbols": [f["symbol"] for f in fired],
             **auto,
             **opps,
+            **rivalry,
         }
         set_state("scan.last", summary)
         log.info("scan(%s): %s alerts fired, %s new opportunities",

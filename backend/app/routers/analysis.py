@@ -161,6 +161,19 @@ async def reinvest(instrument_id: int, amount: float | None = None, range: str =
     return await run_in_threadpool(reinvest_check, instrument_id, amount, settings, range)
 
 
+@router.get("/rivalry/{instrument_id}")
+async def rivalry(instrument_id: int) -> dict:
+    """Who in this market is closing on this holding — raced from your own purchase date.
+
+    Per comparable company: the return gap since you bought, how fast it is narrowing, the
+    projected crossover, whether the rival is also cheaper on fair value, and what switching
+    would cost and return. The crossover is an extrapolation, not a forecast."""
+    from ..services.rivalry import rivalry_check
+    if not repo.get_instrument(instrument_id):
+        raise ApiError("Instrument not found", 404)
+    return await run_in_threadpool(rivalry_check, instrument_id, get_settings())
+
+
 @router.get("/dividend-shock/{instrument_id}")
 async def dividend_shock(instrument_id: int, cut: float = 1) -> dict:
     inst = repo.get_instrument(instrument_id)

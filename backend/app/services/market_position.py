@@ -76,7 +76,7 @@ def _blend(parts: list[tuple[float | None, float]]) -> float | None:
     return round(sum(v * w for v, w in live) / total_w, 1)
 
 
-def _margin_of_safety(symbol: str, snap: dict, settings: dict | None) -> float | None:
+def margin_of_safety(symbol: str, snap: dict, settings: dict | None) -> float | None:
     """Margin of safety from the cached fundamentals and the last cached close.
 
     Cached-only on purpose: ``resolve_price`` would fall through to a live quote, which for
@@ -102,7 +102,7 @@ def _value_metrics(symbols: list[str], settings: dict | None) -> tuple[dict[str,
     """
     snaps = {s: ((get_cached_fundamentals(s) or {}).get("snapshot") or {}) for s in symbols}
 
-    mos = {s: _margin_of_safety(s, snaps[s], settings) for s in symbols}
+    mos = {s: margin_of_safety(s, snaps[s], settings) for s in symbols}
     if sum(1 for v in mos.values() if v is not None) * 2 >= len(symbols):
         return mos, "margin-of-safety"
 

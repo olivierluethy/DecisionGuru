@@ -215,37 +215,10 @@ body {
   display: block;
 }
 
-/* pdf.js text layer — invisible glyphs positioned over the canvas. It is what makes the
-   PDF selectable and searchable; without it the preview is only a picture. */
-.dg-doc-page .textLayer {
-  position: absolute;
-  inset: 0;
-  overflow: hidden;
-  opacity: 1;
-  line-height: 1;
-  text-size-adjust: none;
-  forced-color-adjust: none;
-  transform-origin: 0 0;
-  z-index: 2;
-}
-.dg-doc-page .textLayer span,
-.dg-doc-page .textLayer br {
-  color: transparent;
-  position: absolute;
-  white-space: pre;
-  cursor: text;
-  transform-origin: 0 0;
-}
+/* pdf.js ships the text layer's own positioning rules (imported in lib/docPreview.ts);
+   only the app's selection colour is overridden here. */
 .dg-doc-page .textLayer ::selection {
   background: rgba(61, 169, 252, 0.35);
-}
-.dg-doc-page .textLayer .endOfContent {
-  display: block;
-  position: absolute;
-  inset: 100% 0 0;
-  z-index: -1;
-  cursor: default;
-  user-select: none;
 }
 
 /* docx-preview emits its own page sections; give them the same paper treatment. */
@@ -261,19 +234,29 @@ body {
   box-shadow: 0 6px 24px -8px rgba(0, 0, 0, 0.6);
 }
 
-/* Search hits. The active one is stronger so stepping through is visible at a glance. */
+/* Search hits.
+   Painted over Ranges, so they sit exactly on the glyphs regardless of the per-span
+   transforms pdf.js applies to its text layer. Yellow for every hit, a stronger amber for
+   the one being stepped through — the grammar of a highlighter pen, which is what a reader
+   expects of "find in document". */
+::highlight(dg-find) {
+  background-color: rgba(240, 179, 74, 0.42);
+}
+::highlight(dg-find-active) {
+  /* Background only. Setting `color` here would paint pdf.js's deliberately transparent
+     text layer visible, and those glyph positions only approximate the canvas underneath —
+     the reader would see a second, misplaced copy of the word. */
+  background-color: rgba(240, 179, 74, 0.9);
+}
+
+/* Fallback for browsers without the CSS Custom Highlight API (see lib/docSearch.ts). */
 mark.dg-find {
-  background: rgba(240, 179, 74, 0.45);
+  background: rgba(240, 179, 74, 0.42);
   color: inherit;
   border-radius: 2px;
 }
-.dg-doc-page .textLayer mark.dg-find {
-  /* Over the invisible PDF text layer only the background can show, so make it solid. */
-  background: rgba(240, 179, 74, 0.55);
-}
 mark.dg-find-active {
-  background: rgba(61, 169, 252, 0.6);
-  box-shadow: 0 0 0 2px rgba(61, 169, 252, 0.35);
+  background: rgba(240, 179, 74, 0.9);
 }
 
 /* Printing the Word preview: the pages are live DOM, so hide the app around them.

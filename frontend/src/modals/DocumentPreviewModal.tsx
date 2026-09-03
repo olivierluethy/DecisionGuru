@@ -160,6 +160,26 @@ export function DocumentPreviewModal({ doc }: { doc: ExportDoc }) {
     return () => scroll.removeEventListener('scroll', onScroll);
   }, [pageCount, zoom]);
 
+  // Titles of the blocks that made it into the document — the outline, and the only
+  // navigation a page-less document can honestly offer.
+  const outline = doc.blocks
+    .filter((b) => include.has(b.id) && 'title' in b && b.title)
+    .map((b) => ({ id: b.id, title: (b as { title: string }).title }));
+
+  /** Scroll to the first occurrence of `needle` in the rendered document. */
+  const jumpToText = (needle: string) => {
+    const container = pagesRef.current;
+    if (!container) return;
+    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+    const target = needle.trim().toLowerCase();
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      if ((n.nodeValue ?? '').trim().toLowerCase().includes(target)) {
+        n.parentElement?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+        return;
+      }
+    }
+  };
+
   const goToPage = (n: number) => {
     const target = Math.min(Math.max(1, n), Math.max(pageCount, 1));
     const el = pagesRef.current?.querySelector<HTMLElement>(`.${PAGE_CLASS}[data-page="${target}"]`);
@@ -337,27 +357,50 @@ export function DocumentPreviewModal({ doc }: { doc: ExportDoc }) {
 
       {/* min-h-0 is what lets the panes scroll instead of stretching the column. */}
       <div className="flex flex-1 min-h-0">
-        {/* Thumbnails */}
-        <aside className="w-[132px] shrink-0 border-r border-hairline overflow-y-auto bg-bg-elev p-2 space-y-2 dg-doc-chrome">
-          {Array.from({ length: pageCount }, (_, i) => i + 1).map((n) => (
-            <button
-              key={n}
-              onClick={() => goToPage(n)}
-              className={`block w-full rounded border overflow-hidden transition-colors ${
-                n === page ? 'border-azure' : 'border-hairline hover:border-hairline-strong'}`}
-              title={`Page ${n}`}
-            >
-              {thumbs[n - 1]
-                ? <img src={thumbs[n - 1]} alt={`Page ${n}`} className="w-full block bg-white" />
-                : <DocxThumbnail pagesRef={pagesRef} page={n} nonce={renderNonce} />}
-              <span className="block text-[10px] text-text-faint py-0.5">{n}</span>
-            </button>
-          ))}
-          {pageCount === 0 && <p className="text-[11px] text-text-faint px-1">No pages yet.</p>}
-          {continuous && pageCount > 0 && (
-            <p className="text-[10px] text-text-faint px-1 leading-snug">
-              Word paginates when it opens the file.
-            </p>
+        {/* Left rail: page thumbnails when the document has pages, an outline when it does
+            not. A continuous Word document rendered as a single "thumbnail" is a squashed
+            ribbon of the whole file — unreadable and unclickable; its headings are not. */}
+        <aside className={`shrink-0 border-r border-hairline overflow-y-auto bg-bg-elev p-2 dg-doc-chrome ${
+          continuous ? 'w-[184px] space-y-1' : 'w-[132px] space-y-2'}`}>
+          {continuous ? (
+            <>
+              <div className="eyebrow px-1 pb-1">Outline</div>
+              {outline.length === 0 && (
+                <p className="text-[11px] text-text-faint px-1">This document has no headings.</p>
+              )}
+              {outline.map((o) => (
+                <button
+                  key={o.id}
+                  onClick={() => jumpToText(o.title)}
+                  title={`Jump to “${o.title}”`}
+                  className="block w-full text-left px-2 py-1.5 rounded-sm text-[12px] text-text-muted hover:text-text hover:bg-surface-2 truncate"
+                >
+                  {o.title}
+                </button>
+              ))}
+              <p className="text-[10px] text-text-faint px-1 pt-2 leading-snug">
+                Word decides the page breaks when it opens the file, so there are no pages to
+                show here yet.
+              </p>
+            </>
+          ) : (
+            <>
+              {Array.from({ length: pageCount }, (_, i) => i + 1).map((n) => (
+                <button
+                  key={n}
+                  onClick={() => goToPage(n)}
+                  className={`block w-full rounded border overflow-hidden transition-colors ${
+                    n === page ? 'border-azure' : 'border-hairline hover:border-hairline-strong'}`}
+                  title={`Page ${n}`}
+                >
+                  {thumbs[n - 1]
+                    ? <img src={thumbs[n - 1]} alt={`Page ${n}`} className="w-full block bg-white" />
+                    : <DocxThumbnail pagesRef={pagesRef} page={n} nonce={renderNonce} />}
+                  <span className="block text-[10px] text-text-faint py-0.5">{n}</span>
+                </button>
+              ))}
+              {pageCount === 0 && <p className="text-[11px] text-text-faint px-1">No pages yet.</p>}
+            </>
           )}
         </aside>
 

@@ -303,18 +303,20 @@ export function SectionHeader({
     rootRef.current?.closest<HTMLElement>('section, .card') ?? rootRef.current?.parentElement ?? null;
 
   return (
-    // Skipped by the extractor: the icon, heading, tooltip and this very button are chrome
-    // for the screen and must never land inside the document they produce.
-    <div ref={rootRef} data-export-skip
+    // NOT skipped wholesale: the <h2> is the section's title and the document needs it — it
+    // becomes the heading above the block that follows, and the outline entry in the Word
+    // view. Only the chrome around it is excluded (icon, eyebrow, actions); the info tooltip
+    // is a <button> and is skipped by the extractor's own rule.
+    <div ref={rootRef}
       className={clsx('flex flex-wrap items-center justify-between gap-3', className)}>
       <div className="flex items-center gap-2.5 min-w-0">
         {Icon && (
-          <span className="grid place-items-center w-8 h-8 rounded bg-surface-2 border border-hairline text-text-muted shrink-0">
+          <span data-export-skip className="grid place-items-center w-8 h-8 rounded bg-surface-2 border border-hairline text-text-muted shrink-0">
             <Icon size={15} />
           </span>
         )}
         <div className="min-w-0">
-          {eyebrow && <div className="eyebrow mb-0.5">{eyebrow}</div>}
+          {eyebrow && <div data-export-skip className="eyebrow mb-0.5">{eyebrow}</div>}
           <div className="flex items-center gap-1.5 min-w-0">
             <h2 className="font-display text-[15px] font-semibold text-text leading-tight truncate min-w-0">{title}</h2>
             {info && <InfoTooltip text={info} />}
@@ -322,7 +324,7 @@ export function SectionHeader({
         </div>
       </div>
       {(action || exportable) && (
-        <div className="flex items-center gap-2 shrink-0">
+        <div data-export-skip className="flex items-center gap-2 shrink-0">
           {action}
           {exportable && <ExportAction target={resolveSection} title={exportTitle} />}
         </div>

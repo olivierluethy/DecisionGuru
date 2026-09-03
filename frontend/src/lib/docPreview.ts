@@ -1,6 +1,11 @@
 import * as pdfjs from 'pdfjs-dist';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { renderAsync } from 'docx-preview';
+// pdf.js positions and sizes every text-layer span through ITS OWN stylesheet, driven by a
+// `--total-scale-factor` custom property. Hand-written rules cannot substitute: without them
+// the spans keep the default 16px and no transform, so anything measured against that text —
+// a selection, a search highlight — lands beside the glyphs it is supposed to cover.
+import 'pdfjs-dist/web/pdf_viewer.css';
 
 /**
  * Rendering the real document into the DOM — PDF via pdf.js, Word via docx-preview.
@@ -54,6 +59,9 @@ export async function renderPdf(
     wrap.dataset.page = String(n);
     wrap.style.width = `${viewport.width}px`;
     wrap.style.height = `${viewport.height}px`;
+    // Both names are read by different pdf.js versions; setting both is cheap insurance.
+    wrap.style.setProperty('--scale-factor', String(BASE_SCALE));
+    wrap.style.setProperty('--total-scale-factor', String(BASE_SCALE));
 
     const canvas = document.createElement('canvas');
     canvas.width = Math.floor(viewport.width);

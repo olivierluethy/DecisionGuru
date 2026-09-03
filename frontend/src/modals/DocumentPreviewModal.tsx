@@ -49,6 +49,7 @@ export function DocumentPreviewModal({ doc }: { doc: ExportDoc }) {
   const [pageCount, setPageCount] = useState(0);
   const [thumbs, setThumbs] = useState<string[]>([]);
   const [renderNonce, setRenderNonce] = useState(0);
+  const [outline, setOutline] = useState<{ key: string; title: string; el: HTMLElement }[]>([]);
   const [showPicker, setShowPicker] = useState(false);
 
   const [query, setQuery] = useState('');
@@ -105,6 +106,16 @@ export function DocumentPreviewModal({ doc }: { doc: ExportDoc }) {
         setPage(1);
         setThumbs(rendered.thumbnails);
         setRenderNonce((n) => n + 1);
+        // Read the headings back out of the rendered document rather than trusting the
+        // blocks we sent: what the reader navigates is what the file actually contains.
+        // docx-preview maps Word's Heading styles onto `docx_heading*` classes.
+        setOutline(
+          Array.from(container.querySelectorAll<HTMLElement>(
+            'h1, h2, h3, [class*="heading1"], [class*="heading2"], [class*="heading3"]',
+          ))
+            .map((el, i) => ({ key: `${i}`, title: (el.textContent ?? '').trim(), el }))
+            .filter((o) => o.title.length > 0),
+        );
       } catch (err) {
         // The reason never reaches the reader, but it must reach the console — an
         // unrenderable document is otherwise a dead end with no way to diagnose it.
@@ -159,26 +170,6 @@ export function DocumentPreviewModal({ doc }: { doc: ExportDoc }) {
     scroll.addEventListener('scroll', onScroll, { passive: true });
     return () => scroll.removeEventListener('scroll', onScroll);
   }, [pageCount, zoom]);
-
-  // Titles of the blocks that made it into the document — the outline, and the only
-  // navigation a page-less document can honestly offer.
-  const outline = doc.blocks
-    .filter((b) => include.has(b.id) && 'title' in b && b.title)
-    .map((b) => ({ id: b.id, title: (b as { title: string }).title }));
-
-  /** Scroll to the first occurrence of `needle` in the rendered document. */
-  const jumpToText = (needle: string) => {
-    const container = pagesRef.current;
-    if (!container) return;
-    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
-    const target = needle.trim().toLowerCase();
-    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
-      if ((n.nodeValue ?? '').trim().toLowerCase().includes(target)) {
-        n.parentElement?.scrollIntoView({ block: 'start', behavior: 'smooth' });
-        return;
-      }
-    }
-  };
 
   const goToPage = (n: number) => {
     const target = Math.min(Math.max(1, n), Math.max(pageCount, 1));
@@ -370,8 +361,8 @@ export function DocumentPreviewModal({ doc }: { doc: ExportDoc }) {
               )}
               {outline.map((o) => (
                 <button
-                  key={o.id}
-                  onClick={() => jumpToText(o.title)}
+                  key={o.key}
+                  onClick={() => o.el.scrollIntoView({ block: 'start', behavior: 'smooth' })}
                   title={`Jump to “${o.title}”`}
                   className="block w-full text-left px-2 py-1.5 rounded-sm text-[12px] text-text-muted hover:text-text hover:bg-surface-2 truncate"
                 >

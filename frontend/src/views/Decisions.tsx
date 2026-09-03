@@ -1,13 +1,14 @@
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import clsx from 'clsx';
-import { ArrowRight, Wallet, ShieldCheck, Activity, ChevronDown } from 'lucide-react';
+import { ArrowRight, Wallet, ShieldCheck, Activity, ChevronDown, HandCoins } from 'lucide-react';
 import { api, type Recommendation } from '../lib/api';
 import { Stat, Spinner, EmptyState } from '../components/ui';
 import { DeltaChart } from '../components/DeltaChart';
 import { VerdictBadge, VerdictRationale, VERDICT_META } from '../components/Verdict';
 import { fmtCHF, fmtCHFSigned, fmtPct, fmtPctSigned, fmtDurationMonths, plClass } from '../lib/format';
 import { useApp } from '../store';
+import { scrollToSectionWhenReady } from '../lib/scrollToSection';
 
 function RecCard({ rec }: { rec: Recommendation }) {
   const { selectInstrument, openModal } = useApp();
@@ -60,6 +61,26 @@ function RecCard({ rec }: { rec: Recommendation }) {
           valueClass="text-gold"
         />
       </div>
+
+      {/* Hold / Buy more is exactly where the "just buy more of it" reflex kicks in — offer
+          the check that asks whether this is the best home for the next franc. */}
+      {!isSell && (
+        <div className="mt-4 pt-3 border-t border-hairline flex items-center justify-between gap-3 flex-wrap">
+          <p className="text-[13px] text-text-muted max-w-[60ch]">
+            Worth owning is not the same as the best place for new money — check it against its
+            competitors before topping up.
+          </p>
+          <button
+            className="btn-secondary h-8"
+            onClick={() => {
+              selectInstrument(rec.instrumentId);
+              scrollToSectionWhenReady('sec-reinvest');
+            }}
+          >
+            <HandCoins size={14} /> Check before topping up
+          </button>
+        </div>
+      )}
 
       {target && (
         <div className="mt-4 pt-3 border-t border-hairline flex items-center justify-between gap-3 flex-wrap">

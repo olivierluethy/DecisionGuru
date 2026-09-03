@@ -45,16 +45,76 @@ lets you draw conclusions. A persistent "Not financial advice" note is shown thr
 
 ## Run it
 
-Requires **Python 3.12 + [uv](https://docs.astral.sh/uv/)** for the backend and **Node ≥ 20**
-for the frontend. See `docs/RUNNING.md` for details.
+You need two things on your `PATH` before the first run: **[uv](https://docs.astral.sh/uv/)**
+(it manages the backend *and* fetches Python 3.12 for you — your system Python version does
+not matter) and **Node ≥ 20**. See `docs/RUNNING.md` for the full guide.
+
+### macOS (Apple Silicon & Intel)
+
+macOS ships **no** `uv` and no usable Java, so install the prerequisites first —
+`npm run dev` fails with `sh: uv: command not found` otherwise:
 
 ```bash
-cd backend && uv sync && cd ..   # install backend deps (creates backend/.venv)
+# 1. Homebrew, if you don't have it yet — https://brew.sh
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+# 2. Prerequisites
+brew install uv node          # uv = backend toolchain, node ≥ 20 = frontend
+
+# 3. Verify — both must print a version
+uv --version && node --version
+```
+
+<details>
+<summary>No Homebrew? Install <code>uv</code> with the official script instead</summary>
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+This installs to `~/.local/bin`, which is **not** on your `PATH` by default. Open a new
+terminal, or add it permanently:
+
+```bash
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc && source ~/.zshrc
+```
+</details>
+
+Then run the project (from the repo root):
+
+```bash
+cd backend && uv sync && cd ..   # install backend deps (creates backend/.venv, ~1 min)
 npm install                      # install frontend workspaces
 npm run dev                      # API (uvicorn :5178) + web (vite :5173)
 ```
 
-Then open **http://localhost:5173**. The Vite dev server proxies `/api` to the backend.
+> **Java is optional.** PySpark powers the bulk analytics path, but macOS's stock `java` is
+> only a stub — the backend logs `Spark unavailable (…); using pandas reducer` once and
+> works normally on the pandas fallback. For the Spark path: `brew install --cask temurin@21`.
+> To silence the warning entirely, set `DG_SPARK_ENABLED=false` in `backend/.env`.
+
+### Linux
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh   # then restart your shell
+cd backend && uv sync && cd ..
+npm install
+npm run dev
+```
+
+### Windows (PowerShell)
+
+```powershell
+winget install --id=astral-sh.uv -e ; winget install --id=OpenJS.NodeJS.LTS -e
+cd backend ; uv sync ; cd ..
+npm install
+npm run dev
+```
+
+---
+
+Then open **http://localhost:5173**. The Vite dev server proxies `/api` to the backend on
+port 5178.
 
 Individually:
 
@@ -65,6 +125,16 @@ npm run dev:frontend  # web only
 
 Interactive API docs are at **http://localhost:5178/docs**. Production build of the web app:
 `npm run build` (output in `frontend/dist`).
+
+### If something goes wrong
+
+| Symptom | Fix |
+| --- | --- |
+| `sh: uv: command not found` | `uv` isn't installed or isn't on `PATH` — see the install steps above, then open a **new** terminal. |
+| `http proxy error: /api/… AggregateError [ECONNREFUSED]` | The web app is up but the API isn't. Scroll up for the `[api]` lines — the real error is there (usually the missing `uv`). |
+| `Port 5173 is in use, trying another one…` | A previous `npm run dev` is still running. `npm run dev` prints the port it actually took; or free them: `lsof -ti:5173,5178 \| xargs kill`. |
+| `Unable to locate a Java Runtime` / `Spark unavailable` | Harmless — the pandas fallback handles it. See the Java note above. |
+| Backend deps look stale after a `git pull` | `cd backend && uv sync` again — it's fast and idempotent. |
 
 ## Data & privacy
 

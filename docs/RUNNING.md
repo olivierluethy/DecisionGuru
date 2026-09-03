@@ -5,11 +5,53 @@ server proxies `/api` → `http://localhost:5178`, so the backend must run on **
 
 ## Prerequisites
 
-- **Python 3.12** and **[uv](https://docs.astral.sh/uv/)** for the backend
-  (`curl -LsSf https://astral.sh/uv/install.sh | sh`)
-- **Node ≥ 20** for the frontend tooling only (Vite/Tailwind)
-- **Java 17+** on `PATH` for the PySpark heavy path (optional — the backend degrades to a
-  pandas reducer if Spark can't start; set `DG_SPARK_ENABLED=false` to force pandas)
+| Tool | Required? | Why |
+| --- | --- | --- |
+| **[uv](https://docs.astral.sh/uv/)** | yes | Backend toolchain. It also **downloads Python 3.12 itself** (pinned in `backend/.python-version`), so you do *not* need a system Python 3.12 — any version, or none, is fine. |
+| **Node ≥ 20** | yes | Frontend tooling only (Vite/Tailwind). |
+| **Java 17+** | no | PySpark heavy path. Without it the backend logs one warning and falls back to an identical pandas reducer. Set `DG_SPARK_ENABLED=false` to skip the attempt. |
+
+### macOS
+
+macOS ships neither `uv` nor a real JVM, so nothing works out of the box — the symptom is
+`sh: uv: command not found` from `npm run dev:backend`, followed by a wall of
+`http proxy error: /api/… ECONNREFUSED` from Vite (the web app is fine; it just has no API
+to talk to).
+
+```bash
+# Homebrew route (recommended — works on both Apple Silicon and Intel)
+brew install uv node
+uv --version && node --version     # both must print a version
+
+# Optional: real JVM for the PySpark path
+brew install --cask temurin@21
+```
+
+Without Homebrew, use Astral's installer — but note it installs into `~/.local/bin`, which
+zsh does **not** have on `PATH` by default, so `uv` stays "not found" until you fix that:
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc && source ~/.zshrc
+```
+
+On Apple Silicon, Homebrew lives in `/opt/homebrew/bin` (Intel: `/usr/local/bin`). If
+`brew` itself works but `uv` doesn't after installing, that directory is missing from your
+`PATH` — `eval "$(/opt/homebrew/bin/brew shellenv)"` in `~/.zshrc` fixes it.
+
+### Linux
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh    # restart your shell afterwards
+# Node ≥ 20 from your distro, nvm, or https://nodejs.org
+```
+
+### Windows
+
+```powershell
+winget install --id=astral-sh.uv -e
+winget install --id=OpenJS.NodeJS.LTS -e
+```
 
 ## Backend
 
@@ -49,6 +91,22 @@ npm run dev                 # api (uvicorn :5178) + web (vite :5173)
 ```
 
 Then open <http://localhost:5173>.
+
+`npm run dev` runs both halves under `concurrently`, prefixed `[api]` and `[web]`. When
+something fails, read the `[api]` lines — a backend that never starts shows up on the
+`[web]` side only as repeated `ECONNREFUSED` proxy errors, which is a symptom, not the cause.
+
+## Troubleshooting
+
+| Symptom | Cause & fix |
+| --- | --- |
+| `sh: uv: command not found` | `uv` missing or not on `PATH`. Install it (above), then open a **new** terminal — an already-open shell won't see the new `PATH`. |
+| `[web] http proxy error: /api/… AggregateError [ECONNREFUSED]` | The backend isn't listening on 5178. Check the `[api]` output for the real error; verify with `curl http://127.0.0.1:5178/api/health`. |
+| `Port 5173 is in use, trying another one...` | A previous dev server is still alive, and Vite silently moves to 5174 — so you may be looking at a stale tab. Kill the strays: `lsof -ti:5173,5178 \| xargs kill`, then re-run. |
+| `Unable to locate a Java Runtime` / `Spark unavailable (…); using pandas reducer` | Expected without a JVM; results are identical. Install `temurin@21` or set `DG_SPARK_ENABLED=false`. |
+| `error: No interpreter found for Python 3.12` | Old `uv`. Update it (`brew upgrade uv`, or `uv self update`) — current versions fetch Python 3.12 automatically. |
+| Import upload works, then "unknown token" on commit | More than one worker. Imports need `-w 1` (see the note above). |
+| Stale/odd backend behaviour after `git pull` | `cd backend && uv sync` to re-lock deps; delete `backend/.venv` and re-sync to start clean. |
 
 ## Configuration
 

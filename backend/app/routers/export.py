@@ -42,6 +42,24 @@ def _blocks_of(body: dict) -> list[dict]:
     return legacy
 
 
+# Charts are rasterised client-side at 2x, so an image's pixel width is twice its on-screen
+# width. Points ~= CSS pixels at 96dpi, hence the halving.
+RASTER_SCALE = 2
+# Full content width of the A4 body (595pt page - 40pt margins, rounded down).
+MAX_IMAGE_WIDTH = 500
+
+
+def _image_width(pixel_width: int) -> float:
+    """Layout width in points — never wider than the page, never UPSCALED past its own size.
+
+    Without the second half a 28x28 swatch is stretched to 500pt and lands as a blurred
+    full-width blob. An image that is genuinely small should render small.
+    """
+    if not pixel_width:
+        return MAX_IMAGE_WIDTH
+    return min(MAX_IMAGE_WIDTH, pixel_width / RASTER_SCALE)
+
+
 def _decode_image(src: object) -> bytes | None:
     """Raw bytes of a `data:image/...;base64,...` URI, or None for anything else."""
     if not isinstance(src, str) or not src.startswith("data:image"):
@@ -127,7 +145,7 @@ def _build_pdf(body: dict) -> bytes:
                 flow.append(Paragraph(str(block["title"]), h2_style))
             reader = ImageReader(io.BytesIO(raw))
             iw, ih = reader.getSize()
-            width = 500
+            width = _image_width(iw)
             height = width * ih / iw if iw else 250
             flow.append(Spacer(1, 10))
             flow.append(Image(io.BytesIO(raw), width=width, height=height))
@@ -205,7 +223,13 @@ def _build_docx(body: dict) -> bytes:
             if block.get("title"):
                 _heading(block["title"])
             try:
-                doc.add_picture(io.BytesIO(raw), width=Inches(6.0))
+                # Same rule as the PDF: cap at the text width, never upscale a small image.
+                from PIL import Image as _PILImage  # bundled with python-docx's deps
+                try:
+                    px_w = _PILImage.open(io.BytesIO(raw)).width
+                except Exception:  # noqa: BLE001
+                    px_w = 0
+                doc.add_picture(io.BytesIO(raw), width=Inches(_image_width(px_w) / 72))
             except Exception:  # noqa: BLE001
                 pass
         elif kind == "text":

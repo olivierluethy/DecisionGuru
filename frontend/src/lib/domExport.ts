@@ -41,8 +41,9 @@ const MIN_CHART_WIDTH = 180;
 const MIN_CHART_HEIGHT = 100;
 
 function isChart(el: Element): boolean {
-  // Recharts labels its own drawing surface; trust that first and measure otherwise.
-  if (el.classList.contains('recharts-surface')) return true;
+  // Measure, always. `recharts-surface` is NOT evidence of a chart: Recharts puts the same
+  // class on the 14x14 colour swatch of every legend entry, and trusting it let those
+  // swatches into documents as full-width images.
   const { width, height } = el.getBoundingClientRect();
   return width >= MIN_CHART_WIDTH && height >= MIN_CHART_HEIGHT;
 }

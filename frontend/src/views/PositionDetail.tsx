@@ -24,6 +24,7 @@ import {
   StickyNote,
   Radar,
   PieChart,
+  Blend,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { api } from '../lib/api';
@@ -46,6 +47,7 @@ import { ComparisonSelect } from '../components/ComparisonSelect';
 import { Fundamentals } from '../components/Fundamentals';
 import { ValueAnalysis } from '../components/ValueAnalysis';
 import { MarketAnalysis } from '../components/MarketAnalysis';
+import { MarketCombos } from '../components/MarketCombos';
 import { PortfolioFit } from '../components/PortfolioFit';
 import { yahooUrl, googleUrl, finanzenUrl } from '../lib/externalLinks';
 import { SellSignalPanel } from '../components/SellSignalPanel';
@@ -180,6 +182,7 @@ export function PositionDetail() {
     ...(!delisted && isStock ? [{ id: 'sec-fundamentals', label: 'Fundamentals', icon: Building2 }] : []),
     ...(!delisted && isStock ? [{ id: 'sec-value', label: 'Value', icon: Gem }] : []),
     ...(!delisted && isStock ? [{ id: 'sec-market', label: 'Market analysis', icon: Radar }] : []),
+    ...(!delisted && isStock ? [{ id: 'sec-combos', label: 'Combinations', icon: Blend }] : []),
     ...(!delisted ? [{ id: 'sec-returns', label: 'Returns', icon: Percent }] : []),
     { id: 'sec-projection', label: 'Projection', icon: Rocket },
     { id: 'sec-whatif', label: 'What-if sale', icon: Shuffle },
@@ -551,9 +554,18 @@ export function PositionDetail() {
       {/* Market analysis — sector, competitors & relative performance */}
       {!delisted && inst.kind === 'stock' && (
         <section id="sec-market" className="card mb-6 scroll-mt-24">
-          <SectionHeader icon={Radar} eyebrow="Sector · competitors · relative performance" title="Market analysis" className="mb-4"
-            info="How this stock stacks up against its sector and closest competitors, and whether recent weakness or strength is company-specific or market-wide." />
+          <SectionHeader icon={Radar} eyebrow="Sector · competitors · who is better positioned" title="Market analysis" className="mb-4"
+            info="How this stock stacks up against its sector and closest competitors, and whether recent weakness or strength is company-specific or market-wide. The Market position card ranks every company in this market on value and growth strength at once — so a cheap name that is quietly falling behind its rivals is called out rather than praised." />
           <MarketAnalysis symbol={inst.symbol} />
+        </section>
+      )}
+
+      {/* Historical combinations — was this position better held alone or as a mix? */}
+      {!delisted && inst.kind === 'stock' && (
+        <section id="sec-combos" className="card mb-6 scroll-mt-24">
+          <SectionHeader icon={Blend} eyebrow="One company vs. a mix · historical record" title="Best historical combination" className="mb-4"
+            info="Was holding this one company the best you could have done inside its market? Every mix of up to three of its competitors is replayed on a 10% weight grid with annual rebalancing, and the best splits are ranked with the reason they won. Backward-looking and price-return only — a record, not a forecast." />
+          <MarketCombos symbol={inst.symbol} />
         </section>
       )}
 

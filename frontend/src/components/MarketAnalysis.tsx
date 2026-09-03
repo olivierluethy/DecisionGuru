@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
-import { api, type MarketAnalysisResult, type MarketClassification } from '../lib/api';
+import { api, type MarketAnalysisResult, type MarketClassification, type MarketCompetitor } from '../lib/api';
 import { Spinner, EmptyState } from './ui';
 import { fmtPct, fmtPctSigned, fmtMoney, fmtDate } from '../lib/format';
 import { useApp } from '../store';
 import { ComparisonSelect } from './ComparisonSelect';
+import { MarketPosition } from './MarketPosition';
 
 const RANGES = ['1M', '3M', '6M', '1Y', '3Y', '5Y'] as const;
 type MarketRange = (typeof RANGES)[number];
@@ -26,8 +27,53 @@ const CLASS_META: Record<MarketClassification, { label: string; tone: string; bl
 // Distinct dark-legible line colours; azure is always the subject.
 const LINE_COLORS = ['#4FD0E0', '#D9A94E', '#A98BFF', '#B6D94E', '#EC6DB0'];
 
+/** Sortable columns of the comparables table. `rank` is the value × strength composite
+ *  (best first); it only exists once the market is large enough to rank inside. */
+type SortKey = 'rank' | 'valuePct' | 'strengthPct' | 'marketCap' | 'trailingPE'
+  | 'profitMargins' | 'return' | 'relative';
+
+const ASCENDING_BY_DEFAULT: SortKey[] = ['rank', 'trailingPE'];
+
+/** The value a row sorts on for a given column, or null when it can't be compared. */
+function sortValue(c: MarketCompetitor, key: SortKey, range: string): number | null {
+  switch (key) {
+    case 'rank': return c.rank ?? null;
+    case 'valuePct': return c.valuePct ?? null;
+    case 'strengthPct': return c.strengthPct ?? null;
+    case 'marketCap': return c.marketCapCHF ?? null;
+    case 'trailingPE': return c.trailingPE ?? null;
+    case 'profitMargins': return c.profitMargins ?? null;
+    case 'return': return c.returns[range] ?? null;
+    case 'relative': return c.isSubject ? null : c.relativeToSubjectPct ?? null;
+  }
+}
+
+/** Click-to-sort column header; the arrow shows the active column and direction. */
+function SortableTh({ label, sortKey, title, sort, onSort }: {
+  label: string; sortKey: SortKey; title?: string;
+  sort: { key: SortKey; dir: 'asc' | 'desc' }; onSort: (key: SortKey) => void;
+}) {
+  const active = sort.key === sortKey;
+  return (
+    <th className="th text-right">
+      <button
+        type="button"
+        onClick={() => onSort(sortKey)}
+        title={title ?? `Sort by ${label}`}
+        className={`inline-flex items-center gap-1 cursor-pointer hover:text-text ${active ? 'text-text' : ''}`}
+      >
+        {label}
+        <span className="text-[9px] leading-none">{active ? (sort.dir === 'asc' ? '▲' : '▼') : '↕'}</span>
+      </button>
+    </th>
+  );
+}
+
 export function MarketAnalysis({ symbol }: { symbol: string }) {
   const [range, setRange] = useState<MarketRange>('1Y');
+  // Default to the composite rank — "who is the better bet here" is the question the table
+  // is there to answer; every other column stays one click away.
+  const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' }>({ key: 'rank', dir: 'asc' });
   const openModal = useApp((s) => s.openModal);
   const defaultBenchmark = useApp((s) => s.benchmark);
   // Comparison lines are user-selectable: seed with the global benchmark (e.g. VWRL.SW), then
@@ -78,6 +124,26 @@ export function MarketAnalysis({ symbol }: { symbol: string }) {
   }
   const chartData = [...byDate.values()].sort((a, b) => String(a.date).localeCompare(String(b.date)));
 
+  // Client-side sort so switching column never costs a request. Rows the column can't
+  // compare (no data) always sink to the bottom, whichever direction is active.
+  const rows = [...data.competitors].sort((a, b) => {
+    const av = sortValue(a, sort.key, range);
+    const bv = sortValue(b, sort.key, range);
+    if (av == null && bv == null) return 0;
+    if (av == null) return 1;
+    if (bv == null) return -1;
+    return sort.dir === 'asc' ? av - bv : bv - av;
+  });
+
+  const toggleSort = (key: SortKey) =>
+    setSort((s) => (s.key === key
+      ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' }
+      : { key, dir: ASCENDING_BY_DEFAULT.includes(key) ? 'asc' : 'desc' }));
+
+  const th = (label: string, sortKey: SortKey, title?: string) => (
+    <SortableTh key={sortKey} label={label} sortKey={sortKey} title={title} sort={sort} onSort={toggleSort} />
+  );
+
   return (
     <div className="space-y-5">
       {/* Comparison selector — subject vs. any benchmark ETFs and/or companies (any market). */}
@@ -100,6 +166,11 @@ export function MarketAnalysis({ symbol }: { symbol: string }) {
             className={`chip cursor-pointer ${range === r ? '!border-azure/50 !text-text' : 'opacity-50'}`}>{r}</button>
         ))}
       </div>
+
+      {/* Is another company in this market the better bet? Value × strength, ranked. */}
+      {data.marketPosition && (
+        <MarketPosition position={data.marketPosition} competitors={data.competitors} range={range} />
+      )}
 
       {/* Market-vs-company headline */}
       {cls && (
@@ -144,7 +215,9 @@ export function MarketAnalysis({ symbol }: { symbol: string }) {
 
       {/* Competitor table */}
       <div>
-        <div className="eyebrow mb-2">Comparable companies · same market, ranked by market cap (CHF)</div>
+        <div className="eyebrow mb-2">
+          Comparable companies · same market{data.marketPosition ? ', best positioned first' : ', ranked by market cap (CHF)'}
+        </div>
         {data.competitors.length === 0 ? (
           <p className="text-sm text-text-faint">No comparable companies with cached data yet. Open a few same-industry names in Research/Discover to build the peer set.</p>
         ) : (
@@ -154,15 +227,22 @@ export function MarketAnalysis({ symbol }: { symbol: string }) {
                 <thead>
                   <tr>
                     <th className="th">Company</th>
-                    <th className="th text-right">Mkt cap</th>
-                    <th className="th text-right">P/E</th>
-                    <th className="th text-right">Net margin</th>
-                    <th className="th text-right">{range} return</th>
-                    <th className="th text-right">vs this stock</th>
+                    {data.marketPosition && (
+                      <>
+                        {th('#', 'rank', 'Rank in this market — value and market strength weighted equally')}
+                        {th('Value', 'valuePct', 'Percentile inside this market: how cheap, higher is cheaper')}
+                        {th('Strength', 'strengthPct', 'Percentile inside this market: price return, revenue growth and net margin')}
+                      </>
+                    )}
+                    {th('Mkt cap', 'marketCap')}
+                    {th('P/E', 'trailingPE')}
+                    {th('Net margin', 'profitMargins')}
+                    {th(`${range} return`, 'return')}
+                    {th('vs this stock', 'relative')}
                   </tr>
                 </thead>
                 <tbody>
-                  {data.competitors.map((c) => (
+                  {rows.map((c) => (
                     <tr key={c.symbol} className={c.isSubject ? 'bg-surface-2' : ''}>
                       <td className="td">
                         <button
@@ -176,6 +256,13 @@ export function MarketAnalysis({ symbol }: { symbol: string }) {
                           {c.name && <span className="text-text-faint truncate group-hover:text-text-muted">{c.name}</span>}
                         </button>
                       </td>
+                      {data.marketPosition && (
+                        <>
+                          <td className="td text-right font-mono tnum text-text-muted">{c.rank ?? '—'}</td>
+                          <td className="td text-right font-mono tnum">{c.valuePct != null ? c.valuePct.toFixed(0) : '—'}</td>
+                          <td className="td text-right font-mono tnum">{c.strengthPct != null ? c.strengthPct.toFixed(0) : '—'}</td>
+                        </>
+                      )}
                       <td className="td text-right font-mono tnum">
                         {c.marketCapCHF != null
                           ? fmtMoney(c.marketCapCHF, 'CHF', false)
@@ -194,7 +281,12 @@ export function MarketAnalysis({ symbol }: { symbol: string }) {
             </div>
           </div>
         )}
-        <p className="text-[11px] text-text-faint mt-1">Peers share the same market (sector + industry) and have cached data; ranked by market cap converted to CHF (omitted when no FX rate).</p>
+        <p className="text-[11px] text-text-faint mt-1">
+          Peers share the same market (sector + industry) and have cached data. Value and Strength
+          are percentile ranks <em>within this market</em> (higher is better); # weights them
+          equally. Click any header to re-sort. Market cap is converted to CHF (omitted when no
+          FX rate).
+        </p>
       </div>
 
       {/* Opportunity-cost / valuation tie-in */}

@@ -25,6 +25,20 @@ lets you draw conclusions. A persistent "Not financial advice" note is shown thr
   labelled and excluded from P/L). Any other XLS/XLSX/CSV/PDF falls back to the generic
   column-mapping modal with preview, dedupe and savable presets.
 - **Manual entry** — add a position with just ticker + date + amount (price auto-derived).
+- **Market position** — inside *Market analysis* (Research → a stock, Portfolio → a position,
+  or any Opportunity modal): every company in the same competitive market ranked on two axes
+  at once — how cheap it is *and* how strongly it is growing relative to that market. It names
+  the corner a stock sits in (a cheap **leader** vs. a cheap **laggard**) and, when they exist,
+  the peers that beat it on both axes — so you don't buy the discount on a company that is
+  quietly falling behind its rivals. See `backend/app/services/market_position.py`.
+- **Best historical combination** — its own section beside *Market position*: was holding this
+  **one** company the best you could have done inside its market? Every mix of up to three of
+  its competitors is replayed over 1/3/5 years on a 10 % weight grid with annual rebalancing,
+  and the best splits are ranked *with the reason they won* — a partner that was simply better,
+  a rebalancing bonus between uncorrelated names, or the same return on a calmer ride. Named
+  highlights: the best mix that still holds your stock, the best of all allocations, the best
+  return per unit of risk. Price return only, and explicitly a record rather than a forecast.
+  See `backend/app/services/market_combos.py`.
 - **Break-even, 5-year projections, dividend-shock** scenarios with adjustable sliders.
 - **Scenario workbench** — single stock, bundled baskets, or whole-portfolio
   "sell everything → ETF", savable and re-openable.

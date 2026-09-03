@@ -4,6 +4,7 @@ import clsx from 'clsx';
 import {
   Check, X, CircleHelp, RefreshCw, Eye,
   Gauge, LineChart, Percent, Building2, Radar, Gem, Scale, GitCompareArrows, PieChart, Newspaper,
+  Blend,
 } from 'lucide-react';
 import { api, type AssetMetrics } from '../lib/api';
 import { useApp } from '../store';
@@ -16,6 +17,7 @@ import { PeriodReturns } from '../components/PeriodReturns';
 import { Fundamentals } from '../components/Fundamentals';
 import { ValueAnalysis } from '../components/ValueAnalysis';
 import { MarketAnalysis } from '../components/MarketAnalysis';
+import { MarketCombos } from '../components/MarketCombos';
 import { ProjectionChart } from '../components/ProjectionChart';
 import { BenchmarkSelect } from '../components/BenchmarkSelect';
 import { NewsFeed } from '../components/NewsFeed';
@@ -294,6 +296,7 @@ function AssetView({ symbol, onReset }: { symbol: string; onReset: () => void })
     { id: 'res-returns', label: 'Period returns', icon: Percent },
     ...(isStock ? [{ id: 'res-fundamentals', label: 'Fundamentals', icon: Building2 }] : []),
     ...(isStock ? [{ id: 'res-market', label: 'Market analysis', icon: Radar }] : []),
+    ...(isStock ? [{ id: 'res-combos', label: 'Combinations', icon: Blend }] : []),
     ...(isStock ? [{ id: 'res-value', label: 'Value', icon: Gem }] : []),
     { id: 'res-opportunity', label: 'Opportunity cost', icon: Scale },
     { id: 'res-ranked', label: 'Ranked', icon: GitCompareArrows },
@@ -416,9 +419,18 @@ function AssetView({ symbol, onReset }: { symbol: string; onReset: () => void })
       {/* Market analysis — sector, competitors & relative performance. */}
       {data.kind === 'stock' && (
         <div id="res-market" className="card scroll-mt-24">
-          <SectionHeader icon={Radar} eyebrow="Sector · competitors · relative performance" title="Market analysis" className="mb-4"
-            info="How this stock stacks up against its sector and closest competitors, and whether recent weakness or strength is company-specific or market-wide." />
+          <SectionHeader icon={Radar} eyebrow="Sector · competitors · who is better positioned" title="Market analysis" className="mb-4"
+            info="How this stock stacks up against its sector and closest competitors, and whether recent weakness or strength is company-specific or market-wide. The Market position card ranks every company in this market on value and growth strength at once — so a cheap name that is quietly falling behind its rivals is called out rather than praised." />
           <MarketAnalysis symbol={data.symbol} />
+        </div>
+      )}
+
+      {/* Historical combinations — one company, or a mix, and at which split. */}
+      {data.kind === 'stock' && (
+        <div id="res-combos" className="card scroll-mt-24">
+          <SectionHeader icon={Blend} eyebrow="One company vs. a mix · historical record" title="Best historical combination" className="mb-4"
+            info="Was holding this one company the best you could have done inside its market? Every mix of up to three of its competitors is replayed on a 10% weight grid with annual rebalancing, and the best splits are ranked with the reason they won. Backward-looking and price-return only — a record, not a forecast." />
+          <MarketCombos symbol={data.symbol} />
         </div>
       )}
 

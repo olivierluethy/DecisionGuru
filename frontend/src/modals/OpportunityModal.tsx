@@ -2,7 +2,7 @@ import { useRef, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import clsx from 'clsx';
 import {
-  ArrowUpRight, Building2, Clock, ExternalLink, Gem, PieChart, Radar, Share2,
+  ArrowUpRight, Blend, Building2, Clock, ExternalLink, Gem, PieChart, Radar, Share2,
 } from 'lucide-react';
 import { useApp } from '../store';
 import { api } from '../lib/api';
@@ -14,6 +14,7 @@ import { ValueAnalysis } from '../components/ValueAnalysis';
 import { ListingRecommendation } from '../components/ListingRecommendation';
 import { PortfolioFit } from '../components/PortfolioFit';
 import { MarketAnalysis } from '../components/MarketAnalysis';
+import { MarketCombos } from '../components/MarketCombos';
 import { VerdictBadge } from '../components/Verdict';
 import { BandBadge } from '../components/ValuationBand';
 import { researchHref } from '../lib/router';
@@ -22,8 +23,8 @@ import { fmtMoney, fmtPct } from '../lib/format';
 
 /**
  * Opportunity detail — the full value-investing read for a single name without leaving the
- * current view. A sticky left rail lets the reader jump between the four chapters (verdict &
- * fair value, portfolio fit, market, listing) while a compact "at a glance" strip up top
+ * current view. A sticky left rail lets the reader jump between the chapters (verdict & fair
+ * value, portfolio fit, market, combinations, listing) while a compact "at a glance" strip up top
  * carries the headline call. Every chapter reuses the app's SectionHeader so the eye learns
  * one rhythm; "Open Research" leads to the full workup and a clock opens the replay.
  */
@@ -56,6 +57,7 @@ export function OpportunityModal({
     { id: 'op-verdict', label: 'Verdict & value', icon: Gem },
     { id: 'op-fit', label: 'Portfolio fit', icon: PieChart },
     { id: 'op-market', label: 'Market', icon: Radar },
+    { id: 'op-combos', label: 'Combinations', icon: Blend },
     { id: 'op-listing', label: 'Where to buy', icon: Building2 },
   ];
   if (hasLinks) sections.push({ id: 'op-links', label: 'Research links', icon: ExternalLink });
@@ -119,9 +121,19 @@ export function OpportunityModal({
             <SectionHeader
               icon={Radar}
               title="Market analysis"
-              info="How the stock has done against its sector and closest peers, a comparables table ranked by size, and the opportunity-cost read versus its valuation."
+              info="How the stock has done against its sector and closest peers, and — in the Market position card — where it ranks among those peers on value and growth strength at once, so a cheap name that is falling behind its rivals is visible as such. Includes the comparables table and the opportunity-cost read versus its valuation."
             />
             <MarketAnalysis symbol={symbol} />
+          </section>
+
+          {/* One company or a mix — what the record says about concentrating here. */}
+          <section id="op-combos" className="scroll-mt-5 space-y-4 border-t border-hairline pt-6">
+            <SectionHeader
+              icon={Blend}
+              title="Best historical combination"
+              info="Was holding this one company the best you could have done inside its market? Every mix of up to three of its competitors is replayed on a 10% weight grid with annual rebalancing, and the best splits are ranked with the reason they won. Backward-looking and price-return only — a record, not a forecast."
+            />
+            <MarketCombos symbol={symbol} />
           </section>
 
           {/* Which exchange to actually buy — the right listing for a CHF portfolio. */}

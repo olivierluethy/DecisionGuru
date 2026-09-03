@@ -391,6 +391,12 @@ export function DocumentPreviewModal({ doc }: { doc: ExportDoc }) {
                 </button>
               ))}
               {pageCount === 0 && <p className="text-[11px] text-text-faint px-1">No pages yet.</p>}
+              {format === 'docx' && pageCount > 0 && (
+                <p className="text-[10px] text-text-faint px-1 pt-1 leading-snug">
+                  Approximate pages — the file carries no breaks of its own, so Word may move a
+                  line or two when it opens it.
+                </p>
+              )}
             </>
           )}
         </aside>

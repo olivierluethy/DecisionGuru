@@ -24,7 +24,7 @@ import {
   StickyNote,
   Radar,
   PieChart,
-  Blend, HandCoins,
+  Blend, HandCoins, Swords,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { api } from '../lib/api';
@@ -49,6 +49,7 @@ import { ValueAnalysis } from '../components/ValueAnalysis';
 import { MarketAnalysis } from '../components/MarketAnalysis';
 import { MarketCombos } from '../components/MarketCombos';
 import { ReinvestCheck } from '../components/ReinvestCheck';
+import { RivalryPanel } from '../components/RivalryPanel';
 import { ExportAction } from '../components/ExportAction';
 import { buildPositionDoc } from '../lib/exporters';
 import { PortfolioFit } from '../components/PortfolioFit';
@@ -189,6 +190,7 @@ export function PositionDetail() {
     ...(!delisted && isStock ? [{ id: 'sec-market', label: 'Market analysis', icon: Radar }] : []),
     ...(!delisted && isStock ? [{ id: 'sec-combos', label: 'Combinations', icon: Blend }] : []),
     ...(!delisted && isOpen ? [{ id: 'sec-reinvest', label: 'Top up?', icon: HandCoins }] : []),
+    ...(!delisted && isOpen && isStock ? [{ id: 'sec-rivalry', label: 'Who is catching up?', icon: Swords }] : []),
     ...(!delisted ? [{ id: 'sec-returns', label: 'Returns', icon: Percent }] : []),
     { id: 'sec-projection', label: 'Projection', icon: Rocket },
     { id: 'sec-whatif', label: 'What-if sale', icon: Shuffle },
@@ -593,6 +595,15 @@ export function PositionDetail() {
           <SectionHeader icon={HandCoins} eyebrow="Before you buy more · same market, other company" title="Top up this position?" className="mb-4"
             info="A Hold verdict says this stock is worth owning — not that it is the best home for your next franc. Ranks it against its actual competitors on value and growth strength, shows what topping up does to concentration versus buying a peer, and what the same money would have returned in each. Below that: what buying during a past buy-zone window would have been worth against your own cost basis." />
           <ReinvestCheck instrumentId={inst.id} />
+        </section>
+      )}
+
+      {/* Competitor watch — the race against this market, run from your own entry date. */}
+      {!delisted && isOpen && inst.kind === 'stock' && (
+        <section id="sec-rivalry" className="card mb-6 scroll-mt-24">
+          <SectionHeader icon={Swords} eyebrow="Competitor watch · since you bought" title="Who is catching up?" className="mb-4"
+            info="Races every comparable company against this holding from your own purchase date: how far ahead or behind each one is, how fast the gap is closing, when it would overtake you on that trend, and whether the rival is also cheaper against its own fair value. The background scan warns you when one is about to pass. The crossover is an extrapolation, not a forecast." />
+          <RivalryPanel instrumentId={inst.id} />
         </section>
       )}
 

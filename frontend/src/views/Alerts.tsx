@@ -1,7 +1,7 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  Bell, BellOff, Sparkles, TrendingDown, TrendingUp, RefreshCw, Trash2, Check, X, Plus, Radar,
+  Bell, BellOff, Sparkles, TrendingDown, TrendingUp, RefreshCw, Trash2, Check, X, Plus, Radar, Swords,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { api, type PriceAlert, type AppNotification } from '../lib/api';
@@ -38,6 +38,7 @@ const NOTIF_ICON = {
   alert: Bell,
   opportunity: Sparkles,
   scan: Radar,
+  rivalry: Swords,
 } as const;
 
 type Tab = 'notifications' | 'price-alerts';
@@ -291,7 +292,9 @@ function AlertGroup({ label, count, children }: { label: string; count: number; 
 
 function NotificationRow({ n, onOpen }: { n: AppNotification; onOpen: () => void }) {
   const Icon = NOTIF_ICON[n.type] ?? Bell;
-  const color = n.type === 'opportunity' ? 'text-gain' : n.type === 'alert' ? 'text-azure' : 'text-text-faint';
+  const color = n.type === 'opportunity' ? 'text-gain'
+    : n.type === 'rivalry' ? 'text-warn'
+    : n.type === 'alert' ? 'text-azure' : 'text-text-faint';
   return (
     <li>
       <button onClick={onOpen}

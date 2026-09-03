@@ -132,6 +132,7 @@ export const api = {
     if (amount != null && amount > 0) p.set('amount', String(amount));
     return req<ReinvestCheck>(`/analysis/reinvest/${id}?${p}`);
   },
+  rivalry: (id: number) => req<RivalryCheck>(`/analysis/rivalry/${id}`),
   dividendShock: (id: number, cut: number) =>
     req<{
       currentAnnualGrossCHF: number;
@@ -977,6 +978,53 @@ export interface MarketAnalysisResult {
   valuation: { band: ValuationBand | null; marginOfSafety: number | null; fairValue: number | null } | null;
 }
 
+/** Where a rival stands against your holding, and what momentum says happens next. */
+export type RivalryVerdict =
+  | 'already-ahead-and-cheaper' | 'already-ahead-but-pricier'
+  | 'closing-and-cheaper' | 'closing-but-pricier' | 'behind';
+
+export interface RivalrySwitch {
+  positionValueCHF: number;
+  roundTripFeeCHF: number;
+  feeIsAssumed: boolean;
+  annualDifferenceCHF: number | null;
+  monthsToRecoverFee: number | null;
+  note: string;
+}
+export interface Rival {
+  symbol: string; name: string | null; currency: string | null;
+  from: string; to: string; days: number;
+  /** Peer return minus your return since your purchase date. Negative = you are ahead. */
+  gap: number;
+  aheadOfYou: boolean;
+  closingSpeedPerYear: number | null;
+  closing: boolean;
+  receding: boolean;
+  daysToCrossover: number | null;
+  crossoverDate: string | null;
+  marginOfSafety: number | null;
+  verdict: RivalryVerdict;
+  /** 0 = ahead and still gaining, 1 = behind but closing, 2 = ahead yet receding, 3 = behind. */
+  threatGroup: number;
+  switch: RivalrySwitch;
+}
+/** The competitor race for one holding — see backend/app/services/rivalry.py. */
+export interface RivalryCheck {
+  instrumentId?: number;
+  symbol?: string;
+  name?: string | null;
+  available: boolean;
+  reason?: string;
+  entryDate?: string;
+  positionValueCHF?: number;
+  marginOfSafety?: number | null;
+  speedWindowDays?: number;
+  alertHorizonDays?: number;
+  rivals?: Rival[];
+  nearestThreat?: Rival | null;
+  note?: string;
+}
+
 /** A stretch of past days where the price sat at or below the value engine's entry target. */
 export interface ReinvestBuyZoneWindow {
   start: string; end: string; days: number;
@@ -1262,7 +1310,8 @@ export interface PriceAlert {
 }
 export interface AppNotification {
   id: number;
-  type: 'alert' | 'opportunity' | 'scan';
+  /** 'rivalry' = a competitor in the same market is overtaking a holding (services/rivalry.py). */
+  type: 'alert' | 'opportunity' | 'scan' | 'rivalry';
   title: string;
   body: string | null;
   symbol: string | null;

@@ -47,6 +47,12 @@ lets you draw conclusions. A persistent "Not financial advice" note is shown thr
   Below that the timing read: past **buy-zone windows** (price at or below the entry target)
   priced against *your* cost basis — what buying then would have been worth, and how much more
   than you made. See `backend/app/services/reinvest.py`.
+- **Competitor watch** — the *Who is catching up?* section on any open stock position races
+  every comparable company against it **from your own purchase date**: how far ahead or behind
+  each stands, how fast the gap is closing, when it would overtake you on that trend, whether
+  the rival is also cheaper against its own fair value, and what switching would cost and earn
+  back. The 6-hour background scan warns you when one is about to pass — once per rival and
+  stage, not every scan. See `backend/app/services/rivalry.py`.
 - **Break-even, 5-year projections, dividend-shock** scenarios with adjustable sliders.
 - **Scenario workbench** — single stock, bundled baskets, or whole-portfolio
   "sell everything → ETF", savable and re-openable.

@@ -23,8 +23,14 @@ import 'pdfjs-dist/web/pdf_viewer.css';
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
 
-/** Render scale for the canvas bitmap. 1.5 stays sharp up to ~200% CSS zoom. */
-const BASE_SCALE = 1.5;
+/**
+ * CSS pixels per PDF point. 96/72 puts an A4 page at 794x1123 — byte for byte the size
+ * docx-preview gives a Word A4 page, which is what makes "100%", "fit width" and the
+ * thumbnail rail mean the same thing in both formats instead of two sizes of paper.
+ */
+const CSS_SCALE = 96 / 72;
+/** Bitmap resolution behind those CSS pixels. 1.5 stays sharp to ~150% zoom. */
+const RASTER = 1.5;
 const THUMB_SCALE = 0.22;
 
 export const PAGE_CLASS = 'dg-doc-page';
@@ -52,7 +58,11 @@ export async function renderPdf(
   for (let n = 1; n <= doc.numPages; n += 1) {
     if (signal?.aborted) break;
     const page = await doc.getPage(n);
-    const viewport = page.getViewport({ scale: BASE_SCALE });
+    // Two viewports for one page: the layout one decides how big the page IS, the raster
+    // one only how many pixels are painted behind it. Keeping them apart is what lets the
+    // bitmap get sharper without the page getting bigger.
+    const viewport = page.getViewport({ scale: CSS_SCALE });
+    const rasterViewport = page.getViewport({ scale: CSS_SCALE * RASTER });
 
     const wrap = document.createElement('div');
     wrap.className = PAGE_CLASS;
@@ -60,12 +70,14 @@ export async function renderPdf(
     wrap.style.width = `${viewport.width}px`;
     wrap.style.height = `${viewport.height}px`;
     // Both names are read by different pdf.js versions; setting both is cheap insurance.
-    wrap.style.setProperty('--scale-factor', String(BASE_SCALE));
-    wrap.style.setProperty('--total-scale-factor', String(BASE_SCALE));
+    wrap.style.setProperty('--scale-factor', String(CSS_SCALE));
+    wrap.style.setProperty('--total-scale-factor', String(CSS_SCALE));
 
     const canvas = document.createElement('canvas');
-    canvas.width = Math.floor(viewport.width);
-    canvas.height = Math.floor(viewport.height);
+    canvas.width = Math.floor(rasterViewport.width);
+    canvas.height = Math.floor(rasterViewport.height);
+    canvas.style.width = `${viewport.width}px`;
+    canvas.style.height = `${viewport.height}px`;
     wrap.appendChild(canvas);
 
     const textLayerDiv = document.createElement('div');
@@ -74,7 +86,7 @@ export async function renderPdf(
     container.appendChild(wrap);
 
     const ctx = canvas.getContext('2d');
-    if (ctx) await page.render({ canvas, canvasContext: ctx, viewport }).promise;
+    if (ctx) await page.render({ canvas, canvasContext: ctx, viewport: rasterViewport }).promise;
 
     // The text layer is what makes the document selectable and searchable; without it a
     // PDF preview is a picture of a document.
@@ -165,38 +177,67 @@ function paginate(container: HTMLElement): void {
   const source = container.querySelector<HTMLElement>('section.docx');
   if (!source) return;
   const host = source.querySelector<HTMLElement>('article') ?? source;
-  const blocks = Array.from(host.children) as HTMLElement[];
-  if (blocks.length === 0) return;
+  if (host.children.length === 0) return;
 
   const style = getComputedStyle(source);
-  const pageHeight = Math.round(source.offsetWidth * A4_RATIO);
+  // docx-preview writes the page height the file DECLARES onto the section; trust that over
+  // an assumed paper size, and fall back to A4 only if it left the height open.
+  const declared = parseFloat(style.minHeight);
+  const pageHeight = declared > 0 ? Math.round(declared)
+    : Math.round(source.offsetWidth * A4_RATIO);
   const usable =
     (pageHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom)) * FILL;
   if (!(usable > 0)) return;
 
   // Measure everything BEFORE moving anything: relocating a block changes the layout the
-  // remaining measurements would be taken from.
-  const heights = blocks.map((el) => {
-    const box = el.getBoundingClientRect().height;
-    const cs = getComputedStyle(el);
-    return box + parseFloat(cs.marginTop || '0') + parseFloat(cs.marginBottom || '0');
-  });
+  // remaining measurements would be taken from. Row heights come along because a table is
+  // the one block that can be divided later, and dividing it must not need a re-measure.
+  const queue = Array.from(host.children) as HTMLElement[];
+  const heights = new Map<Element, number>();
+  const rowHeights = new Map<Element, number>();
+  for (const el of queue) {
+    heights.set(el, outerHeight(el));
+    if (el instanceof HTMLTableElement) {
+      for (const row of Array.from(el.rows)) {
+        rowHeights.set(row, row.getBoundingClientRect().height);
+      }
+    }
+  }
 
   const groups: HTMLElement[][] = [[]];
   let used = 0;
-  blocks.forEach((el, i) => {
-    const h = heights[i];
+  while (queue.length > 0) {
+    const el = queue.shift()!;
     const current = groups[groups.length - 1];
-    // A block taller than a page cannot be split here (that is layout-engine work), so it
-    // gets a page of its own and is allowed to overflow it.
-    if (current.length > 0 && used + h > usable) {
-      groups.push([el]);
-      used = h;
-    } else {
+    const height = heights.get(el) ?? 0;
+    if (used + height <= usable) {
       current.push(el);
-      used += h;
+      used += height;
+      continue;
     }
-  });
+
+    // It does not fit. A table can leave behind the rows that do and carry the rest to the
+    // next page, which is exactly what Word does — hence the repeated header row.
+    const rest = el instanceof HTMLTableElement
+      ? splitTable(el, usable - used, heights, rowHeights)
+      : null;
+    if (rest) {
+      current.push(el);
+      queue.unshift(rest);
+    } else if (current.length === 0) {
+      // Nothing else is on this page and the block cannot be divided honestly: give it the
+      // page and let it make that page longer. Better one long page than content silently
+      // cropped by the section's `overflow: hidden`.
+      current.push(el);
+      used += height;
+      continue;
+    } else {
+      queue.unshift(el);   // try again with a whole page to itself
+    }
+    groups.push([]);
+    used = 0;
+  }
+  if (groups[groups.length - 1].length === 0) groups.pop();
 
   const parent = source.parentElement;
   if (!parent || groups.length <= 1) {
@@ -215,4 +256,65 @@ function paginate(container: HTMLElement): void {
   }
   made.forEach((pageEl) => parent.insertBefore(pageEl, source));
   source.remove();
+}
+
+/** A block's height including the margins that push the next block down. */
+function outerHeight(el: HTMLElement): number {
+  const cs = getComputedStyle(el);
+  return el.getBoundingClientRect().height
+    + parseFloat(cs.marginTop || '0') + parseFloat(cs.marginBottom || '0');
+}
+
+/**
+ * Move the rows of `table` that do not fit in `room` into a copy of it placed right after,
+ * and return that copy — or null when the table cannot usefully be divided here.
+ *
+ * A table is the only block that can be split without inventing anything: it is a list of
+ * rows, and Word breaks one across pages exactly this way, which is why the document asks it
+ * to repeat the header (`w:tblHeader`) in the first place. Left whole, a long table either
+ * stretched its page far past A4 or was pushed down entire, leaving the page before it half
+ * empty — neither is what the reader will get when Word opens the file.
+ */
+function splitTable(
+  table: HTMLTableElement,
+  room: number,
+  heights: Map<Element, number>,
+  rowHeights: Map<Element, number>,
+): HTMLTableElement | null {
+  const rows = Array.from(table.rows);
+  // A header plus a single row is already the smallest a table gets.
+  if (rows.length < 3) return null;
+
+  const [header, ...body] = rows;
+  const headerHeight = rowHeights.get(header) ?? header.getBoundingClientRect().height;
+  let used = headerHeight;
+  let keep = 0;
+  for (const row of body) {
+    const height = rowHeights.get(row) ?? row.getBoundingClientRect().height;
+    if (used + height > room) break;
+    used += height;
+    keep += 1;
+  }
+  // A page carrying the header and nothing else is not worth making, and a table that fits
+  // whole has nothing to give up.
+  if (keep === 0 || keep === body.length) return null;
+
+  const next = table.cloneNode(false) as HTMLTableElement;
+  // Rows may sit in a <tbody> or directly under the table; mirror whichever it is so the
+  // copy inherits the same styling hooks.
+  const section = header.parentElement === table
+    ? next
+    : (header.parentElement!.cloneNode(false) as HTMLElement);
+  if (section !== next) next.appendChild(section);
+
+  const headerCopy = header.cloneNode(true) as HTMLTableRowElement;
+  rowHeights.set(headerCopy, headerHeight);
+  section.appendChild(headerCopy);
+  for (const row of body.slice(keep)) section.appendChild(row);
+
+  table.parentElement?.insertBefore(next, table.nextSibling);
+  // Measuring here is safe: every other block was measured up front, and this one has just
+  // taken its final shape.
+  heights.set(next, outerHeight(next));
+  return next;
 }

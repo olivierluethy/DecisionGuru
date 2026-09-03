@@ -1,4 +1,5 @@
 import { svgToPng } from './exporters';
+import { fmtDate } from './format';
 import { compactBlocks, type ExportBlock, type ExportDoc } from './exportDoc';
 
 /**
@@ -172,7 +173,7 @@ export async function docFromElement(
     title: opts.title ?? (ownHeading ? text(ownHeading) : 'DecisionGuru analysis'),
     subtitle: opts.subtitle,
     filename: opts.filename,
-    meta: opts.meta ?? [{ label: 'As of', value: new Date().toISOString().slice(0, 10) }],
+    meta: opts.meta ?? [{ label: 'As of', value: fmtDate(new Date()) }],
     blocks: compactBlocks(blocks),
   };
 }

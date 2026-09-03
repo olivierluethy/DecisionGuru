@@ -100,10 +100,10 @@ export function fmtDurationMonths(months: number | null | undefined): string {
   return fmtDurationYears(months / 12);
 }
 
-export function fmtDate(d: string | null | undefined): string {
-  if (!d) return '—';
-  const date = new Date(d);
-  if (Number.isNaN(date.getTime())) return d;
+export function fmtDate(d: string | number | Date | null | undefined): string {
+  if (d == null || d === '') return '—';
+  const date = d instanceof Date ? d : new Date(d);
+  if (Number.isNaN(date.getTime())) return String(d);
   // One consistent human-readable format across the app: `DD MMM YYYY` (e.g. 26 Aug 2026).
   return new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).format(date);
 }

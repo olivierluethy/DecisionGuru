@@ -239,37 +239,46 @@ body {
    thumbnail misrepresents the very thing it is a picture of. */
 .dg-doc-thumb {
   /* On the wrapper only: descendants with their own alignment — a centred chart — must keep
-     it, so this resets what is INHERITED, not what the document actually specifies. */
+     it, so this resets what is INHERITED, not what the document actually specifies.
+     (The wrapper's own box — width, padding, background — is set inline in DocxThumbnail:
+     docx-preview injects its stylesheet after this one and would win the tie here.) */
   text-align: start;
-  /* docx-preview's wrapper carries its own padding and grey desk colour. Left in place they
-     scale down with the clone and the page floats inside its own thumbnail. */
-  padding: 0;
-  background: transparent;
 }
 
 /* Search hits.
    Painted over Ranges, so they sit exactly on the glyphs regardless of the per-span
-   transforms pdf.js applies to its text layer. Yellow for every hit, a stronger amber for
+   transforms pdf.js applies to its text layer. Yellow for every hit, a deeper orange for
    the one being stepped through — the grammar of a highlighter pen, which is what a reader
-   expects of "find in document". */
+   expects of "find in document".
+
+   Both stay translucent, and that is a correctness constraint rather than taste. In a PDF
+   the text layer is transparent and the real glyphs are painted on the canvas UNDERNEATH
+   it, so a highlight does not sit behind the word — it sits on top. An opaque wash flattens
+   black glyph and white paper towards the same colour and erases the very match the reader
+   asked to see; the current hit used to disappear completely at 90% alpha. The active hit is
+   told apart by hue and by its underline, never by covering more of the word. */
 ::highlight(dg-find) {
-  background-color: rgba(240, 179, 74, 0.42);
+  background-color: rgba(250, 204, 21, 0.38);
 }
 ::highlight(dg-find-active) {
   /* Background only. Setting `color` here would paint pdf.js's deliberately transparent
      text layer visible, and those glyph positions only approximate the canvas underneath —
      the reader would see a second, misplaced copy of the word. */
-  background-color: rgba(240, 179, 74, 0.9);
+  background-color: rgba(244, 129, 32, 0.45);
+  text-decoration: underline 2px;
+  text-decoration-color: rgba(197, 74, 0, 0.95);
+  text-underline-offset: 1px;
 }
 
 /* Fallback for browsers without the CSS Custom Highlight API (see lib/docSearch.ts). */
 mark.dg-find {
-  background: rgba(240, 179, 74, 0.42);
+  background: rgba(250, 204, 21, 0.38);
   color: inherit;
   border-radius: 2px;
 }
 mark.dg-find-active {
-  background: rgba(240, 179, 74, 0.9);
+  background: rgba(244, 129, 32, 0.45);
+  box-shadow: inset 0 -2px 0 rgba(197, 74, 0, 0.95);
 }
 
 /* Printing the Word preview: the pages are live DOM, so hide the app around them.

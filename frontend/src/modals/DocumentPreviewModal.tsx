@@ -482,11 +482,20 @@ function DocxThumbnail({ pagesRef, page, nonce }: {
     const clone = src.cloneNode(true) as HTMLElement;
     clone.removeAttribute('data-page');
     clone.classList.remove(PAGE_CLASS);
-    const scale = host.clientWidth / src.offsetWidth;
-    clone.style.transform = `scale(${scale})`;
-    clone.style.transformOrigin = '0 0';
     clone.style.boxShadow = 'none';
-    host.replaceChildren(clone);
+
+    // docx-preview scopes the document's own stylesheet to `.docx-wrapper`. A clone lifted
+    // out of that ancestor loses every one of those rules and silently falls back to browser
+    // defaults — which is why the thumbnail showed centred text beside a left-aligned page.
+    // Rebuilding the wrapper around it restores the exact appearance of the real page.
+    const wrapper = document.createElement('div');
+    wrapper.className = 'docx-wrapper dg-doc-thumb';
+    wrapper.appendChild(clone);
+
+    const scale = host.clientWidth / src.offsetWidth;
+    wrapper.style.transform = `scale(${scale})`;
+    wrapper.style.transformOrigin = '0 0';
+    host.replaceChildren(wrapper);
     host.style.height = `${src.offsetHeight * scale}px`;
     return () => host.replaceChildren();
   }, [pagesRef, page, nonce]);

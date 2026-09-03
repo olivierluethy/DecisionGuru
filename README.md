@@ -39,6 +39,14 @@ lets you draw conclusions. A persistent "Not financial advice" note is shown thr
   highlights: the best mix that still holds your stock, the best of all allocations, the best
   return per unit of risk. Price return only, and explicitly a record rather than a forecast.
   See `backend/app/services/market_combos.py`.
+- **Reinvestment check** — a *Hold* verdict says a stock is worth owning, not that it is the
+  best home for your next franc. Before topping up, the *Top up this position?* section (and
+  the **Check before topping up** button on every Hold / Buy-more card in Decisions) ranks the
+  holding against its actual competitors on value and growth strength, shows what adding does
+  to concentration versus buying a peer, and what the same amount would have returned in each.
+  Below that the timing read: past **buy-zone windows** (price at or below the entry target)
+  priced against *your* cost basis — what buying then would have been worth, and how much more
+  than you made. See `backend/app/services/reinvest.py`.
 - **Break-even, 5-year projections, dividend-shock** scenarios with adjustable sliders.
 - **Scenario workbench** — single stock, bundled baskets, or whole-portfolio
   "sell everything → ETF", savable and re-openable.

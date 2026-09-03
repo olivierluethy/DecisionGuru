@@ -127,6 +127,11 @@ export const api = {
     if (opts.years != null) p.set('years', String(opts.years));
     return req<WhatIfSaleResult>(`/analysis/whatif/${id}?${p}`);
   },
+  reinvest: (id: number, amount?: number | null, range = '1Y') => {
+    const p = new URLSearchParams({ range });
+    if (amount != null && amount > 0) p.set('amount', String(amount));
+    return req<ReinvestCheck>(`/analysis/reinvest/${id}?${p}`);
+  },
   dividendShock: (id: number, cut: number) =>
     req<{
       currentAnnualGrossCHF: number;
@@ -970,6 +975,66 @@ export interface MarketAnalysisResult {
   classification: MarketClassification | null;
   marketPosition: MarketPosition | null;
   valuation: { band: ValuationBand | null; marginOfSafety: number | null; fairValue: number | null } | null;
+}
+
+/** A stretch of past days where the price sat at or below the value engine's entry target. */
+export interface ReinvestBuyZoneWindow {
+  start: string; end: string; days: number;
+  lowClose: number; lowDate: string;
+  valueTodayCHF: number | null;
+  extraVsYoursCHF: number | null;
+}
+export interface ReinvestPeerOption {
+  symbol: string; name: string | null; currency: string | null;
+  valuePct: number | null; strengthPct: number | null; rank: number | null;
+  /** What the amount put here N years ago would be worth today, keyed "1Y" | "3Y" | "5Y". */
+  wouldBeWorth: Record<string, number | null>;
+}
+/** "What if I had bought when it was actually worth buying?" — measured against your own
+ *  cost basis. Buy zones are reconstructed from today's fundamentals; see `note`. */
+export interface ReinvestMissedEntry {
+  available: boolean;
+  currency: string | null;
+  lastClose: number | null;
+  entryTarget: number | null;
+  entryTargetAvailable: boolean;
+  lookbackYears: number;
+  yourEntry: {
+    price: number | null; date: string | null;
+    valueTodayCHF: number | null; investedCHF: number;
+  };
+  windows: ReinvestBuyZoneWindow[];
+  bestWindow: ReinvestBuyZoneWindow | null;
+  bestDay: { date: string; price: number; valueTodayCHF: number | null; extraVsYoursCHF: number | null } | null;
+  note: string;
+}
+/** Should the next franc go into this holding, or into a competitor in the same market?
+ *  See backend/app/services/reinvest.py. */
+export interface ReinvestCheck {
+  instrumentId: number;
+  symbol: string | null;
+  name?: string | null;
+  currency?: string | null;
+  available: boolean;
+  reason?: string;
+  amountCHF?: number;
+  idleCashCHF?: number;
+  amountSource?: 'idle-cash' | 'requested' | 'default';
+  horizon?: string;
+  marketPosition?: MarketPosition | null;
+  strongerAlternatives?: MarketPositionAlternative[];
+  concentration?: {
+    portfolioValueCHF: number; positionValueCHF: number;
+    currentWeight: number; weightAfterTopUp: number; weightAfterPeerBuy: number;
+    threshold: number; crossesThreshold: boolean; aboveThreshold: boolean;
+  } | null;
+  wouldBeWorth?: {
+    subject: Record<string, number | null>;
+    peers: ReinvestPeerOption[];
+    years: number[];
+  };
+  missedEntry?: ReinvestMissedEntry;
+  verdict?: 'best-in-market' | 'peers-better-positioned' | 'mid-field' | 'unranked';
 }
 
 /** One historical mix: which companies, at which split (weights are fractions summing to 1). */

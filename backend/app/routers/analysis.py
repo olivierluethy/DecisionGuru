@@ -145,6 +145,22 @@ async def whatif_sale(instrument_id: int, benchmark: str | None = None,
     return await run_in_threadpool(_work)
 
 
+@router.get("/reinvest/{instrument_id}")
+async def reinvest(instrument_id: int, amount: float | None = None, range: str = "1Y") -> dict:
+    """Should the next franc go into this holding, or into a competitor in the same market?
+
+    A Hold/Buy-more verdict says the stock is worth owning, not that it is the best home for
+    new money. Returns where it ranks among its actual peers on value and growth strength,
+    what topping up does to concentration, what the amount would have done here versus in
+    each peer, and — against your own cost basis — what buying during a past buy-zone window
+    would have been worth. Cached reads only; backward-looking figures are labelled as such."""
+    from ..services.reinvest import reinvest_check
+    if not repo.get_instrument(instrument_id):
+        raise ApiError("Instrument not found", 404)
+    settings = get_settings()
+    return await run_in_threadpool(reinvest_check, instrument_id, amount, settings, range)
+
+
 @router.get("/dividend-shock/{instrument_id}")
 async def dividend_shock(instrument_id: int, cut: float = 1) -> dict:
     inst = repo.get_instrument(instrument_id)

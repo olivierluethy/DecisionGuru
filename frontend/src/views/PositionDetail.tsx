@@ -24,7 +24,7 @@ import {
   StickyNote,
   Radar,
   PieChart,
-  Blend,
+  Blend, HandCoins,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { api } from '../lib/api';
@@ -48,6 +48,7 @@ import { Fundamentals } from '../components/Fundamentals';
 import { ValueAnalysis } from '../components/ValueAnalysis';
 import { MarketAnalysis } from '../components/MarketAnalysis';
 import { MarketCombos } from '../components/MarketCombos';
+import { ReinvestCheck } from '../components/ReinvestCheck';
 import { PortfolioFit } from '../components/PortfolioFit';
 import { yahooUrl, googleUrl, finanzenUrl } from '../lib/externalLinks';
 import { SellSignalPanel } from '../components/SellSignalPanel';
@@ -174,6 +175,8 @@ export function PositionDetail() {
     : undefined;
 
   const isStock = inst.kind === 'stock';
+  // Only an OPEN position can be topped up.
+  const isOpen = p.openQuantity > 0;
   const hasHistory = !delisted && (history.data?.length ?? 0) > 1;
   const navSections: NavSection[] = [
     { id: 'sec-opportunity', label: 'Opportunity cost', icon: Scale },
@@ -183,6 +186,7 @@ export function PositionDetail() {
     ...(!delisted && isStock ? [{ id: 'sec-value', label: 'Value', icon: Gem }] : []),
     ...(!delisted && isStock ? [{ id: 'sec-market', label: 'Market analysis', icon: Radar }] : []),
     ...(!delisted && isStock ? [{ id: 'sec-combos', label: 'Combinations', icon: Blend }] : []),
+    ...(!delisted && isOpen ? [{ id: 'sec-reinvest', label: 'Top up?', icon: HandCoins }] : []),
     ...(!delisted ? [{ id: 'sec-returns', label: 'Returns', icon: Percent }] : []),
     { id: 'sec-projection', label: 'Projection', icon: Rocket },
     { id: 'sec-whatif', label: 'What-if sale', icon: Shuffle },
@@ -566,6 +570,16 @@ export function PositionDetail() {
           <SectionHeader icon={Blend} eyebrow="One company vs. a mix · historical record" title="Best historical combination" className="mb-4"
             info="Was holding this one company the best you could have done inside its market? Every mix of up to three of its competitors is replayed on a 10% weight grid with annual rebalancing, and the best splits are ranked with the reason they won. Backward-looking and price-return only — a record, not a forecast." />
           <MarketCombos symbol={inst.symbol} />
+        </section>
+      )}
+
+      {/* Reinvestment check — a Hold verdict invites buying more; this asks the different
+          question that applies to NEW money. */}
+      {!delisted && isOpen && (
+        <section id="sec-reinvest" className="card mb-6 scroll-mt-24">
+          <SectionHeader icon={HandCoins} eyebrow="Before you buy more · same market, other company" title="Top up this position?" className="mb-4"
+            info="A Hold verdict says this stock is worth owning — not that it is the best home for your next franc. Ranks it against its actual competitors on value and growth strength, shows what topping up does to concentration versus buying a peer, and what the same money would have returned in each. Below that: what buying during a past buy-zone window would have been worth against your own cost basis." />
+          <ReinvestCheck instrumentId={inst.id} />
         </section>
       )}
 

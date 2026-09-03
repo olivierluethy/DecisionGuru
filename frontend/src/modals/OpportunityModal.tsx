@@ -15,6 +15,7 @@ import { ListingRecommendation } from '../components/ListingRecommendation';
 import { PortfolioFit } from '../components/PortfolioFit';
 import { MarketAnalysis } from '../components/MarketAnalysis';
 import { MarketCombos } from '../components/MarketCombos';
+import { ExportAction } from '../components/ExportAction';
 import { VerdictBadge } from '../components/Verdict';
 import { BandBadge } from '../components/ValuationBand';
 import { researchHref } from '../lib/router';
@@ -75,6 +76,12 @@ export function OpportunityModal({
           <button className="btn-ghost mr-auto" onClick={() => openModal({ kind: 'replay', symbol, name })}>
             <Clock size={15} /> Point-in-time replay
           </button>
+          <ExportAction
+            target={() => bodyRef.current}
+            title={`${symbol}${name ? ` — ${name}` : ''}`}
+            filename={`${symbol}-opportunity`}
+            className="btn-secondary"
+          />
           <button className="btn-secondary" onClick={() => openModal({ kind: 'export', context: 'symbol', symbol, name })}>
             <Share2 size={15} /> Share
           </button>

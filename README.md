@@ -51,7 +51,12 @@ lets you draw conclusions. A persistent "Not financial advice" note is shown thr
 - **Scenario workbench** — single stock, bundled baskets, or whole-portfolio
   "sell everything → ETF", savable and re-openable.
 - **cobe 3D globe** — geographic exposure per instrument with an allocation breakdown.
-- **Notes** anywhere; **export** any analysis to Excel and PDF.
+- **Notes** anywhere; **export** any analysis to **PDF, Word or Excel** — with a document
+  preview before anything is saved: real pdf.js / docx rendering, zoom (fit width, fit page,
+  100 %), page navigation with thumbnails, full-text search with selectable text, printing,
+  a PDF ⇄ Word switch, and a content picker for choosing what goes in. The download saves the
+  exact bytes that were previewed. Excel stays a direct download — a spreadsheet has no page
+  layout to preview.
 - **Local-first** — all your data stays in a local SQLite file. Only market data & FX are
   fetched (and cached aggressively in SQLite).
 - **Installable (PWA)** — an *Install app* button appears at the bottom of the sidebar once

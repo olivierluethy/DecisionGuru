@@ -6,6 +6,7 @@ import { api, type DecisionPlan } from '../lib/api';
 import { Spinner, EmptyState } from '../components/ui';
 import { fmtCHF, fmtCHFSigned, fmtPctSigned, fmtDate, plClass } from '../lib/format';
 import { useApp } from '../store';
+import { ExportAction } from '../components/ExportAction';
 
 function PlanComparison({ planId }: { planId: number }) {
   const { data, isLoading } = useQuery({ queryKey: ['plan-compare', planId], queryFn: () => api.comparePlan(planId) });
@@ -93,7 +94,7 @@ export function Plans() {
   const { openModal } = useApp();
 
   return (
-    <div className="p-6 max-w-[1000px] mx-auto">
+    <div id="view-plans" className="p-6 max-w-[1000px] mx-auto">
       <header className="mb-6 flex items-start justify-between gap-4">
         <div>
           <div className="eyebrow mb-1">Decision plans</div>
@@ -106,6 +107,7 @@ export function Plans() {
         <button className="btn-primary shrink-0" onClick={() => openModal({ kind: 'create-plan' })}>
           <Plus size={15} /> New plan
         </button>
+        <ExportAction target={() => document.getElementById('view-plans')} title="Plans" filename="plans" className="btn-secondary shrink-0" label="PDF / Word" />
       </header>
 
       {isLoading ? (

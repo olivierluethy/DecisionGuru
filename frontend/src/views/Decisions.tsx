@@ -8,6 +8,7 @@ import { DeltaChart } from '../components/DeltaChart';
 import { VerdictBadge, VerdictRationale, VERDICT_META } from '../components/Verdict';
 import { fmtCHF, fmtCHFSigned, fmtPct, fmtPctSigned, fmtDurationMonths, plClass } from '../lib/format';
 import { useApp } from '../store';
+import { ExportAction } from '../components/ExportAction';
 import { scrollToSectionWhenReady } from '../lib/scrollToSection';
 
 function RecCard({ rec }: { rec: Recommendation }) {
@@ -180,14 +181,17 @@ export function Decisions() {
   }
 
   return (
-    <div className="p-6 max-w-[1200px] mx-auto">
-      <header className="mb-6">
+    <div id="view-decisions" className="p-6 max-w-[1200px] mx-auto">
+      <header className="mb-6 flex items-start justify-between gap-4">
+        <div>
         <div className="eyebrow mb-1">Strategy assistant</div>
         <h1 className="font-display text-2xl font-semibold">Decisions</h1>
         <p className="text-sm text-text-muted mt-1 max-w-2xl">
           Every holding ranked by the capital at stake — each call names the reason, the CHF impact,
           and exactly what to buy instead. Not financial advice; figures are model estimates after Swiss tax.
         </p>
+        </div>
+        <ExportAction target={() => document.getElementById('view-decisions')} title="Decisions — every holding ranked" filename="decisions" className="btn-secondary shrink-0" label="PDF / Word" />
       </header>
 
       {/* Sticky section nav — jump between groups without scrolling */}

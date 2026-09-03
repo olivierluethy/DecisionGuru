@@ -49,6 +49,8 @@ import { ValueAnalysis } from '../components/ValueAnalysis';
 import { MarketAnalysis } from '../components/MarketAnalysis';
 import { MarketCombos } from '../components/MarketCombos';
 import { ReinvestCheck } from '../components/ReinvestCheck';
+import { ExportAction } from '../components/ExportAction';
+import { buildPositionDoc } from '../lib/exporters';
 import { PortfolioFit } from '../components/PortfolioFit';
 import { yahooUrl, googleUrl, finanzenUrl } from '../lib/externalLinks';
 import { SellSignalPanel } from '../components/SellSignalPanel';
@@ -287,6 +289,17 @@ export function PositionDetail() {
           <button className="btn-secondary" onClick={() => openModal({ kind: 'edit-instrument', instrumentId: id })}>
             <Pencil size={15} /> Edit
           </button>
+          {/* Hand-built rather than read off the screen: a position's document carries its
+              full transaction history and the tax assumptions, neither of which is on this page. */}
+          {cf.data && (
+            <ExportAction
+              className="btn-secondary"
+              build={async () => {
+                const notes = (await api.listNotes('instrument', id!).catch(() => [])).map((n) => n.body);
+                return buildPositionDoc(p, cf.data!, notes);
+              }}
+            />
+          )}
           <button className="btn-secondary" onClick={() => openModal({ kind: 'export', context: 'position', instrumentId: id })}>
             <Share2 size={15} /> Share
           </button>

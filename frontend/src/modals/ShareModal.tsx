@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import { FileText, FileType, Sheet, Image as ImageIcon, Share2, Mail } from 'lucide-react';
+import { Eye, Sheet, Image as ImageIcon, Share2, Mail } from 'lucide-react';
 import { useApp } from '../store';
 import { Modal } from '../components/Modal';
 import { api, downloadExport } from '../lib/api';
-import { buildPositionExport } from '../lib/exporters';
+import { buildPositionDoc, buildPositionSheets } from '../lib/exporters';
 import { renderAnalysisImage, downloadBlob, type AnalysisImageInput } from '../lib/shareImage';
 
 /**
@@ -24,13 +24,16 @@ export function ShareModal({
   symbol?: string;
   name?: string | null;
 }) {
-  const { closeModal } = useApp();
+  const { closeModal, openModal } = useApp();
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
 
   const positionMode = context === 'position' && instrumentId != null;
 
-  async function doDoc(kind: 'pdf' | 'docx' | 'excel') {
+  /** PDF and Word go through the preview — the reader sees the document before it lands on
+   *  disk, and picks the format there. Excel downloads directly: a spreadsheet has no pages
+   *  to preview, and an HTML stand-in would only resemble the file. */
+  async function doDoc(kind: 'preview' | 'excel') {
     setBusy(kind);
     try {
       const [p, cf] = await Promise.all([
@@ -38,8 +41,13 @@ export function ShareModal({
         api.counterfactual(instrumentId!),
       ]);
       const notes = (await api.listNotes('instrument', instrumentId!).catch(() => [])).map((n) => n.body);
-      const payload = await buildPositionExport(p, cf, kind, notes);
-      await downloadExport(kind, payload, `${p.instrument.symbol}-vs-${cf.benchmarkSymbol}`);
+      if (kind === 'excel') {
+        const payload = await buildPositionSheets(p, cf);
+        await downloadExport('excel', payload, `${p.instrument.symbol}-vs-${cf.benchmarkSymbol}`);
+        return;
+      }
+      const doc = await buildPositionDoc(p, cf, notes);
+      openModal({ kind: 'doc-preview', doc });
     } catch {
       setMsg('Could not build the export — please try again.');
     } finally {
@@ -129,11 +137,8 @@ export function ShareModal({
         <div className="mb-5">
           <p className="eyebrow mb-2">Export document</p>
           <div className="flex gap-2 flex-wrap">
-            <button className="btn-secondary" disabled={!!busy} onClick={() => doDoc('pdf')}>
-              <FileText size={15} /> PDF
-            </button>
-            <button className="btn-secondary" disabled={!!busy} onClick={() => doDoc('docx')}>
-              <FileType size={15} /> Word
+            <button className="btn-primary" disabled={!!busy} onClick={() => doDoc('preview')}>
+              <Eye size={15} /> Preview PDF &amp; Word
             </button>
             <button className="btn-secondary" disabled={!!busy} onClick={() => doDoc('excel')}>
               <Sheet size={15} /> Excel

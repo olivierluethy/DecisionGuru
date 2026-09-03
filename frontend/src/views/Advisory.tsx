@@ -4,6 +4,7 @@ import { Sparkles, Check, ArrowRight, Eye } from 'lucide-react';
 import type { AdvisoryInsight, RangeKey } from '@decisionguru/shared';
 import { api } from '../lib/api';
 import { useApp } from '../store';
+import { ExportAction } from '../components/ExportAction';
 import { DeltaChart } from '../components/DeltaChart';
 import { TimeRangeSelector } from '../components/TimeRangeSelector';
 import { VerdictBadge, VerdictRationale } from '../components/Verdict';
@@ -31,7 +32,7 @@ export function Advisory() {
   const insights = data?.insights ?? [];
 
   return (
-    <div className="p-6 max-w-[1100px] mx-auto">
+    <div id="view-advisory" className="p-6 max-w-[1100px] mx-auto">
       <header className="flex flex-wrap items-center justify-between gap-4 mb-6">
         <div>
           <div className="eyebrow mb-1 flex items-center gap-1.5">
@@ -52,6 +53,7 @@ export function Advisory() {
         >
           <Eye size={15} /> {includeHandled ? 'Hiding none' : 'Show handled'}
         </button>
+        <ExportAction target={() => document.getElementById('view-advisory')} title="Rebalancing insights" filename="advisory" className="btn-secondary shrink-0" label="PDF / Word" />
       </header>
 
       {insights.length === 0 ? (

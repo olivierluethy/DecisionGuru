@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import type { ExportDoc } from './lib/exportDoc';
 
 export type View =
   | 'dashboard'
@@ -28,6 +29,9 @@ export type ModalKind =
   | { kind: 'plan-compare'; planId: number }
   | { kind: 'replay'; symbol: string; name?: string | null }
   | { kind: 'opportunity'; symbol: string; name?: string | null; price?: number | null; currency?: string | null }
+  /** Preview a built document (PDF/Word) before downloading it. The doc travels by value:
+   *  whoever opens the preview has already assembled the analysis it describes. */
+  | { kind: 'doc-preview'; doc: ExportDoc }
   | null;
 
 interface AppState {

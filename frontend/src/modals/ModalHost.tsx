@@ -1,3 +1,4 @@
+import { Suspense, lazy } from 'react';
 import { useApp } from '../store';
 import { ImportModal } from './ImportModal';
 import { ManualAddModal } from './ManualAddModal';
@@ -12,6 +13,10 @@ import { TimelineModal } from './TimelineModal';
 import { ReplayModal } from './ReplayModal';
 import { OpportunityModal } from './OpportunityModal';
 import { ShareModal } from './ShareModal';
+/* pdf.js and docx-preview together weigh more than the rest of the app. Loading them only
+   when a preview is actually opened keeps them out of the initial bundle entirely. */
+const DocumentPreviewModal = lazy(() =>
+  import('./DocumentPreviewModal').then((m) => ({ default: m.DocumentPreviewModal })));
 
 export function ModalHost() {
   const modal = useApp((s) => s.modal);
@@ -41,9 +46,25 @@ export function ModalHost() {
       return <ReplayModal symbol={modal.symbol} name={modal.name} />;
     case 'opportunity':
       return <OpportunityModal symbol={modal.symbol} name={modal.name} price={modal.price} currency={modal.currency} />;
+    case 'doc-preview':
+      return (
+        <Suspense fallback={<PreviewLoading />}>
+          <DocumentPreviewModal doc={modal.doc} />
+        </Suspense>
+      );
     case 'export':
       return <ShareModal context={modal.context} instrumentId={modal.instrumentId} symbol={modal.symbol} name={modal.name} />;
     default:
       return null;
   }
+}
+
+/** Holds the screen while the viewer chunk arrives — the modal shell is part of that chunk,
+ *  so this is a bare overlay rather than a Modal. */
+function PreviewLoading() {
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-[rgba(6,9,14,0.66)] backdrop-blur-[2px]">
+      <span className="text-sm text-text-muted">Loading the document viewer…</span>
+    </div>
+  );
 }

@@ -18,6 +18,40 @@ def _safe_name(s: str) -> str:
     return re.sub(r"[^a-z0-9\-_]+", "-", s or "decisionguru-export", flags=re.I)[:60]
 
 
+def _blocks_of(body: dict) -> list[dict]:
+    """The document's content blocks, in the order they should be laid out.
+
+    `blocks` is the current shape: an ordered, heterogeneous list, which is what lets an
+    analysis interleave a prose finding with the table it is drawn from — and what the
+    preview's content picker toggles entries of. The older flat keys (`chartImage`,
+    `tables`, `notes`) are still accepted and lowered into the same block list, so callers
+    that predate this never had to change.
+    """
+    blocks = body.get("blocks")
+    if isinstance(blocks, list) and blocks:
+        return [b for b in blocks if isinstance(b, dict)]
+
+    legacy: list[dict] = []
+    chart = body.get("chartImage")
+    if isinstance(chart, str) and chart.startswith("data:image"):
+        legacy.append({"kind": "chart", "image": chart})
+    for table in (body.get("tables") or []):
+        legacy.append({"kind": "table", **table})
+    if body.get("notes"):
+        legacy.append({"kind": "notes", "title": "Notes", "items": body["notes"]})
+    return legacy
+
+
+def _decode_image(src: object) -> bytes | None:
+    """Raw bytes of a `data:image/...;base64,...` URI, or None for anything else."""
+    if not isinstance(src, str) or not src.startswith("data:image"):
+        return None
+    try:
+        return base64.b64decode(src.split(",", 1)[1])
+    except Exception:  # noqa: BLE001 — a broken image must never sink the document
+        return None
+
+
 def _build_excel(body: dict) -> bytes:
     from openpyxl import Workbook
     from openpyxl.styles import Font
@@ -66,14 +100,31 @@ def _build_pdf(body: dict) -> bytes:
     td_style = ParagraphStyle("dgTd", parent=styles["Normal"], fontSize=8)
     th_style = ParagraphStyle("dgTh", parent=styles["Normal"], fontName="Helvetica-Bold", fontSize=8)
 
+    body_style = ParagraphStyle("dgBody", parent=styles["Normal"], fontSize=9.5,
+                                leading=13, spaceAfter=6)
+    meta_style = ParagraphStyle("dgMeta", parent=styles["Normal"], fontSize=8.5,
+                                textColor=colors.HexColor("#555555"), spaceAfter=10)
+
     flow = [Paragraph(str(body.get("title") or ""), title_style)]
     if body.get("subtitle"):
         flow.append(Paragraph(str(body["subtitle"]), subtitle_style))
 
-    chart = body.get("chartImage")
-    if isinstance(chart, str) and chart.startswith("data:image"):
-        try:
-            raw = base64.b64decode(chart.split(",", 1)[1])
+    # Context line — as-of date, currency, benchmark. One row, so it reads as provenance
+    # rather than as content.
+    meta = [m for m in (body.get("meta") or []) if isinstance(m, dict) and m.get("label")]
+    if meta:
+        flow.append(Paragraph(
+            "   ·   ".join(f"<b>{m['label']}</b> {m.get('value', '')}" for m in meta),
+            meta_style))
+
+    for block in _blocks_of(body):
+        kind = block.get("kind")
+        if kind == "chart":
+            raw = _decode_image(block.get("image"))
+            if raw is None:
+                continue
+            if block.get("title"):
+                flow.append(Paragraph(str(block["title"]), h2_style))
             reader = ImageReader(io.BytesIO(raw))
             iw, ih = reader.getSize()
             width = 500
@@ -81,28 +132,30 @@ def _build_pdf(body: dict) -> bytes:
             flow.append(Spacer(1, 10))
             flow.append(Image(io.BytesIO(raw), width=width, height=height))
             flow.append(Spacer(1, 10))
-        except Exception:  # noqa: BLE001
-            pass
-
-    for table in (body.get("tables") or []):
-        if table.get("title"):
-            flow.append(Paragraph(str(table["title"]), h2_style))
-        headers = table.get("headers") or []
-        data = [[Paragraph(str(h), th_style) for h in headers]]
-        for r in (table.get("rows") or []):
-            data.append([Paragraph(str(c), td_style) for c in r])
-        tbl = Table(data, repeatRows=1, hAlign="LEFT")
-        tbl.setStyle(TableStyle([
-            ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#cccccc")),
-            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f0f0f0")),
-            ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ]))
-        flow.append(tbl)
-
-    if body.get("notes"):
-        flow.append(Paragraph("Notes", h2_style))
-        for n in body["notes"]:
-            flow.append(Paragraph(str(n), note_style))
+        elif kind == "text":
+            if block.get("title"):
+                flow.append(Paragraph(str(block["title"]), h2_style))
+            for para in str(block.get("body") or "").split("\n\n"):
+                if para.strip():
+                    flow.append(Paragraph(para.strip(), body_style))
+        elif kind == "notes":
+            flow.append(Paragraph(str(block.get("title") or "Notes"), h2_style))
+            for n in (block.get("items") or []):
+                flow.append(Paragraph(str(n), note_style))
+        else:  # table
+            if block.get("title"):
+                flow.append(Paragraph(str(block["title"]), h2_style))
+            headers = block.get("headers") or []
+            data = [[Paragraph(str(h), th_style) for h in headers]]
+            for r in (block.get("rows") or []):
+                data.append([Paragraph(str(c), td_style) for c in r])
+            tbl = Table(data, repeatRows=1, hAlign="LEFT")
+            tbl.setStyle(TableStyle([
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#cccccc")),
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f0f0f0")),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ]))
+            flow.append(tbl)
 
     disclaimer = body.get("disclaimer") or \
         "Not financial advice. Figures are model estimates — see docs/TAX-MODEL.md."
@@ -128,41 +181,61 @@ def _build_docx(body: dict) -> bytes:
         sub = doc.add_paragraph(str(body["subtitle"]))
         sub.runs[0].font.color.rgb = RGBColor(0x66, 0x66, 0x66)
 
-    chart = body.get("chartImage")
-    if isinstance(chart, str) and chart.startswith("data:image"):
-        try:
-            raw = base64.b64decode(chart.split(",", 1)[1])
-            doc.add_picture(io.BytesIO(raw), width=Inches(6.0))
-        except Exception:  # noqa: BLE001
-            pass
+    meta = [m for m in (body.get("meta") or []) if isinstance(m, dict) and m.get("label")]
+    if meta:
+        mp = doc.add_paragraph()
+        mr = mp.add_run("   ·   ".join(f"{m['label']} {m.get('value', '')}" for m in meta))
+        mr.font.size = Pt(8.5)
+        mr.font.color.rgb = RGBColor(0x55, 0x55, 0x55)
 
-    for table in (body.get("tables") or []):
-        if table.get("title"):
-            h = doc.add_paragraph()
-            hr = h.add_run(str(table["title"]))
-            hr.bold = True
-            hr.font.size = Pt(12)
-        headers = table.get("headers") or []
-        rows = table.get("rows") or []
-        t = doc.add_table(rows=1, cols=max(len(headers), 1))
-        t.style = "Light Grid Accent 1"
-        for i, htext in enumerate(headers):
-            cell = t.rows[0].cells[i]
-            cell.text = str(htext)
-            for p in cell.paragraphs:
-                for r in p.runs:
-                    r.bold = True
-        for row in rows:
-            cells = t.add_row().cells
-            for i, val in enumerate(row):
-                if i < len(cells):
-                    cells[i].text = str(val)
+    def _heading(text: str) -> None:
+        h = doc.add_paragraph()
+        hr = h.add_run(str(text))
+        hr.bold = True
+        hr.font.size = Pt(12)
 
-    if body.get("notes"):
-        nh = doc.add_paragraph()
-        nh.add_run("Notes").bold = True
-        for n in body["notes"]:
-            doc.add_paragraph(str(n))
+    # Same block list, same order, same titles as the PDF — the two documents are meant to
+    # be the same document in two formats, and the preview lets the reader flip between them.
+    for block in _blocks_of(body):
+        kind = block.get("kind")
+        if kind == "chart":
+            raw = _decode_image(block.get("image"))
+            if raw is None:
+                continue
+            if block.get("title"):
+                _heading(block["title"])
+            try:
+                doc.add_picture(io.BytesIO(raw), width=Inches(6.0))
+            except Exception:  # noqa: BLE001
+                pass
+        elif kind == "text":
+            if block.get("title"):
+                _heading(block["title"])
+            for para in str(block.get("body") or "").split("\n\n"):
+                if para.strip():
+                    doc.add_paragraph(para.strip())
+        elif kind == "notes":
+            _heading(block.get("title") or "Notes")
+            for n in (block.get("items") or []):
+                doc.add_paragraph(str(n))
+        else:  # table
+            if block.get("title"):
+                _heading(block["title"])
+            headers = block.get("headers") or []
+            rows = block.get("rows") or []
+            tbl = doc.add_table(rows=1, cols=max(len(headers), 1))
+            tbl.style = "Light Grid Accent 1"
+            for i, htext in enumerate(headers):
+                cell = tbl.rows[0].cells[i]
+                cell.text = str(htext)
+                for para in cell.paragraphs:
+                    for r in para.runs:
+                        r.bold = True
+            for row in rows:
+                cells = tbl.add_row().cells
+                for i, val in enumerate(row):
+                    if i < len(cells):
+                        cells[i].text = str(val)
 
     disc = doc.add_paragraph(
         str(body.get("disclaimer")

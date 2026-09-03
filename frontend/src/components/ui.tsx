@@ -1,8 +1,9 @@
-import type { ReactNode, KeyboardEvent as ReactKeyboardEvent } from 'react';
+import { useRef, type ReactNode, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { Loader2, ArrowUpRight, ArrowDownRight, Info, type LucideIcon } from 'lucide-react';
 import clsx from 'clsx';
 import type { InstrumentDataStatus } from '@decisionguru/shared';
 import { fmtPctSigned } from '../lib/format';
+import { ExportAction } from './ExportAction';
 
 export function Stat({
   label,
@@ -279,6 +280,8 @@ export function SectionHeader({
   action,
   info,
   className,
+  exportable = true,
+  exportTitle,
 }: {
   title: ReactNode;
   eyebrow?: ReactNode;
@@ -286,9 +289,24 @@ export function SectionHeader({
   action?: ReactNode;
   info?: ReactNode;
   className?: string;
+  /** Every analysis section is exportable by default — that is what makes the export
+   *  available everywhere rather than at the handful of places someone remembered. Set
+   *  false for a section that holds no findings (a form, a picker). */
+  exportable?: boolean;
+  /** Document title, when the heading itself is not plain text. */
+  exportTitle?: string;
 }) {
+  const rootRef = useRef<HTMLDivElement>(null);
+  // The section this header belongs to — resolved at click time, because the header is
+  // mounted before the content it describes has necessarily settled.
+  const resolveSection = () =>
+    rootRef.current?.closest<HTMLElement>('section, .card') ?? rootRef.current?.parentElement ?? null;
+
   return (
-    <div className={clsx('flex flex-wrap items-center justify-between gap-3', className)}>
+    // Skipped by the extractor: the icon, heading, tooltip and this very button are chrome
+    // for the screen and must never land inside the document they produce.
+    <div ref={rootRef} data-export-skip
+      className={clsx('flex flex-wrap items-center justify-between gap-3', className)}>
       <div className="flex items-center gap-2.5 min-w-0">
         {Icon && (
           <span className="grid place-items-center w-8 h-8 rounded bg-surface-2 border border-hairline text-text-muted shrink-0">
@@ -303,7 +321,12 @@ export function SectionHeader({
           </div>
         </div>
       </div>
-      {action && <div className="flex items-center gap-2 shrink-0">{action}</div>}
+      {(action || exportable) && (
+        <div className="flex items-center gap-2 shrink-0">
+          {action}
+          {exportable && <ExportAction target={resolveSection} title={exportTitle} />}
+        </div>
+      )}
     </div>
   );
 }

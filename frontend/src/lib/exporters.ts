@@ -2,6 +2,14 @@ import type { PortfolioResponse, PortfolioFit } from './api';
 import { api } from './api';
 import type { AppSettings, CounterfactualResult, Position, Transaction } from '@decisionguru/shared';
 import { fmtCHF, fmtPct } from './format';
+import { compactBlocks, tableBlock, type ExportDoc } from './exportDoc';
+
+/** Wire shape for `/export/excel`: one sheet per table. Spreadsheets carry no layout, so
+ *  they stay a separate payload from the paged `ExportDoc` rather than being forced into it. */
+export interface SheetsPayload {
+  title: string;
+  sheets: { name: string; table: { headers: string[]; rows: (string | number)[][] } }[];
+}
 
 /** Serialise a rendered SVG chart to a PNG data URL for PDF embedding. */
 export async function svgToPng(svg: SVGSVGElement, bg = '#0A0E15'): Promise<string | null> {
@@ -126,7 +134,8 @@ function fitRows(fit: PortfolioFit | null): (string | number)[][] {
   return rows;
 }
 
-export async function buildPortfolioExport(data: PortfolioResponse, kind: 'excel' | 'pdf') {
+/** Rows shared by the portfolio's spreadsheet and its document. */
+async function portfolioParts(data: PortfolioResponse) {
   const cfById = new Map(data.counterfactuals.map((c) => [c.instrumentId, c.counterfactual]));
   const rows = data.positions.map((p) => positionRow(p, cfById.get(p.instrument.id)));
 
@@ -149,36 +158,47 @@ export async function buildPortfolioExport(data: PortfolioResponse, kind: 'excel
     ['Opportunity cost %', pct(data.aggregate.deltaPct)],
   ];
 
-  if (kind === 'excel') {
-    const sheets = [
-      { name: 'Summary', table: { headers: ['Metric', 'Value'], rows: summaryRows } },
-      { name: 'Positions', table: { headers: POSITION_HEADERS, rows } },
-      { name: 'Transactions', table: { headers: TX_HEADERS, rows: allTxRows } },
-    ];
-    if (settings) sheets.push({ name: 'Tax assumptions', table: { headers: ['Assumption', 'Value'], rows: taxRows(settings) } });
-    return { title: `DecisionGuru portfolio vs ${data.benchmark}`, sheets };
-  }
-
-  const chartImage = await captureChart('export-chart');
-  const tables = [
-    { title: 'Summary', headers: ['Metric', 'Value'], rows: summaryRows },
-    { title: 'Positions', headers: POSITION_HEADERS, rows },
-  ];
-  if (settings) tables.push({ title: 'Tax assumptions', headers: ['Assumption', 'Value'], rows: taxRows(settings) });
-  return {
-    title: `DecisionGuru portfolio vs ${data.benchmark}`,
-    subtitle: `${data.preTax ? 'Pre-tax' : 'After-tax'} · opportunity cost ${fmtCHF(data.aggregate.deltaCHF)} · ${fmtPct(data.aggregate.deltaPct)}`,
-    chartImage,
-    tables,
-  };
+  return { rows, allTxRows, summaryRows, settings };
 }
 
-export async function buildPositionExport(
-  position: Position,
-  cf: CounterfactualResult,
-  kind: 'excel' | 'pdf' | 'docx',
-  notes: string[] = [],
-) {
+/** Spreadsheet payload — one sheet per table, no page layout to preview. */
+export async function buildPortfolioSheets(data: PortfolioResponse): Promise<SheetsPayload> {
+  const { rows, allTxRows, summaryRows, settings } = await portfolioParts(data);
+  const sheets = [
+    { name: 'Summary', table: { headers: ['Metric', 'Value'], rows: summaryRows } },
+    { name: 'Positions', table: { headers: POSITION_HEADERS, rows } },
+    { name: 'Transactions', table: { headers: TX_HEADERS, rows: allTxRows } },
+  ];
+  if (settings) sheets.push({ name: 'Tax assumptions', table: { headers: ['Assumption', 'Value'], rows: taxRows(settings) } });
+  return { title: `DecisionGuru portfolio vs ${data.benchmark}`, sheets };
+}
+
+/** The same analysis as a document — rendered to PDF or Word by the preview. */
+export async function buildPortfolioDoc(data: PortfolioResponse): Promise<ExportDoc> {
+  const { rows, allTxRows, summaryRows, settings } = await portfolioParts(data);
+  const chartImage = await captureChart('export-chart');
+  const doc: ExportDoc = {
+    title: `DecisionGuru portfolio vs ${data.benchmark}`,
+    subtitle: `${data.preTax ? 'Pre-tax' : 'After-tax'} · opportunity cost ${fmtCHF(data.aggregate.deltaCHF)} · ${fmtPct(data.aggregate.deltaPct)}`,
+    filename: `portfolio-vs-${data.benchmark}`,
+    meta: [
+      { label: 'As of', value: new Date().toISOString().slice(0, 10) },
+      { label: 'Benchmark', value: data.benchmark },
+      { label: 'Basis', value: data.preTax ? 'Pre-tax' : 'After-tax' },
+    ],
+    blocks: compactBlocks([
+      chartImage ? { id: 'chart', kind: 'chart', title: 'Portfolio vs benchmark', image: chartImage } : null,
+      tableBlock('summary', 'Summary', ['Metric', 'Value'], summaryRows),
+      tableBlock('positions', 'Positions', POSITION_HEADERS, rows),
+      tableBlock('transactions', 'Transactions', TX_HEADERS, allTxRows),
+      settings ? tableBlock('tax', 'Tax assumptions', ['Assumption', 'Value'], taxRows(settings)) : null,
+    ]),
+  };
+  return doc;
+}
+
+/** Rows shared by a position's spreadsheet and its document. */
+async function positionParts(position: Position, cf: CounterfactualResult) {
   const p = position;
   const summaryRows: (string | number)[][] = [
     ['Symbol', p.instrument.symbol],
@@ -205,31 +225,50 @@ export async function buildPositionExport(
   ]);
   const txTable = { headers: TX_HEADERS, rows: txRows(p.instrument.symbol, transactions) };
 
-  if (kind === 'excel') {
-    const sheets = [
-      { name: 'Analysis', table: { headers: ['Metric', 'Value'], rows: summaryRows } },
-      { name: 'Recommendation', table: { headers: ['Field', 'Value'], rows: recommendationRows(p) } },
-      { name: 'Portfolio fit', table: { headers: ['Field', 'Value'], rows: fitRows(fit) } },
-      { name: 'Transactions', table: txTable },
-    ];
-    if (settings) sheets.push({ name: 'Tax assumptions', table: { headers: ['Assumption', 'Value'], rows: taxRows(settings) } });
-    return { title: `${p.instrument.symbol} vs ${cf.benchmarkSymbol}`, sheets };
-  }
-  const chartImage = await captureChart('position-chart');
-  const tables = [
-    { title: 'Analysis', headers: ['Metric', 'Value'], rows: summaryRows },
-    { title: 'Recommendation', headers: ['Field', 'Value'], rows: recommendationRows(p) },
-    { title: 'Portfolio fit', headers: ['Field', 'Value'], rows: fitRows(fit) },
-    { title: 'Transactions', headers: TX_HEADERS, rows: txTable.rows },
+  return { summaryRows, txTable, settings, fit };
+}
+
+export async function buildPositionSheets(
+  position: Position, cf: CounterfactualResult,
+): Promise<SheetsPayload> {
+  const p = position;
+  const { summaryRows, txTable, settings, fit } = await positionParts(position, cf);
+  const sheets = [
+    { name: 'Analysis', table: { headers: ['Metric', 'Value'], rows: summaryRows } },
+    { name: 'Recommendation', table: { headers: ['Field', 'Value'], rows: recommendationRows(p) } },
+    { name: 'Portfolio fit', table: { headers: ['Field', 'Value'], rows: fitRows(fit) } },
+    { name: 'Transactions', table: txTable },
   ];
-  if (settings) tables.push({ title: 'Tax assumptions', headers: ['Assumption', 'Value'], rows: taxRows(settings) });
-  return {
+  if (settings) sheets.push({ name: 'Tax assumptions', table: { headers: ['Assumption', 'Value'], rows: taxRows(settings) } });
+  return { title: `${p.instrument.symbol} vs ${cf.benchmarkSymbol}`, sheets };
+}
+
+export async function buildPositionDoc(
+  position: Position, cf: CounterfactualResult, notes: string[] = [],
+): Promise<ExportDoc> {
+  const p = position;
+  const { summaryRows, txTable, settings, fit } = await positionParts(position, cf);
+  const chartImage = await captureChart('position-chart');
+  const doc: ExportDoc = {
     title: `${p.instrument.symbol} — ${p.instrument.name}`,
     subtitle: `vs ${cf.benchmarkName} · opportunity cost ${fmtCHF(cf.deltaCHF)}`,
-    chartImage,
-    tables,
-    notes,
+    filename: `${p.instrument.symbol}-vs-${cf.benchmarkSymbol}`,
+    meta: [
+      { label: 'As of', value: new Date().toISOString().slice(0, 10) },
+      { label: 'Benchmark', value: cf.benchmarkSymbol },
+      { label: 'ISIN', value: p.instrument.isin ?? '—' },
+    ],
+    blocks: compactBlocks([
+      chartImage ? { id: 'chart', kind: 'chart', title: 'This holding vs the benchmark', image: chartImage } : null,
+      tableBlock('analysis', 'Analysis', ['Metric', 'Value'], summaryRows),
+      tableBlock('recommendation', 'Recommendation', ['Field', 'Value'], recommendationRows(p)),
+      tableBlock('fit', 'Portfolio fit', ['Field', 'Value'], fitRows(fit)),
+      tableBlock('transactions', 'Transactions', TX_HEADERS, txTable.rows),
+      settings ? tableBlock('tax', 'Tax assumptions', ['Assumption', 'Value'], taxRows(settings)) : null,
+      notes.length ? { id: 'notes', kind: 'notes', title: 'Notes', items: notes } : null,
+    ]),
   };
+  return doc;
 }
 
 function round(n: number) {

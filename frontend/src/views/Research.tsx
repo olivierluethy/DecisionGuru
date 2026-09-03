@@ -18,6 +18,7 @@ import { Fundamentals } from '../components/Fundamentals';
 import { ValueAnalysis } from '../components/ValueAnalysis';
 import { MarketAnalysis } from '../components/MarketAnalysis';
 import { MarketCombos } from '../components/MarketCombos';
+import { ExportAction } from '../components/ExportAction';
 import { ProjectionChart } from '../components/ProjectionChart';
 import { BenchmarkSelect } from '../components/BenchmarkSelect';
 import { NewsFeed } from '../components/NewsFeed';
@@ -318,7 +319,7 @@ function AssetView({ symbol, onReset }: { symbol: string; onReset: () => void })
   };
 
   return (
-    <div className="flex flex-col gap-6">
+    <div id="view-research" className="flex flex-col gap-6">
       <header className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <div className="flex items-center gap-2">
@@ -344,6 +345,13 @@ function AssetView({ symbol, onReset }: { symbol: string; onReset: () => void })
           <WatchToggle symbol={data.symbol} name={data.name} kind={data.kind} />
           <Segmented options={WINDOWS} value={win} onChange={setWin} />
           <button className="btn-secondary h-9" onClick={onReset}><RefreshCw size={14} /> New search</button>
+          {/* Whole-page export; each section below carries its own as well. */}
+          <ExportAction
+            target={() => document.getElementById('view-research')}
+            title={`${data.symbol} — ${data.name}`}
+            filename={`${data.symbol}-research`}
+            className="btn-secondary h-9"
+          />
         </div>
       </header>
 

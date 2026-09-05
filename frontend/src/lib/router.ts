@@ -22,6 +22,7 @@ const SIMPLE_PATHS: Record<Exclude<View, 'position' | 'research' | 'dashboard'>,
   scenarios: 'scenarios',
   advisory: 'advisory',
   decisions: 'decisions',
+  forecasts: 'forecasts',
   plans: 'plans',
   watchlist: 'watchlist',
   screener: 'screener',
@@ -72,6 +73,7 @@ function parseHash(): Parsed {
     case 'scenarios':
     case 'advisory':
     case 'decisions':
+    case 'forecasts':
     case 'plans':
     case 'watchlist':
     case 'screener':

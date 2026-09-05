@@ -7,6 +7,7 @@ import { PositionDetail } from './views/PositionDetail';
 import { Scenarios } from './views/Scenarios';
 import { Advisory } from './views/Advisory';
 import { Decisions } from './views/Decisions';
+import { Forecasts } from './views/Forecasts';
 import { Research } from './views/Research';
 import { Plans } from './views/Plans';
 import { Watchlist } from './views/Watchlist';
@@ -69,6 +70,7 @@ export default function App() {
           {view === 'scenarios' && <Scenarios />}
           {view === 'advisory' && <Advisory />}
           {view === 'decisions' && <Decisions />}
+          {view === 'forecasts' && <Forecasts />}
           {view === 'research' && <Research />}
           {view === 'plans' && <Plans />}
           {view === 'watchlist' && <Watchlist />}

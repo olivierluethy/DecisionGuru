@@ -194,6 +194,7 @@ export const api = {
 
   // decision engine
   recommendations: () => req<RecommendationsResponse>('/decisions/recommendations'),
+  forecast: (horizon = 30) => req<ForecastResponse>(`/forecast?horizon=${horizon}`),
   recovery: (id: number, horizon = 5, alternatives?: string[]) =>
     req<RecoveryResponse>(
       `/decisions/recovery/${id}?horizon=${horizon}${alternatives?.length ? `&alternatives=${alternatives.join(',')}` : ''}`,
@@ -740,6 +741,78 @@ export interface RecommendationsResponse {
     totalOpportunityCostCHF: number;
     portfolioValueCHF: number;
     idleCashCHF: number;
+  };
+}
+
+// ---- Forecast / Prognose (issue #8) --------------------------------------
+export type ForecastEventKind = 'sell' | 'reinvest' | 'buy' | 'watch' | 'news';
+export type ForecastStatus = 'upcoming' | 'due' | 'occurred';
+export type Conviction = 'high' | 'medium' | 'low';
+
+export interface ForecastNewsRef {
+  title: string | null;
+  link: string | null;
+  publisher: string | null;
+  publishedAt: string | null;
+}
+
+export interface ForecastTarget {
+  symbol: string;
+  name: string | null;
+}
+
+export interface ForecastEvent {
+  id: string;
+  /** ISO date (YYYY-MM-DD) the event is predicted for, or occurred on. */
+  date: string;
+  /** Days from today; 0 = today. */
+  offsetDays: number;
+  kind: ForecastEventKind;
+  symbol: string | null;
+  name: string | null;
+  title: string;
+  detail: string;
+  confidence: Conviction;
+  /** Money lost per day of inaction, when the event carries an opportunity cost. */
+  opportunityCostPerDayCHF: number | null;
+  target: ForecastTarget | null;
+  news: ForecastNewsRef | null;
+  status: ForecastStatus;
+  /** Provenance chips — which signals drove this event. */
+  basis: string[];
+}
+
+export interface ForecastAction {
+  id: string;
+  kind: 'sell' | 'reinvest' | 'buy' | 'deploy-cash';
+  instrumentId: number | null;
+  symbol: string;
+  name: string | null;
+  title: string;
+  detail: string;
+  conviction: Conviction;
+  opportunityCostPerDayCHF: number | null;
+  opportunityCostCumulativeCHF: number | null;
+  currentValueCHF: number;
+  target: ForecastTarget | null;
+}
+
+export interface ForecastResponse {
+  generatedAt: string;
+  horizonDays: number;
+  /** The motivation lever: total money lost per day the flagged holdings are left alone. */
+  dailyOpportunityCostCHF: number;
+  atRiskValueCHF: number;
+  today: { actions: ForecastAction[]; count: number };
+  timeline: ForecastEvent[];
+  summary: {
+    flagged: number;
+    sells: number;
+    buys: number;
+    holds: number;
+    portfolioValueCHF: number;
+    idleCashCHF: number;
+    reallocatableCHF: number;
   };
 }
 

@@ -9,6 +9,7 @@ import {
   Settings,
   TrendingUpDown,
   Compass,
+  CalendarClock,
   Telescope,
   ClipboardList,
   Eye,
@@ -35,6 +36,7 @@ const NAV: { label: string; items: readonly NavItem[] }[] = [
     items: [
       { view: 'dashboard', label: 'Overview', icon: LayoutDashboard },
       { view: 'decisions', label: 'Decisions', icon: Compass },
+      { view: 'forecasts', label: 'Forecasts', icon: CalendarClock },
       { view: 'advisory', label: 'Advisory', icon: Sparkles },
       { view: 'scenarios', label: 'Scenarios', icon: GitCompareArrows },
       { view: 'plans', label: 'Plans', icon: ClipboardList },

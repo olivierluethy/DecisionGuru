@@ -14,6 +14,7 @@ import { RangeStats } from '../components/RangeStats';
 import { Timeline } from '../components/Timeline';
 import { AccountTimeline } from '../components/AccountTimeline';
 import { DecisionsBanner } from '../components/DecisionsBanner';
+import { ForecastTodayBanner } from '../components/ForecastTodayBanner';
 import { VerdictBadge } from '../components/Verdict';
 import {
   Segmented,
@@ -367,6 +368,7 @@ export function Dashboard() {
 
       {/* Proactive strategy surface — most important decision, if any */}
       {hasPositions && <DecisionsBanner />}
+      {hasPositions && <ForecastTodayBanner />}
 
       {/* Valuation sell signals — holdings that have run significantly above fair value. */}
       {(data.sellSignals?.length ?? 0) > 0 && (

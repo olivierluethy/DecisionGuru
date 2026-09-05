@@ -7,6 +7,7 @@ export type View =
   | 'scenarios'
   | 'advisory'
   | 'decisions'
+  | 'forecasts'
   | 'research'
   | 'plans'
   | 'watchlist'

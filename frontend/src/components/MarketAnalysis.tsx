@@ -2,16 +2,16 @@ import {
   memo, useCallback, useEffect, useMemo, useRef, useState, type RefObject,
 } from 'react';
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
-import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
 import { X } from 'lucide-react';
 import clsx from 'clsx';
 import { api, type MarketAnalysisResult, type MarketClassification, type MarketCompetitor } from '../lib/api';
 import { Spinner, EmptyState } from './ui';
-import { fmtPct, fmtPctSigned, fmtMoney, fmtDate } from '../lib/format';
+import { fmtPct, fmtPctSigned, fmtMoney } from '../lib/format';
 import { useApp } from '../store';
 import { ComparisonSelect } from './ComparisonSelect';
 import { MarketPosition } from './MarketPosition';
 import { MarketScatter, marketScatterPoints, type MarketScatterPoint } from './MarketScatter';
+import { MarketCharts } from './MarketCharts';
 
 const RANGES = ['1M', '3M', '6M', '1Y', '3Y', '5Y'] as const;
 type MarketRange = (typeof RANGES)[number];
@@ -232,11 +232,12 @@ function MarketAnalysisBody({ data, range, onRange, compare, onCompare }: {
         ))}
       </div>
 
-      {/* Is another company in this market the better bet? Value × strength, ranked. */}
+      {/* Is another company in this market the better bet? Value × strength, ranked. The
+          plane itself now lives in the Position tab below; this card carries the reading. */}
       {data.marketPosition && (
         <MarketPosition
           position={data.marketPosition} points={points} range={range}
-          active={active} onActiveChange={setActive} chartRef={chartRef}
+          active={active} onActiveChange={setActive} embedChart={false}
         />
       )}
 
@@ -256,8 +257,14 @@ function MarketAnalysisBody({ data, range, onRange, compare, onCompare }: {
         </div>
       )}
 
-      {/* Rebased performance chart */}
-      <RebasedChart lines={lines} chartData={chartData} />
+      {/* Competitor analysis, three ways behind a tab strip: Trend (lines) · Position
+          (dots) · Returns (bars). Shares the same hover as the table and mini-map. */}
+      <MarketCharts
+        lines={lines} chartData={chartData} points={points} competitors={data.competitors}
+        range={range} hasScatter={hasScatter} active={active} onActiveChange={setActive}
+        onOpen={(p) => openModal({ kind: 'opportunity', symbol: p.symbol, name: p.name })}
+        containerRef={chartRef}
+      />
 
       {/* Competitor table */}
       <div>
@@ -341,38 +348,6 @@ function MarketAnalysisBody({ data, range, onRange, compare, onCompare }: {
     </div>
   );
 }
-
-/** The rebased multi-line chart. Memoised so pointing at a company — which re-renders the
- *  section on every crossing — never re-renders recharts' most expensive child here. */
-const RebasedChart = memo(function RebasedChart({ lines, chartData }: {
-  lines: { key: string; label: string; color: string }[];
-  chartData: Record<string, number | string>[];
-}) {
-  if (chartData.length <= 1) {
-    return <p className="text-[12px] text-text-faint">Not enough cached price history to chart this window yet — it fills in shortly.</p>;
-  }
-  return (
-    <div style={{ width: '100%', height: 240 }}>
-      <ResponsiveContainer>
-        <LineChart data={chartData} margin={{ top: 6, right: 8, bottom: 0, left: 0 }}>
-          <CartesianGrid stroke="#243040" strokeDasharray="2 4" strokeOpacity={0.5} vertical={false} />
-          <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#5F6E82' }} minTickGap={48}
-            tickFormatter={(d) => fmtDate(d).replace(/ \d{4}$/, '')} stroke="#243040" />
-          <YAxis tick={{ fontSize: 10, fill: '#5F6E82' }} width={40} stroke="#243040"
-            tickFormatter={(v) => `${v}`} />
-          <Tooltip contentStyle={{ background: '#1A2331', border: '1px solid #243040', borderRadius: 6, fontSize: 12 }}
-            labelFormatter={(d) => fmtDate(d as string)} formatter={(v: number) => [`${Number(v).toFixed(1)}`, '']} />
-          <Legend wrapperStyle={{ fontSize: 11 }} />
-          {lines.map((ln) => (
-            <Line key={ln.key} type="monotone" dataKey={ln.key} name={ln.label} stroke={ln.color}
-              strokeWidth={ln.key === 'subject' ? 2.4 : 1.5} dot={false} isAnimationActive={false} connectNulls />
-          ))}
-        </LineChart>
-      </ResponsiveContainer>
-      <p className="text-[11px] text-text-faint mt-1">Rebased to 100 at the start of the window · price return (currency-neutral).</p>
-    </div>
-  );
-});
 
 /**
  * One comparables row. Memoised on its own inputs so pointing at a company re-renders the

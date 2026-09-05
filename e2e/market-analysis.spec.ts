@@ -39,6 +39,23 @@ test('Market Analysis fills the table and rows open the OpportunityModal', async
   await expect(page.getByText(/69\.6\s*%/).first()).toBeVisible(); // RBLX 1Y return
   await expect(page.getByText(/69\.8\s*%/).first()).toBeVisible(); // RBLX vs this stock
 
+  // Market view tab strip (issue #7): the competitor analysis is switchable between a
+  // Trend (line) and a Returns (bar) view. This market has no value×strength scores, so
+  // the Position (dots) tab is correctly withheld rather than shown empty.
+  const tablist = page.getByRole('tablist', { name: 'Market analysis view' });
+  await tablist.scrollIntoViewIfNeeded().catch(() => {});
+  await expect(tablist.getByRole('tab', { name: 'Trend' })).toBeVisible();
+  await expect(tablist.getByRole('tab', { name: 'Returns' })).toBeVisible();
+  await expect(tablist.getByRole('tab', { name: 'Position' })).toHaveCount(0);
+
+  // Trend is the default view.
+  await expect(tablist.getByRole('tab', { name: 'Trend' })).toHaveAttribute('aria-selected', 'true');
+
+  // Switch to the bar chart — its caption and a bar's percent label confirm it rendered.
+  await tablist.getByRole('tab', { name: 'Returns' }).click();
+  await expect(tablist.getByRole('tab', { name: 'Returns' })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByText(/price return per company, best first/i)).toBeVisible();
+
   await page.screenshot({ path: 'e2e/screenshots/ttwo-market-analysis.png' });
 
   // Company rows are clickable → open the OpportunityModal for that symbol

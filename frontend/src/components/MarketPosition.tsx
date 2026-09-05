@@ -49,7 +49,7 @@ const VALUE_BASIS: Record<string, string> = {
 };
 
 export function MarketPosition({
-  position, points, range, active, onActiveChange, chartRef,
+  position, points, range, active, onActiveChange, chartRef, embedChart = true,
 }: {
   position: MarketPositionData;
   /** Plotted companies, derived once by the parent and shared with the mini-map. */
@@ -60,6 +60,9 @@ export function MarketPosition({
   onActiveChange: (symbol: string | null) => void;
   /** Observed by the parent to know when this chart has scrolled out of view. */
   chartRef?: RefObject<HTMLDivElement>;
+  /** Draw the value × strength plane inside this card. When the plane is shown elsewhere
+   *  (the Position tab in MarketCharts) pass false to keep only the textual reading. */
+  embedChart?: boolean;
 }) {
   const openModal = useApp((s) => s.openModal);
   const q = position.quadrant ? QUADRANTS[position.quadrant] : null;
@@ -94,7 +97,7 @@ export function MarketPosition({
       </div>
 
       {/* Where everyone in this market sits. Quadrants are split at the market median (50). */}
-      {points.length > 2 && (
+      {embedChart && points.length > 2 && (
         <div ref={chartRef} className="mt-4">
           <div style={{ width: '100%', height: 200 }}>
             <MarketScatter

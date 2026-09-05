@@ -1,0 +1,130 @@
+{
+  "generatedAt": "2026-09-05T08:00:00Z",
+  "horizonDays": 30,
+  "dailyOpportunityCostCHF": 8.12,
+  "atRiskValueCHF": 24000.0,
+  "today": {
+    "count": 2,
+    "actions": [
+      {
+        "id": "act-deploy-cash",
+        "kind": "deploy-cash",
+        "instrumentId": null,
+        "symbol": "VWRL.SW",
+        "name": "FTSE All-World",
+        "title": "Deploy idle cash into VWRL.SW",
+        "detail": "CHF 5'000 of idle cash is not invested.",
+        "conviction": "medium",
+        "opportunityCostPerDayCHF": null,
+        "opportunityCostCumulativeCHF": null,
+        "currentValueCHF": 5000.0,
+        "target": { "symbol": "VWRL.SW", "name": "FTSE All-World" }
+      },
+      {
+        "id": "act-sell-1",
+        "kind": "sell",
+        "instrumentId": 1,
+        "symbol": "TSLA",
+        "name": "Tesla",
+        "title": "Sell TSLA → VWRL.SW",
+        "detail": "Trades in the sell zone; about 35% above estimated fair value.",
+        "conviction": "high",
+        "opportunityCostPerDayCHF": 8.12,
+        "opportunityCostCumulativeCHF": 3200.0,
+        "currentValueCHF": 24000.0,
+        "target": { "symbol": "VWRL.SW", "name": "FTSE All-World" }
+      }
+    ]
+  },
+  "timeline": [
+    {
+      "id": "news-TSLA-1",
+      "date": "2026-09-05",
+      "offsetDays": 0,
+      "kind": "news",
+      "symbol": "TSLA",
+      "name": "Tesla",
+      "title": "Tesla jumps on record quarterly deliveries",
+      "detail": "Reuters — a fresh development on TSLA. Re-check the call above against it.",
+      "confidence": "medium",
+      "opportunityCostPerDayCHF": null,
+      "target": null,
+      "news": { "title": "Tesla jumps on record quarterly deliveries", "link": "https://example.com/tsla", "publisher": "Reuters", "publishedAt": "2026-09-05T06:00:00Z" },
+      "status": "occurred",
+      "basis": ["news"]
+    },
+    {
+      "id": "deploy-cash",
+      "date": "2026-09-05",
+      "offsetDays": 0,
+      "kind": "buy",
+      "symbol": "VWRL.SW",
+      "name": "FTSE All-World",
+      "title": "Deploy CHF 5'000 idle cash",
+      "detail": "CHF 5'000 of idle cash is not invested.",
+      "confidence": "medium",
+      "opportunityCostPerDayCHF": null,
+      "target": { "symbol": "VWRL.SW", "name": "FTSE All-World" },
+      "news": null,
+      "status": "due",
+      "basis": ["cash"]
+    },
+    {
+      "id": "sell-1",
+      "date": "2026-09-06",
+      "offsetDays": 1,
+      "kind": "sell",
+      "symbol": "TSLA",
+      "name": "Tesla",
+      "title": "Sell / trim TSLA",
+      "detail": "Trades in the sell zone; about 35% above estimated fair value.",
+      "confidence": "high",
+      "opportunityCostPerDayCHF": 8.12,
+      "target": { "symbol": "VWRL.SW", "name": "FTSE All-World" },
+      "news": { "title": "Tesla jumps on record quarterly deliveries", "link": "https://example.com/tsla", "publisher": "Reuters", "publishedAt": "2026-09-05T06:00:00Z" },
+      "status": "upcoming",
+      "basis": ["valuation", "margin-of-safety", "benchmark-lag"]
+    },
+    {
+      "id": "reinvest-1",
+      "date": "2026-09-06",
+      "offsetDays": 1,
+      "kind": "reinvest",
+      "symbol": "VWRL.SW",
+      "name": "FTSE All-World",
+      "title": "Reinvest the proceeds into VWRL.SW",
+      "detail": "Put the TSLA proceeds to work in FTSE All-World (VWRL.SW).",
+      "confidence": "high",
+      "opportunityCostPerDayCHF": null,
+      "target": { "symbol": "VWRL.SW", "name": "FTSE All-World" },
+      "news": null,
+      "status": "upcoming",
+      "basis": ["reinvest"]
+    },
+    {
+      "id": "buy-2",
+      "date": "2026-09-09",
+      "offsetDays": 4,
+      "kind": "buy",
+      "symbol": "NESN.SW",
+      "name": "Nestle",
+      "title": "Consider topping up NESN.SW",
+      "detail": "Undervalued with sound fundamentals.",
+      "confidence": "medium",
+      "opportunityCostPerDayCHF": null,
+      "target": null,
+      "news": null,
+      "status": "upcoming",
+      "basis": ["valuation", "margin-of-safety"]
+    }
+  ],
+  "summary": {
+    "flagged": 2,
+    "sells": 1,
+    "buys": 1,
+    "holds": 3,
+    "portfolioValueCHF": 90000.0,
+    "idleCashCHF": 5000.0,
+    "reallocatableCHF": 22000.0
+  }
+}

@@ -62,6 +62,7 @@ def create_app() -> FastAPI:
         data,
         decisions,
         export,
+        forecast,
         imports,
         instruments,
         marketdata,
@@ -81,6 +82,7 @@ def create_app() -> FastAPI:
     app.include_router(marketdata.router, prefix="/api/market", tags=["market"])
     app.include_router(analysis.router, prefix="/api/analysis", tags=["analysis"])
     app.include_router(decisions.router, prefix="/api/decisions", tags=["decisions"])
+    app.include_router(forecast.router, prefix="/api/forecast", tags=["forecast"])
     app.include_router(plans.router, prefix="/api/plans", tags=["plans"])
     app.include_router(research.router, prefix="/api/research", tags=["research"])
     app.include_router(scenarios.router, prefix="/api/scenarios", tags=["scenarios"])

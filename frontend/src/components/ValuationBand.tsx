@@ -217,16 +217,27 @@ export function PriceBandChart({
   // isn't a price-calendar date — it's a filing/period-end date) so the marker always lands
   // on a real point of the plotted series (a category axis needs an exact match) and lines up
   // with where the stepped FV spine actually jumps to this snapshot's value.
-  const transitions = useMemo(
-    () => snapshots
-      .filter((s) => s.drivers != null)
-      .map((s) => {
-        const onto = full.find((f) => f.date >= s.asOf);
-        return onto ? { date: onto.date, snap: s } : null;
+  //
+  // De-duplicated by snapped date, and each date resolved via the SAME `snapshotAt` lookup the
+  // click handler's derived panel uses (activeSnap = snapshotAt(snapshots, activeDate)) — a
+  // guard against two snapshots ever snapping to the same trading day (no trading day between
+  // their `asOf` values). That can't happen with annual filings on a traded security today, but
+  // without this, a collision would let a marker and the panel it opens disagree on whose
+  // drivers to show (the panel always wins with `snapshotAt`'s latest-match rule, so pinning the
+  // marker list to that same rule keeps them from ever contradicting each other).
+  const transitions = useMemo(() => {
+    const snappedDates = new Set<string>();
+    snapshots.filter((s) => s.drivers != null).forEach((s) => {
+      const onto = full.find((f) => f.date >= s.asOf);
+      if (onto) snappedDates.add(onto.date);
+    });
+    return Array.from(snappedDates)
+      .map((date) => {
+        const snap = snapshotAt(snapshots, date);
+        return snap?.drivers ? { date, snap } : null;
       })
-      .filter((t): t is { date: string; snap: ValuationSnapshot } => t != null),
-    [snapshots, full],
-  );
+      .filter((t): t is { date: string; snap: ValuationSnapshot } => t != null);
+  }, [snapshots, full]);
 
   const applyPreset = (key: string, months: number | null) => {
     setPreset(key);

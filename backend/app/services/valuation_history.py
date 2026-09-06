@@ -140,3 +140,57 @@ def build_snapshots(data: dict, cfg: dict) -> list[dict]:
         })
     snaps.sort(key=lambda s: (s["asOf"], s["fiscalYear"]))
     return snaps
+
+
+_MODEL_KEYS = ("grahamNumber", "grahamGrowth", "dcf", "fcf")
+
+
+def _delta(before: float | None, after: float | None) -> dict:
+    """Observable before/after + a computed deltaPct/direction. NEVER attributes a share
+    of the move to any input — this is a display helper, not a causal decomposition."""
+    pct = None
+    if before not in (None, 0) and after is not None:
+        pct = round(after / before - 1, 4)
+    if pct is None:
+        direction = "flat"
+    elif abs(pct) < 1e-9:
+        direction = "flat"
+    else:
+        direction = "up" if pct > 0 else "down"
+    return {"before": before, "after": after, "deltaPct": pct, "dir": direction}
+
+
+def _model_delta(prev_models: dict, cur_models: dict, key: str) -> dict:
+    """valid = the model produced a usable number THIS snapshot (after is not None);
+    contributed = it was in the positive set used for the fair-value median. These are
+    intentionally distinct fields — a model can be valid (computed) without contributing
+    (e.g. a non-positive result excluded from the median)."""
+    b, a = prev_models.get(key), cur_models.get(key)
+    d = _delta(b, a)
+    d["valid"] = a is not None
+    d["contributed"] = a is not None and a > 0
+    return d
+
+
+def attach_drivers(snaps: list[dict]) -> None:
+    """Mutates `snaps` in place: each snapshot from index 1 onward gets a `drivers` dict
+    describing the before/after Fundamentals -> Models -> Fair Value -> Zones chain versus
+    the prior snapshot. The first snapshot has no prior, so its `drivers` stays None."""
+    for i in range(1, len(snaps)):
+        prev, cur = snaps[i - 1], snaps[i]
+        pin, cin = prev["inputs"], cur["inputs"]
+        cur["drivers"] = {
+            "inputs": {
+                "eps": _delta(pin["eps"], cin["eps"]),
+                "fcfPerShare": _delta(pin["fcfPerShare"], cin["fcfPerShare"]),
+                "bvps": _delta(pin["bvps"], cin["bvps"]),
+                "growth": _delta(pin["growth"], cin["growth"]),
+            },
+            "models": {k: _model_delta(prev["models"], cur["models"], k) for k in _MODEL_KEYS},
+            "fairValue": _delta(prev["fairValue"], cur["fairValue"]),
+            "zones": {
+                "entryTarget": {"before": prev["entryTarget"], "after": cur["entryTarget"]},
+                "overvaluedAt": {"before": prev["overvaluedAt"], "after": cur["overvaluedAt"]},
+                "sellZoneAt": {"before": prev["sellZoneAt"], "after": cur["sellZoneAt"]},
+            },
+        }

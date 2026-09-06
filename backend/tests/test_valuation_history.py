@@ -114,3 +114,48 @@ def test_stability_mutating_latest_year_leaves_priors_unchanged():
     prior_before = [s for s in before if s["fiscalYear"] < 2022]
     prior_after = [s for s in after if s["fiscalYear"] < 2022]
     assert prior_before == prior_after   # no look-ahead: history is immutable to future data
+
+
+def test_delta_shapes():
+    d = vh._delta(100.0, 110.0)
+    assert d["before"] == 100.0 and d["after"] == 110.0
+    assert abs(d["deltaPct"] - 0.10) < 1e-9 and d["dir"] == "up"
+    assert vh._delta(None, 110.0)["deltaPct"] is None
+    assert vh._delta(100.0, 90.0)["dir"] == "down"
+
+
+def test_drivers_first_none_rest_full_chain():
+    history, cashflow, balance = _fixture()
+    data = {"history": history, "cashflow": cashflow, "balance": balance, "financialCurrency": "USD"}
+    snaps = vh.build_snapshots(data, CFG)
+    vh.attach_drivers(snaps)
+    assert snaps[0]["drivers"] is None
+    dr = snaps[-1]["drivers"]
+    assert set(dr) == {"inputs", "models", "fairValue", "zones"}
+    assert set(dr["inputs"]) == {"eps", "fcfPerShare", "bvps", "growth"}
+    for mk in ("grahamNumber", "grahamGrowth", "dcf", "fcf"):
+        assert "valid" in dr["models"][mk] and "contributed" in dr["models"][mk]
+    assert dr["fairValue"]["after"] == snaps[-1]["fairValue"]
+
+
+def test_model_valid_vs_contributed_distinct_when_negative_eps():
+    # Craft a year whose eps is negative in the LATER year so graham models drop out.
+    history = [
+        {"year": 2020, "periodEnd": "2020-12-31", "revenue": 1000.0, "netIncome": 100.0},
+        {"year": 2021, "periodEnd": "2021-12-31", "revenue": 900.0, "netIncome": -50.0},
+    ]
+    cashflow = {"sharesOutstanding": 100.0, "years": [
+        {"year": 2020, "periodEnd": "2020-12-31", "freeCashFlow": 90.0},
+        {"year": 2021, "periodEnd": "2021-12-31", "freeCashFlow": 80.0},
+    ]}
+    balance = {"years": [
+        {"year": 2020, "periodEnd": "2020-12-31", "stockholdersEquity": 500.0, "sharesOutstanding": 100.0},
+        {"year": 2021, "periodEnd": "2021-12-31", "stockholdersEquity": 450.0, "sharesOutstanding": 100.0},
+    ]}
+    data = {"history": history, "cashflow": cashflow, "balance": balance, "financialCurrency": "USD"}
+    snaps = vh.build_snapshots(data, CFG)
+    vh.attach_drivers(snaps)
+    dr = snaps[-1]["drivers"]
+    # grahamGrowth needs eps>0 -> invalid in 2021, so not contributed either.
+    assert dr["models"]["grahamGrowth"]["valid"] is False
+    assert dr["models"]["grahamGrowth"]["contributed"] is False

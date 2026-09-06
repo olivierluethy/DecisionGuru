@@ -112,9 +112,13 @@ a hard acceptance criterion**, not a best-effort goal.
 ### 5.1 New service: `backend/app/services/valuation_history.py`
 
 For each fiscal year `Y` present across the annual statement lanes, derive
-**as-of inputs** using only facts known at `Y`:
+**as-of inputs** using only facts known at `Y`. These are **reconstructed
+per-share** values, explicitly *not* the same as the engine's reported
+`trailingEps` — they must be labeled as reconstructed wherever surfaced, and use
+the **same share-count convention the current engine uses** (diluted/ordinary
+shares — match `valuation.py`, don't invent a different basis):
 
-- `eps_Y      = netIncome_Y / sharesOutstanding_Y`
+- `eps_Y      = netIncome_Y / sharesOutstanding_Y`  *(reconstructed EPS ≠ reported trailingEps)*
 - `bvps_Y     = stockholdersEquity_Y / sharesOutstanding_Y`
 - `fcfps_Y    = freeCashFlow_Y / sharesOutstanding_Y` (and a trailing **normalized**
   FCF/share = median of FCF/share for years `≤ Y`, mirroring today's
@@ -159,9 +163,11 @@ Value → Zones**:
 - **Input changes:** for each of `eps`, `fcfPerShare` (normalized), `bvps`,
   `growth` — `{ before, after, deltaPct, dir: "up"|"down"|"flat" }`.
 - **Model responses:** for each of `grahamNumber`, `grahamGrowth`, `epsDcf`,
-  `fcfDcf` — `{ before, after, deltaPct, contributed: bool }` (`contributed` =
-  whether the model was part of the median before/after; a model can drop in/out,
-  e.g. EPS turning positive).
+  `fcfDcf` — `{ before, after, deltaPct, valid: bool, contributed: bool }`.
+  **`valid`** = the model produced a usable number from that year's inputs;
+  **`contributed`** = it was actually part of the median. These are distinct: a
+  model can be valid yet not contribute, and a model can drop in/out across a
+  transition (e.g. EPS turning positive makes Graham Number valid).
 - **Outputs:** `fairValue { before, after, deltaPct }` and the zone edges
   `{ before, after }` for entry / overvalued / sell.
 
@@ -208,10 +214,10 @@ implementation):
     "growth":      { "before": 0.09, "after": 0.088,"deltaPct": -0.017, "dir": "down" }
   },
   "models": {
-    "grahamNumber": { "before": 16.9,  "after": 18.0,  "deltaPct": 0.065, "contributed": true },
-    "grahamGrowth": { "before": 88.6,  "after": 94.1,  "deltaPct": 0.062, "contributed": true },
-    "epsDcf":       { "before": 130.2, "after": 143.4, "deltaPct": 0.101, "contributed": true },
-    "fcfDcf":       { "before": 150.1, "after": 159.3, "deltaPct": 0.061, "contributed": true }
+    "grahamNumber": { "before": 16.9,  "after": 18.0,  "deltaPct": 0.065, "valid": true, "contributed": true },
+    "grahamGrowth": { "before": 88.6,  "after": 94.1,  "deltaPct": 0.062, "valid": true, "contributed": true },
+    "epsDcf":       { "before": 130.2, "after": 143.4, "deltaPct": 0.101, "valid": true, "contributed": true },
+    "fcfDcf":       { "before": 150.1, "after": 159.3, "deltaPct": 0.061, "valid": true, "contributed": true }
   },
   "fairValue": { "before": 120.4, "after": 139.6, "deltaPct": 0.159 },
   "zones": {
@@ -252,7 +258,9 @@ fields (drive the pre-coverage region). Memoized; O(n) with a single forward pas
 - **FV spine:** prominent `Line type="stepAfter"` on `fairValue`.
 - **Price:** real daily line on top; keep line / area / dots marks.
 - **Current vs history emphasis:** rightmost (today's) boundaries at full opacity
-  with right-edge labels + a FV badge; earlier steps at reduced opacity.
+  with right-edge labels + a FV badge; earlier steps at reduced opacity — **quieter
+  than today, but never so faint they become unreadable** (min contrast floor;
+  verify in Playwright).
 - **Pre-coverage region:** hatched/greyed band with an inline "insufficient
   fundamental history" label; **no** zone fills there.
 - **No smoothing:** the FV spine and zone edges use `stepAfter` only. Historical
@@ -262,13 +270,14 @@ fields (drive the pre-coverage region). Memoized; O(n) with a single forward pas
   Fair range / Overvalued / Sell). **Keyboard accessible**: focusable chart, arrow
   keys move the selected date, not hover-only.
 - **Valuation transitions as first-class events:** each report date (where FV
-  steps) is a distinct marker on the timeline. Selecting/clicking a transition
-  opens a **transition detail view** that shows *exactly what changed between the
-  two annual snapshots*, laid out as the chain **Fundamentals → Model outputs →
-  Fair Value → Zones**: the four input before→after values, then how each of the
-  four models responded (before→after, and whether it entered/left the median),
-  then the resulting FV and zone-edge before→after. This is the spec's headline
-  explainability surface, driven entirely by `drivers`.
+  steps) is a distinct marker on the timeline. Clicking a transition **pins that
+  historical state** (selection stays put) and opens a **transition detail view**
+  showing *exactly what changed between the two annual snapshots*, laid out as the
+  chain **Fundamentals → Model outputs → Fair Value → Zones**: the four input
+  before→after values, then how each of the four models responded (before→after,
+  `valid`, and whether it entered/left the median), then the resulting FV and
+  zone-edge before→after. This is the spec's headline explainability surface,
+  driven entirely by `drivers`.
 - **Controls preserved:** timeframe presets (Max/5J/3J/1J/6M/3M/1M), mark type
   (Linie/Fläche/Punkte), Linear/Log, % Rebase. Rebase still hides absolute-price
   zones (unchanged).
@@ -360,7 +369,39 @@ flaky document-preview e2e failures are known and not chased.
 
 ---
 
-## 10. Success criteria
+## 10. Implementation guardrails
+
+Binding constraints for the implementation (each maps to tests / QA above):
+
+1. **Use the existing valuation engine — never duplicate formulas.** Historical
+   reconstruction calls the same model/`_dcf`/`classify_band` code paths as
+   `valuation.py`; extract shared helpers where needed instead of copying math.
+2. **Reuse `_pick_growth` semantics exactly** (multi-year income CAGR path),
+   extracting a shared helper rather than reimplementing.
+3. **Reuse the exact existing normalized-FCF logic** (today's `normalized_fcf_ps`);
+   extract, don't re-derive.
+4. **Eligibility = information availability, not fiscal year.** A step exists only
+   for years with the statements, share count, and ≥2 income years (for CAGR)
+   actually needed to value it. `coverageFrom` follows from availability.
+5. **Share-count convention matches the current engine**, and **reconstructed
+   per-share values are clearly distinguished from reported EPS** wherever surfaced.
+6. **`valid` vs `contributed` are distinct** for every model (computed a number vs
+   was part of the median).
+7. **No fabricated causal percentages** for the FV change — only the observable
+   chain Fundamentals → Models → Fair Value → Zones.
+8. **Clicking a transition pins that historical state** and opens its full
+   before/after explanation.
+9. **Historical states quieter than today, but never unreadable** (contrast floor,
+   verified visually).
+10. **No-look-ahead is a hard invariant**, demonstrated by tests that *intentionally
+    mutate future/latest fundamentals* and assert prior snapshots are unchanged.
+11. **Playwright visual QA is part of "done."** Iterate on the actual rendered
+    chart; passing unit tests alone does not complete the task.
+12. **No scope creep** into quarterly/daily reconstruction or new persistence.
+
+---
+
+## 11. Success criteria
 
 - The chart no longer implies today's zones existed unchanged in the past.
 - Buy/Fair/Overvalued/Sell thresholds visibly **step** (never smoothed) as

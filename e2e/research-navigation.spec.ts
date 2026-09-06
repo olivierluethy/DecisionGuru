@@ -30,6 +30,21 @@ test.describe('Research navigation', () => {
     await expect(page.getByRole('heading', { name: SYMBOL, exact: true })).toBeVisible();
   });
 
+  test('"Recently viewed" survives a page reload (persisted)', async ({ page }) => {
+    // Open the asset once so it is recorded as recent…
+    await page.goto(`/#/research/${SYMBOL}`);
+    await expect(page.getByRole('heading', { name: SYMBOL, exact: true })).toBeVisible();
+
+    // …go to the search landing and reload the page.
+    await page.goto('/#/research');
+    await expect(page.getByText('Find an asset')).toBeVisible();
+    await page.reload();
+
+    // The recent chip is still there after the reload (the old bug lost it on refresh).
+    await expect(page.getByText('Recently viewed')).toBeVisible();
+    await expect(page.getByRole('button', { name: SYMBOL, exact: true })).toBeVisible();
+  });
+
   test('sidebar "Research" opens the search landing but keeps recents', async ({ page }) => {
     await page.goto(`/#/research/${SYMBOL}`);
     await expect(page.getByRole('heading', { name: SYMBOL, exact: true })).toBeVisible();

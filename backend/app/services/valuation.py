@@ -42,15 +42,53 @@ def _val_cfg(settings: dict | None) -> dict:
     }
 
 
+def zone_edges(fair_value: float, cfg: dict) -> dict:
+    """Buy/fair/overvalued/sell edges from a fair value + user cfg. Single source of the
+    zone geometry, shared by classify_band and the historical reconstruction."""
+    entry = fair_value * (1 - cfg["mos"])
+    over = fair_value * (1 + cfg["ov"])
+    sig = fair_value * (1 + cfg["sig"])
+    return {
+        "entryTarget": round(entry, 2),
+        "overvaluedAt": round(over, 2),
+        "sellZoneAt": round(sig, 2),
+        "zones": {
+            "buy": [0.0, round(entry, 2)],
+            "fair": [round(entry, 2), round(over, 2)],
+            "overvalued": [round(over, 2), round(sig, 2)],
+            "sell": [round(sig, 2), round(sig * 1.6, 2)],
+        },
+    }
+
+
+def compute_models(eps: float | None, bvps: float | None, base_eps: float | None,
+                   g: float, normalized_fcf_ps: float | None, cfg: dict) -> dict[str, float]:
+    """The four intrinsic-value models, returning only those that produced a positive
+    value. Identical to the inline block in value_analysis (single source of the formulas)."""
+    m: dict[str, float] = {}
+    if eps and eps > 0 and bvps and bvps > 0:
+        m["grahamNumber"] = round(math.sqrt(22.5 * eps * bvps), 2)
+    if eps and eps > 0:
+        m["grahamGrowth"] = round(eps * (8.5 + 2 * min(max(g * 100, 0), 15)), 2)
+    dcf = _dcf(base_eps, g, r=cfg["disc"], tg=cfg["tg"])
+    if dcf:
+        m["dcf"] = round(dcf, 2)
+    fcf_dcf = _dcf(normalized_fcf_ps, g, r=cfg["disc"], tg=cfg["tg"])
+    if fcf_dcf:
+        m["fcf"] = round(fcf_dcf, 2)
+    return m
+
+
 def classify_band(price: float | None, fair_value: float | None, cfg: dict) -> dict | None:
     """Map a live price onto the fair-value bands. Returns the band key, a plain-language
     label, the boundary prices, and the buy/fair/overvalued/sell zone edges used to shade
     the price chart. None when there's no fair value or price to place."""
     if not fair_value or fair_value <= 0 or not price or price <= 0:
         return None
-    entry = fair_value * (1 - cfg["mos"])          # attractive buy target
-    over = fair_value * (1 + cfg["ov"])            # overvalued threshold
-    sig = fair_value * (1 + cfg["sig"])            # significantly overvalued / sell zone
+    edges = zone_edges(fair_value, cfg)
+    entry = edges["entryTarget"]
+    over = edges["overvaluedAt"]
+    sig = edges["sellZoneAt"]
     if price <= entry:
         band, label = "undervalued", "Undervalued"
     elif price >= sig:
@@ -64,18 +102,13 @@ def classify_band(price: float | None, fair_value: float | None, cfg: dict) -> d
         "band": band,
         "label": label,
         "premiumToFair": premium,
-        "entryTarget": round(entry, 2),
+        "entryTarget": entry,
         "fairValue": round(fair_value, 2),
-        "overvaluedAt": round(over, 2),
-        "sellZoneAt": round(sig, 2),
+        "overvaluedAt": over,
+        "sellZoneAt": sig,
         # Zone edges for the price chart's shaded ReferenceAreas (buy ≤ entry,
         # fair (entry..over), overvalued (over..sig), sell ≥ sig).
-        "zones": {
-            "buy": [0.0, round(entry, 2)],
-            "fair": [round(entry, 2), round(over, 2)],
-            "overvalued": [round(over, 2), round(sig, 2)],
-            "sell": [round(sig, 2), round(sig * 1.6, 2)],
-        },
+        "zones": edges["zones"],
         "marginOfSafetyPct": cfg["mos"],
     }
 
@@ -246,15 +279,6 @@ def value_analysis(symbol: str, price: float | None, currency: str | None = None
     bvps = (price / p2b) if (p2b and price and p2b > 0) else None
     base_eps = eps if (eps and eps > 0) else fwd_eps
 
-    models: dict[str, float] = {}
-    if eps and eps > 0 and bvps and bvps > 0:
-        models["grahamNumber"] = round(math.sqrt(22.5 * eps * bvps), 2)
-    if eps and eps > 0:
-        models["grahamGrowth"] = round(eps * (8.5 + 2 * min(max(g * 100, 0), 15)), 2)
-    dcf = _dcf(base_eps, g, r=cfg["disc"], tg=cfg["tg"])
-    if dcf:
-        models["dcf"] = round(dcf, 2)
-
     # --- Cash-based lane: free cash flow & owner earnings (AUDIT §3 F-8) ---------
     # A genuine cash figure, not accounting EPS relabeled. Normalised FCF/share is the
     # MEDIAN of the available years so a single lumpy-capex year doesn't distort it, and
@@ -273,6 +297,8 @@ def value_analysis(symbol: str, price: float | None, currency: str | None = None
     fcf_per_share = _per_share(cf_years[-1].get("freeCashFlow")) if cf_years else None
     normalized_fcf_ps = round(_median(fcf_ps_series), 2) if fcf_ps_series else None
 
+    models = compute_models(eps, bvps, base_eps, g, normalized_fcf_ps, cfg)
+
     owner_earnings_ps = None
     if cf_years:
         last = cf_years[-1]
@@ -281,9 +307,6 @@ def value_analysis(symbol: str, price: float | None, currency: str | None = None
             oe = _per_share(ni + dna + capex)
             owner_earnings_ps = round(oe, 2) if oe is not None else None
 
-    fcf_dcf = _dcf(normalized_fcf_ps, g, r=cfg["disc"], tg=cfg["tg"])
-    if fcf_dcf:
-        models["fcf"] = round(fcf_dcf, 2)
     fcf_yield = round(fcf_per_share / price, 4) if (fcf_per_share and price and price > 0) else None
 
     # --- Bear / base / bull scenarios (AUDIT §3 F-10) --------------------------

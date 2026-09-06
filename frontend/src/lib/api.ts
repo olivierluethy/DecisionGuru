@@ -191,6 +191,8 @@ export const api = {
       `/market/history/${encodeURIComponent(symbol)}${qs ? `?${qs}` : ''}`,
     );
   },
+  valuationHistory: (symbol: string) =>
+    req<ValuationHistory>(`/research/valuation/history/${encodeURIComponent(symbol)}`),
 
   // decision engine
   recommendations: () => req<RecommendationsResponse>('/decisions/recommendations'),
@@ -533,6 +535,41 @@ export interface ValuationBand {
   sellZoneAt: number;          // fairValue × 1.40
   zones: { buy: [number, number]; fair: [number, number]; overvalued: [number, number]; sell: [number, number] };
   marginOfSafetyPct: number;
+}
+
+export interface ValuationDriverDelta {
+  before: number | null;
+  after: number | null;
+  deltaPct: number | null;
+  dir?: 'up' | 'down' | 'flat';
+  valid?: boolean;        // models only
+  contributed?: boolean;  // models only
+}
+export interface ValuationSnapshot {
+  asOf: string;
+  effectiveDateSource: 'filing' | 'assumed';
+  fiscalPeriodEnd: string | null;
+  filingDate: string | null;
+  fiscalYear: number;
+  fairValue: number;
+  entryTarget: number;
+  overvaluedAt: number;
+  sellZoneAt: number;
+  inputs: { eps: number | null; bvps: number | null; fcfPerShare: number | null; growth: number };
+  models: Record<string, number>;
+  drivers: null | {
+    inputs: Record<'eps' | 'fcfPerShare' | 'bvps' | 'growth', ValuationDriverDelta>;
+    models: Record<string, ValuationDriverDelta>;
+    fairValue: ValuationDriverDelta;
+    zones: Record<'entryTarget' | 'overvaluedAt' | 'sellZoneAt', { before: number; after: number }>;
+  };
+}
+export interface ValuationHistory {
+  symbol: string;
+  currency: string | null;
+  coverageFrom: string | null;
+  snapshots: ValuationSnapshot[];
+  note: string;
 }
 
 export interface ValuationScenario {

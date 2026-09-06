@@ -12,6 +12,7 @@ from ..services.verdict import resolve_verdict
 from ..services.universal import universal_compare
 from ..services.projection import prospective_projection
 from ..services.competitors import competitors as competitors_service
+from ..services.valuation_history import valuation_history as valuation_history_service
 
 router = APIRouter()
 
@@ -27,6 +28,15 @@ async def fundamentals(symbol: str, domicile: str | None = None, name: str | Non
     """Valuation + profitability snapshot, multi-year income statement, and (for Swiss
     blue chips) the SMI index weight. First call per symbol is slow (Yahoo scrape); cached after."""
     return await run_in_threadpool(fundamentals_bundle, symbol, name, domicile)
+
+
+@router.get("/valuation/history/{symbol:path}")
+async def valuation_history_route(symbol: str) -> dict:
+    """Reconstructed point-in-time Fair Value + zone series (annual granularity) with a
+    before/after driver chain per transition. No look-ahead — each snapshot uses only the
+    statements known at that date."""
+    settings = get_settings()
+    return await run_in_threadpool(valuation_history_service, symbol, None, settings)
 
 
 @router.get("/valuation/{symbol:path}")

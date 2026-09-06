@@ -1,10 +1,11 @@
-import { useId } from 'react';
+import { useId, useState, useMemo, useEffect, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
-  ComposedChart, Line, ReferenceArea, ReferenceLine, ReferenceDot, CartesianGrid,
-  XAxis, YAxis, Tooltip, ResponsiveContainer,
+  ComposedChart, Line, Area, ReferenceArea, ReferenceLine, ReferenceDot, CartesianGrid,
+  XAxis, YAxis, Tooltip, ResponsiveContainer, Brush,
 } from 'recharts';
 import clsx from 'clsx';
+import dayjs from 'dayjs';
 import { api, type ValuationBand, type ValuationBandKey } from '../lib/api';
 import { fmtMoney, fmtDate, fmtPct } from '../lib/format';
 
@@ -23,22 +24,16 @@ const C = {
   bg: '#0A0E15',
 } as const;
 
-/** Left→right fade gradients for the valuation zones and their boundary lines. The zones are a
- *  snapshot of *today's* fair value, so they are fully opaque at the right edge (now) and dissolve
- *  toward the left (the past) — the price line stays solid because it is real history. `z*` fill the
- *  areas, `l*` stroke the dashed threshold/fair-value lines (stronger max opacity). `userSpaceOnUse`
- *  with percentages spans the whole SVG width, so the flat horizontal lines fade too — an
- *  objectBoundingBox gradient collapses on a zero-height line and would hide it. */
-const FADE_GRADS: { id: string; color: string; max: number }[] = [
-  { id: 'zbuy', color: C.gain, max: 0.15 },
-  { id: 'zfair', color: C.azure, max: 0.08 },
-  { id: 'zover', color: C.warn, max: 0.14 },
-  { id: 'zsell', color: C.loss, max: 0.18 },
-  { id: 'lentry', color: C.gain, max: 0.85 },
-  { id: 'lover', color: C.warn, max: 0.75 },
-  { id: 'lsell', color: C.loss, max: 0.85 },
-  { id: 'lfair', color: C.textFaint, max: 0.9 },
-];
+/** Flat per-zone fill + boundary-line styling. Uniform across the plot (no horizontal fade)
+ *  so the zones fill the *whole* visible window at every timeframe — a fade tuned for the full
+ *  10-year view left zoomed-in windows almost entirely unshaded. Reuses the reserved
+ *  gain/loss/warn tokens: cheap = gain, expensive = loss, gold marks the overvalued step. */
+const ZONE_STYLE = {
+  buy: { color: C.gain, fill: 0.14, line: 0.5 },
+  fair: { color: C.azure, fill: 0.07, line: 0.5 },
+  over: { color: C.warn, fill: 0.13, line: 0.55 },
+  sell: { color: C.loss, fill: 0.16, line: 0.6 },
+} as const;
 
 /** Band → semantic colour + copy. Reuses the reserved gain/loss/warn tokens: a cheap
  *  price is a gain, an expensive one a loss, with gold marking the overvalued step. */
@@ -59,11 +54,60 @@ export function BandBadge({ band, className }: { band: ValuationBandKey; classNa
   );
 }
 
+type ChartType = 'line' | 'area' | 'dots';
+type Scale = 'linear' | 'log';
+
+/** Trailing-window presets. `months: null` = full history (Max). The Brush covers every
+ *  window in between (4y, 2 months, a handful of days) that has no dedicated button. */
+const RANGE_PRESETS: { key: string; label: string; months: number | null }[] = [
+  { key: 'max', label: 'Max', months: null },
+  { key: '5y', label: '5J', months: 60 },
+  { key: '3y', label: '3J', months: 36 },
+  { key: '1y', label: '1J', months: 12 },
+  { key: '6m', label: '6M', months: 6 },
+  { key: '3m', label: '3M', months: 3 },
+  { key: '1m', label: '1M', months: 1 },
+];
+
+const CHART_TYPES: { key: ChartType; label: string }[] = [
+  { key: 'line', label: 'Linie' },
+  { key: 'area', label: 'Fläche' },
+  { key: 'dots', label: 'Punkte' },
+];
+
+/** A single segmented-control button, matching the market-view tabs elsewhere. */
+function SegBtn({
+  active, onClick, children, title,
+}: { active: boolean; onClick: () => void; children: ReactNode; title?: string }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      aria-pressed={active}
+      className={clsx(
+        'inline-flex items-center h-7 px-2.5 rounded-sm text-[12px] cursor-pointer',
+        'border transition-colors duration-150 motion-reduce:transition-none',
+        active
+          ? 'border-azure/50 text-text bg-surface-2'
+          : 'border-hairline text-text-muted hover:text-text hover:border-hairline-strong',
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
 /**
  * Price history with shaded valuation zones — the buy zone (≤ attractive entry price),
  * the fair range, the overvalued step and the sell zone (≥ fair value ×1.40) — plus the
  * current-price line and dashed entry-target / fair-value / sell-zone guides. Grounds the
  * abstract "band" in the security's actual price path. Native price units.
+ *
+ * A toolbar lets you narrow the window (trailing presets + a drag Brush for arbitrary
+ * ranges), switch the mark (line / area / dots), pick a linear or log axis, and rebase to
+ * % return from the first visible day. The Y-axis autoscales to the visible slice so tight
+ * windows show real detail. Rebase hides the absolute-price zones (they no longer map).
  */
 export function PriceBandChart({
   symbol, band, currency, height = 220, rate = null, displayCurrency = null,
@@ -95,11 +139,84 @@ export function PriceBandChart({
   const overvaluedAt = band.overvaluedAt * k;
   const sellZoneAt = band.sellZoneAt * k;
   const fairValue = band.fairValue * k;
-  const closes = (history ?? []).map((h) => h.close * k).filter((c) => c > 0);
+
+  // Full converted price path (positive closes only). The backend already serves up to 10y,
+  // so every preset and the Brush slice this in place — no refetch when the window changes.
+  const full = useMemo(
+    () => (history ?? []).map((h) => ({ date: h.date, close: h.close * k })).filter((d) => d.close > 0),
+    [history, k],
+  );
+
+  // --- View controls ------------------------------------------------------------------
+  const [chartType, setChartType] = useState<ChartType>('line');
+  const [scale, setScale] = useState<Scale>('linear');
+  const [rebase, setRebase] = useState(false);
+  const [preset, setPreset] = useState<string>('max');
+  // Visible window as [start, end] indices into `full`. The Brush drives these directly;
+  // presets compute them from a trailing cutoff.
+  const [range, setRange] = useState<{ start: number; end: number }>({ start: 0, end: 0 });
+
+  // Whenever the underlying series changes size (data lands, symbol switches), reset to Max.
+  useEffect(() => {
+    setRange({ start: 0, end: Math.max(0, full.length - 1) });
+    setPreset('max');
+  }, [full.length]);
+
+  const applyPreset = (key: string, months: number | null) => {
+    setPreset(key);
+    if (months == null || full.length === 0) {
+      setRange({ start: 0, end: Math.max(0, full.length - 1) });
+      return;
+    }
+    const cutoff = dayjs().subtract(months, 'month');
+    let start = full.findIndex((d) => !dayjs(d.date).isBefore(cutoff));
+    if (start < 0) start = 0;
+    // Always keep at least two points so the line has something to draw.
+    if (start > full.length - 2) start = Math.max(0, full.length - 2);
+    setRange({ start, end: full.length - 1 });
+  };
+
+  // Rebase turns absolute prices into % return from the first *visible* day; log makes no
+  // sense on a signed % series, so it falls back to linear there.
+  const effScale: Scale = rebase ? 'linear' : scale;
+  const base = full.length ? full[Math.min(range.start, full.length - 1)].close : 0;
+  const plot = useMemo(
+    () => full.map((d) => ({
+      date: d.date,
+      value: rebase && base ? (d.close / base - 1) * 100 : d.close,
+    })),
+    [full, rebase, base],
+  );
+
+  // Y-domain autoscales to the *visible* slice (the user's choice), so tight windows show
+  // real detail. In price mode it is then stretched to the zone thresholds that *bracket*
+  // the visible price — the nearest one below and above — so the current zone stays fully
+  // marked with its neighbours as context (instead of the band vanishing off-screen). Zones
+  // clip to this domain (ifOverflow="hidden").
+  const [lo, hi] = useMemo<[number, number]>(() => {
+    const s = Math.min(range.start, plot.length - 1);
+    const e = Math.min(range.end, plot.length - 1);
+    const vals = plot.slice(s, e + 1).map((d) => d.value).filter((v) => Number.isFinite(v));
+    if (!vals.length) return [0, 1];
+    const mn = Math.min(...vals);
+    const mx = Math.max(...vals);
+    if (rebase) {
+      const pad = Math.max((mx - mn) * 0.08, 1);
+      return [mn - pad, mx + pad];
+    }
+    const thresholds = [entryTarget, overvaluedAt, sellZoneAt]
+      .filter((t) => Number.isFinite(t) && t > 0)
+      .sort((a, b) => a - b);
+    const below = thresholds.filter((t) => t <= mn).pop(); // nearest threshold ≤ visible min
+    const above = thresholds.find((t) => t >= mx);         // nearest threshold ≥ visible max
+    const dLo = below != null ? Math.min(mn, below) : mn;
+    const dHi = above != null ? Math.max(mx, above) : mx;
+    return [dLo * 0.98, dHi * 1.02];
+  }, [plot, range, rebase, entryTarget, overvaluedAt, sellZoneAt]);
 
   // No price path to draw yet — show a labelled placeholder instead of an empty chart.
   // (The backfill runs in the background; the line lands on a later poll.)
-  if (closes.length < 2) {
+  if (full.length < 2) {
     return (
       <div>
         <div
@@ -123,94 +240,152 @@ export function PriceBandChart({
       </div>
     );
   }
-  const lastPrice = closes.length ? closes[closes.length - 1] : fairValue;
 
-  // Y-domain wraps both the price path and every zone edge so the shading is visible.
-  const candidates = [...closes, entryTarget, fairValue, overvaluedAt, sellZoneAt, lastPrice];
-  const lo = Math.min(...candidates) * 0.92;
-  const hi = Math.max(...candidates) * 1.06;
-  const data = (history ?? []).map((h) => ({ date: h.date, close: h.close * k }));
-  const lastDate = data.length ? data[data.length - 1].date : undefined;
+  const lastIdx = full.length - 1;
+  const windowHasLatest = range.end >= lastIdx;
+  const lastDate = full[lastIdx].date;
+  const lastValue = plot[lastIdx].value;
 
-  // Fill each zone with its left→right fade gradient (opacity is baked into the gradient stops).
-  // An optional right-edge label turns the right margin into a legible "today's scale" column.
+  // Fill each zone with a flat, uniform colour so it spans the whole visible window at any
+  // timeframe. An optional right-edge label tags the zone. Guarded against an inverted band
+  // once a zone edge falls outside the autoscaled domain (then it simply doesn't render).
   const zone = (
-    y1: number, y2: number, gradId: string, key: string,
-    label?: string, labelColor?: string,
-  ) => (
-    <ReferenceArea key={key} y1={Math.max(y1, lo)} y2={Math.min(y2, hi)}
-      fill={`url(#${uid}-${gradId})`} fillOpacity={1} ifOverflow="hidden" stroke="none"
-      label={label ? { value: label, position: 'right', fill: labelColor, fontSize: 10 } : undefined} />
-  );
+    y1: number, y2: number, style: { color: string; fill: number }, key: string,
+    label?: string,
+  ) => {
+    const a = Math.max(y1, lo);
+    const b = Math.min(y2, hi);
+    if (b <= a) return null;
+    return (
+      <ReferenceArea key={key} y1={a} y2={b}
+        fill={style.color} fillOpacity={style.fill} ifOverflow="hidden" stroke="none"
+        label={label ? { value: label, position: 'right', fill: style.color, fontSize: 10 } : undefined} />
+    );
+  };
 
   return (
     <div>
-      <div style={{ width: '100%', height }}>
+      {/* Toolbar — window presets, mark type, and scale / rebase toggles. */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-2.5">
+        <div className="flex gap-1" role="group" aria-label="Zeitraum">
+          {RANGE_PRESETS.map((p) => (
+            <SegBtn key={p.key} active={preset === p.key} onClick={() => applyPreset(p.key, p.months)}
+              title={`Zeitraum ${p.label}`}>
+              {p.label}
+            </SegBtn>
+          ))}
+        </div>
+        <div className="flex gap-1 ml-auto" role="group" aria-label="Darstellung">
+          {CHART_TYPES.map((t) => (
+            <SegBtn key={t.key} active={chartType === t.key} onClick={() => setChartType(t.key)}>
+              {t.label}
+            </SegBtn>
+          ))}
+        </div>
+        <div className="flex gap-1" role="group" aria-label="Skala">
+          <SegBtn active={effScale === 'linear' && !rebase} onClick={() => { setRebase(false); setScale('linear'); }}
+            title="Lineare Achse">Linear</SegBtn>
+          <SegBtn active={effScale === 'log' && !rebase} onClick={() => { setRebase(false); setScale('log'); }}
+            title="Logarithmische Achse">Log</SegBtn>
+          <SegBtn active={rebase} onClick={() => setRebase((v) => !v)}
+            title="Auf 0 % zum Startdatum normieren">% Rebase</SegBtn>
+        </div>
+      </div>
+
+      <div style={{ width: '100%', height: height + 34 }}>
         <ResponsiveContainer>
-          <ComposedChart data={data} margin={{ top: 6, right: 46, bottom: 0, left: 0 }}>
+          <ComposedChart data={plot} margin={{ top: 6, right: 46, bottom: 0, left: 0 }}>
             {/* Zone/line fade gradients: transparent in the past (left), full at today (right). */}
             <defs>
-              {FADE_GRADS.map((g) => (
-                <linearGradient key={g.id} id={`${uid}-${g.id}`}
-                  gradientUnits="userSpaceOnUse" x1="0%" y1="0%" x2="100%" y2="0%">
-                  <stop offset="0%" stopColor={g.color} stopOpacity={0} />
-                  <stop offset="72%" stopColor={g.color} stopOpacity={g.max * 0.06} />
-                  <stop offset="100%" stopColor={g.color} stopOpacity={g.max} />
-                </linearGradient>
-              ))}
+              {/* Top-down fill for the area mark. */}
+              <linearGradient id={`${uid}-area`} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={C.azure} stopOpacity={0.35} />
+                <stop offset="100%" stopColor={C.azure} stopOpacity={0.02} />
+              </linearGradient>
             </defs>
             {/* Subtle horizontal grid, kept behind the bands so it never competes. */}
             <CartesianGrid stroke={C.hairline} strokeDasharray="2 4" strokeOpacity={0.5} vertical={false} />
-            {/* Zones, cheapest at the bottom — each fades into the past (see gradients above) and
-                carries a right-edge tag, so the right margin reads as today's valuation scale. */}
-            {zone(0, entryTarget, 'zbuy', 'buy', 'Buy', C.gain)}
-            {zone(entryTarget, overvaluedAt, 'zfair', 'fair', 'Fair', C.textFaint)}
-            {zone(overvaluedAt, sellZoneAt, 'zover', 'over', 'Over', C.warn)}
-            {zone(sellZoneAt, hi * 2, 'zsell', 'sell', 'Sell', C.loss)}
+            {/* Zones, cheapest at the bottom — flat fills that span the whole window. Hidden in
+                rebase mode, where absolute-price levels no longer map onto a % series. */}
+            {!rebase && zone(0, entryTarget, ZONE_STYLE.buy, 'buy', 'Buy')}
+            {!rebase && zone(entryTarget, overvaluedAt, ZONE_STYLE.fair, 'fair', 'Fair')}
+            {!rebase && zone(overvaluedAt, sellZoneAt, ZONE_STYLE.over, 'over', 'Over')}
+            {!rebase && zone(sellZoneAt, hi * 2, ZONE_STYLE.sell, 'sell', 'Sell')}
             <XAxis dataKey="date" tick={{ fontSize: 10, fill: C.textFaint }}
               tickFormatter={(d) => fmtDate(d).replace(/ \d{4}$/, '')} minTickGap={48}
               stroke={C.hairline} />
-            <YAxis domain={[lo, hi]} tick={{ fontSize: 10, fill: C.textFaint }}
-              width={52} stroke={C.hairline} tickFormatter={(v) => fmtMoney(v, ccy, false)} />
+            <YAxis domain={[lo, hi]} allowDataOverflow scale={effScale}
+              tick={{ fontSize: 10, fill: C.textFaint }} width={rebase ? 46 : 52} stroke={C.hairline}
+              tickFormatter={(v) => (rebase ? `${v > 0 ? '+' : ''}${Math.round(v)}%` : fmtMoney(v, ccy, false))} />
             <Tooltip
               contentStyle={{ background: C.surface2, border: `1px solid ${C.hairline}`,
                 borderRadius: 6, fontSize: 12 }}
               labelStyle={{ color: C.textFaint }}
-              formatter={(v: number) => [fmtMoney(v, ccy), 'Price']}
+              formatter={(v: number) => (rebase
+                ? [`${v >= 0 ? '+' : ''}${v.toFixed(1)}%`, 'Rendite']
+                : [fmtMoney(v, ccy), 'Price'])}
               labelFormatter={(d) => fmtDate(d as string)} />
-            {/* Band-boundary dividers — faded like the zones, crisp only at today (right edge). */}
-            <ReferenceLine y={entryTarget} stroke={`url(#${uid}-lentry)`} strokeDasharray="4 3" />
-            <ReferenceLine y={overvaluedAt} stroke={`url(#${uid}-lover)`} strokeDasharray="4 3" />
-            <ReferenceLine y={sellZoneAt} stroke={`url(#${uid}-lsell)`} strokeDasharray="4 3" />
-            {/* Fair value: distinct dashed reference (value shown in the legend below). */}
-            <ReferenceLine y={fairValue} stroke={`url(#${uid}-lfair)`} strokeDasharray="2 3" />
-            <Line type="monotone" dataKey="close" stroke={C.azure} strokeWidth={2.2} dot={false}
-              isAnimationActive={false} />
-            {/* "Today" divider — separates real history from today's valuation scale; the fade points here. */}
-            {lastDate !== undefined && (
+            {/* Band-boundary dividers + fair value — solid, faded strokes; only when not rebased. */}
+            {!rebase && <ReferenceLine y={entryTarget} stroke={ZONE_STYLE.buy.color} strokeOpacity={ZONE_STYLE.buy.line} strokeDasharray="4 3" />}
+            {!rebase && <ReferenceLine y={overvaluedAt} stroke={ZONE_STYLE.over.color} strokeOpacity={ZONE_STYLE.over.line} strokeDasharray="4 3" />}
+            {!rebase && <ReferenceLine y={sellZoneAt} stroke={ZONE_STYLE.sell.color} strokeOpacity={ZONE_STYLE.sell.line} strokeDasharray="4 3" />}
+            {!rebase && <ReferenceLine y={fairValue} stroke={C.textFaint} strokeOpacity={0.7} strokeDasharray="2 3" />}
+            {/* Zero baseline in rebase mode — the reference every % return is measured from. */}
+            {rebase && <ReferenceLine y={0} stroke={C.textFaint} strokeOpacity={0.6} strokeDasharray="2 3" />}
+            {chartType === 'area' && (
+              <Area type="monotone" dataKey="value" stroke={C.azure} strokeWidth={2}
+                fill={`url(#${uid}-area)`} dot={false} isAnimationActive={false} />
+            )}
+            {chartType === 'line' && (
+              <Line type="monotone" dataKey="value" stroke={C.azure} strokeWidth={2.2} dot={false}
+                isAnimationActive={false} />
+            )}
+            {chartType === 'dots' && (
+              <Line type="monotone" dataKey="value" stroke="none"
+                dot={{ r: 1.6, fill: C.azure, stroke: 'none' }} isAnimationActive={false} />
+            )}
+            {/* "Today" divider + latest marker — only when the window still includes the last day. */}
+            {windowHasLatest && (
               <ReferenceLine x={lastDate} stroke={C.textFaint} strokeOpacity={0.55} strokeDasharray="3 3"
                 label={{ value: 'today', position: 'top', fill: C.textFaint, fontSize: 9 }} />
             )}
-            {/* Latest price — bright marker so "where it is now" reads instantly. */}
-            {lastDate !== undefined && (
-              <ReferenceDot x={lastDate} y={lastPrice} r={3.5} fill={C.azure}
+            {windowHasLatest && (
+              <ReferenceDot x={lastDate} y={lastValue} r={3.5} fill={C.azure}
                 stroke={C.bg} strokeWidth={1.5} ifOverflow="extendDomain" />
             )}
+            {/* Drag to narrow to any window — covers the odd spans (4y, 2 months, a few days). */}
+            <Brush dataKey="date" height={22} travellerWidth={8} gap={4}
+              stroke={C.hairline} fill={C.surface2} startIndex={range.start} endIndex={range.end}
+              tickFormatter={(d) => fmtDate(String(d)).replace(/ \d{4}$/, '')}
+              onChange={(r) => {
+                if (r && typeof r.startIndex === 'number' && typeof r.endIndex === 'number'
+                    && r.endIndex > r.startIndex) {
+                  setRange({ start: r.startIndex, end: r.endIndex });
+                  setPreset('custom');
+                }
+              }} />
           </ComposedChart>
         </ResponsiveContainer>
       </div>
-      <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-[11px] text-text-faint">
-        <LegendDot cls="bg-gain" label={`Buy ≤ ${fmtMoney(entryTarget, ccy)}`} />
-        <LegendDot cls="bg-azure/40" label="Fair range" />
-        <LegendDot cls="bg-warn" label={`Overvalued ≥ ${fmtMoney(overvaluedAt, ccy)}`} />
-        <LegendDot cls="bg-loss" label={`Sell zone ≥ ${fmtMoney(sellZoneAt, ccy)}`} />
-        <span className="ml-auto">
-          fair value {fmtMoney(fairValue, ccy)} · MoS {fmtPct(band.marginOfSafetyPct, 0)}
-        </span>
-      </div>
+      {rebase ? (
+        <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-[11px] text-text-faint">
+          <span>% return since {fmtDate(full[Math.min(range.start, lastIdx)].date)} · fair-value zones hidden in rebase</span>
+          <span className="ml-auto">fair value {fmtMoney(fairValue, ccy)} · MoS {fmtPct(band.marginOfSafetyPct, 0)}</span>
+        </div>
+      ) : (
+        <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-[11px] text-text-faint">
+          <LegendDot cls="bg-gain" label={`Buy ≤ ${fmtMoney(entryTarget, ccy)}`} />
+          <LegendDot cls="bg-azure/40" label="Fair range" />
+          <LegendDot cls="bg-warn" label={`Overvalued ≥ ${fmtMoney(overvaluedAt, ccy)}`} />
+          <LegendDot cls="bg-loss" label={`Sell zone ≥ ${fmtMoney(sellZoneAt, ccy)}`} />
+          <span className="ml-auto">
+            fair value {fmtMoney(fairValue, ccy)} · MoS {fmtPct(band.marginOfSafetyPct, 0)}
+          </span>
+        </div>
+      )}
       <p className="mt-1.5 text-[10px] leading-snug text-text-faint/90 italic">
-        Zones are a snapshot of today's fair value ({fmtDate(todayISO)}). The price line is real history —
-        earlier prices were valued against different fundamentals, so the zones fade into the past.
+        Zones are a snapshot of today's fair value ({fmtDate(todayISO)}) — held flat across the window.
+        The price line is real history; earlier prices were valued against different fundamentals.
       </p>
     </div>
   );

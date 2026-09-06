@@ -6,7 +6,9 @@ import {
 } from 'recharts';
 import clsx from 'clsx';
 import dayjs from 'dayjs';
-import { api, type ValuationBand, type ValuationBandKey, type ValuationSnapshot } from '../lib/api';
+import {
+  api, type ValuationBand, type ValuationBandKey, type ValuationSnapshot, type ValuationDriverDelta,
+} from '../lib/api';
 import { mergePriceWithSnapshots, snapshotAt, pctLabel } from '../lib/valuationHistory';
 import { fmtMoney, fmtDate, fmtPct } from '../lib/format';
 
@@ -188,12 +190,6 @@ export function PriceBandChart({
   // presets compute them from a trailing cutoff.
   const [range, setRange] = useState<{ start: number; end: number }>({ start: 0, end: 0 });
 
-  // Whenever the underlying series changes size (data lands, symbol switches), reset to Max.
-  useEffect(() => {
-    setRange({ start: 0, end: Math.max(0, full.length - 1) });
-    setPreset('max');
-  }, [full.length]);
-
   // Scrub cursor — the date the snapshot card and vertical marker follow. `null` means "no
   // explicit selection", in which case it defaults to today (see `activeDate` below) whenever
   // the visible window still includes it. `pinned` freezes the cursor so it survives the mouse
@@ -201,9 +197,36 @@ export function PriceBandChart({
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [pinned, setPinned] = useState(false);
 
+  // Whenever the underlying series changes size (data lands, symbol switches), reset to Max —
+  // and drop any pinned/selected date, so a symbol swap without remount can't carry a stale
+  // selection (e.g. a pinned transition detail) into a different security's history.
+  useEffect(() => {
+    setRange({ start: 0, end: Math.max(0, full.length - 1) });
+    setPreset('max');
+    setSelectedDate(null);
+    setPinned(false);
+  }, [full.length]);
+
   // date -> index into `full`, so keyboard nav and the snapshot card's "price on that date"
   // lookup are O(1) instead of re-scanning the whole series on every scrub/arrow-key.
   const dateIndex = useMemo(() => new Map(full.map((d, i) => [d.date, i])), [full]);
+
+  // Valuation-transition markers — one per snapshot that carries a before/after `drivers`
+  // chain (every step after the first; the first snapshot has nothing to compare against).
+  // Snapped to the first actual trading day on/after the snapshot's effective date (`asOf`
+  // isn't a price-calendar date — it's a filing/period-end date) so the marker always lands
+  // on a real point of the plotted series (a category axis needs an exact match) and lines up
+  // with where the stepped FV spine actually jumps to this snapshot's value.
+  const transitions = useMemo(
+    () => snapshots
+      .filter((s) => s.drivers != null)
+      .map((s) => {
+        const onto = full.find((f) => f.date >= s.asOf);
+        return onto ? { date: onto.date, snap: s } : null;
+      })
+      .filter((t): t is { date: string; snap: ValuationSnapshot } => t != null),
+    [snapshots, full],
+  );
 
   const applyPreset = (key: string, months: number | null) => {
     setPreset(key);
@@ -335,6 +358,11 @@ export function PriceBandChart({
   const activeIdx = activeDate ? dateIndex.get(activeDate) : undefined;
   const priceAtActive = activeIdx != null ? full[activeIdx].close : null;
 
+  // The transition detail panel (Step 2) compares against the *previous* snapshot's fiscal
+  // year — the report the active snapshot's before-values were reported under.
+  const activeSnapIdx = activeSnap ? snapshots.indexOf(activeSnap) : -1;
+  const prevSnap = activeSnapIdx > 0 ? snapshots[activeSnapIdx - 1] : null;
+
   // Current-day emphasis (Step 4) — the LAST snapshot, drawn at full opacity against the
   // quieter historical steps, never as a flat zone spanning history.
   const lastSnap = snapshots.length ? snapshots[snapshots.length - 1] : null;
@@ -342,6 +370,13 @@ export function PriceBandChart({
 
   const onChartMouseMove = (state: { activeLabel?: string }) => {
     if (!pinned && state?.activeLabel) setSelectedDate(state.activeLabel);
+  };
+
+  // Clicking a transition marker pins the detail view on that snapshot (Step 1) — a click is
+  // a deliberate pick, never just a hover, so it stays put until explicitly closed.
+  const onSelectTransition = (date: string) => {
+    setSelectedDate(date);
+    setPinned(true);
   };
 
   // Keyboard nav — must work without hover (a11y). ArrowLeft/Right step through `full` from
@@ -363,6 +398,7 @@ export function PriceBandChart({
   };
 
   return (
+    <div>
     <div className="flex flex-col lg:flex-row gap-4 items-start">
       <div className="flex-1 min-w-0">
         {/* Toolbar — window presets, mark type, and scale / rebase toggles. */}
@@ -448,6 +484,22 @@ export function PriceBandChart({
                   {/* Stepped Fair Value spine — the reconstructed FV as it stood at each date. */}
                   <Line type="stepAfter" dataKey="fairValue" stroke={C.textFaint} strokeWidth={1.6}
                     strokeDasharray="2 3" dot={false} isAnimationActive={false} />
+                  {/* Valuation-transition markers — one per snapshot with a before/after `drivers`
+                      chain. Clicking pins the detail panel (Step 2) on that transition. */}
+                  {transitions.map(({ date, snap }) => (
+                    <ReferenceDot
+                      key={snap.asOf}
+                      x={date}
+                      y={snap.fairValue * k}
+                      r={pinned && selectedDate === date ? 5 : 3.5}
+                      fill={pinned && selectedDate === date ? C.azure : C.surface2}
+                      stroke={C.azure}
+                      strokeWidth={1.5}
+                      ifOverflow="hidden"
+                      style={{ cursor: 'pointer' }}
+                      onClick={() => onSelectTransition(date)}
+                    />
+                  ))}
                 </>
               )}
               <XAxis dataKey="date" tick={{ fontSize: 10, fill: C.textFaint }}
@@ -559,6 +611,21 @@ export function PriceBandChart({
         pinned={pinned}
       />
     </div>
+    {/* Transition detail panel (Step 2) — only when a transition marker (or the keyboard/
+        Enter pin on a transition date) is pinned. Presents strictly the observable
+        before/after chain carried on the snapshot's `drivers`: Fundamentals -> Model
+        outputs -> Fair Value -> Zones. Never a causal "input X caused Y% of FV" claim —
+        the data doesn't support one. */}
+    {pinned && activeSnap?.drivers && (
+      <TransitionPanel
+        snap={activeSnap}
+        prevYear={prevSnap?.fiscalYear ?? null}
+        k={k}
+        ccy={ccy}
+        onClose={() => { setPinned(false); setSelectedDate(null); }}
+      />
+    )}
+    </div>
   );
 }
 
@@ -648,6 +715,129 @@ function SnapshotCard({
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/** One labelled group in the {@link TransitionPanel} (Fundamentals / Model outputs / Result). */
+function DriverGroup({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div>
+      <div className="text-text-faint text-[10px] uppercase tracking-wide mb-1.5">{title}</div>
+      <div className="space-y-1">{children}</div>
+    </div>
+  );
+}
+
+/** A `before → after` fundamentals row: the raw reconstructed input plus the ↑/↓ `dir` and
+ *  `pctLabel(deltaPct)` the snapshot carries — never a re-derived number. */
+function DriverRow({
+  label, d, fmt,
+}: { label: string; d: ValuationDriverDelta; fmt: (v: number) => string }) {
+  const arrow = d.dir === 'up' ? '↑' : d.dir === 'down' ? '↓' : null;
+  const arrowCls = d.dir === 'up' ? 'text-gain' : d.dir === 'down' ? 'text-loss' : 'text-text-faint';
+  return (
+    <div className="flex items-center justify-between gap-2">
+      <span className="text-text-muted">{label}</span>
+      <span className="text-text font-medium text-right whitespace-nowrap">
+        {d.before != null ? fmt(d.before) : '—'} → {d.after != null ? fmt(d.after) : '—'}
+        {arrow && <span className={clsx('ml-1.5', arrowCls)}>{arrow}</span>}
+        <span className="text-text-faint ml-1">({pctLabel(d.deltaPct)})</span>
+      </span>
+    </div>
+  );
+}
+
+/** A `before → after` model-output row. Models that didn't produce a usable estimate on one
+ *  side (`valid === false` — e.g. negative EPS breaks the Graham Number) show a muted "n/a"
+ *  rather than a bogus number; models that fed the median Fair Value get a quiet "in median" tag. */
+function ModelRow({
+  label, d, k, ccy,
+}: { label: string; d: ValuationDriverDelta; k: number; ccy: string }) {
+  return (
+    <div className="flex items-center justify-between gap-2">
+      <span className="text-text-muted inline-flex items-center gap-1.5">
+        {label}
+        {d.contributed && (
+          <span className="chip !py-0 !px-1 !text-[9px] text-azure/80">in median</span>
+        )}
+      </span>
+      {d.valid === false ? (
+        <span className="text-text-faint">n/a</span>
+      ) : (
+        <span className="text-text font-medium whitespace-nowrap">
+          {d.before != null ? fmtMoney(d.before * k, ccy) : '—'} → {d.after != null ? fmtMoney(d.after * k, ccy) : '—'}
+        </span>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The pinned transition-detail view (Task 11) — opened by clicking a transition marker on the
+ * FV spine (or Enter/Space-pinning the keyboard cursor on a transition date). Walks the
+ * observable Fundamentals -> Model outputs -> Fair Value -> Zones chain the snapshot's
+ * `drivers` carry, strictly as recorded — nothing here claims one input "caused" a given share
+ * of the Fair Value change, only that both moved and by how much.
+ */
+function TransitionPanel({
+  snap, prevYear, k, ccy, onClose,
+}: {
+  snap: ValuationSnapshot;
+  prevYear: number | null;
+  k: number;
+  ccy: string;
+  onClose: () => void;
+}) {
+  const d = snap.drivers;
+  if (!d) return null;
+  const money = (v: number) => fmtMoney(v * k, ccy);
+
+  return (
+    <div className="mt-3 rounded border border-azure/50 bg-surface-2 p-3 text-[11px]">
+      <div className="flex items-center justify-between gap-2 mb-3">
+        <span className="text-text font-medium">
+          Fair Value {pctLabel(d.fairValue.deltaPct)}
+          <span className="text-text-faint font-normal">
+            {' · FY'}{prevYear ?? '—'}{' → FY'}{snap.fiscalYear}{' report'}
+          </span>
+        </span>
+        <button
+          type="button"
+          onClick={onClose}
+          title="Close transition detail"
+          aria-label="Close transition detail"
+          className="text-text-faint hover:text-text cursor-pointer leading-none text-[14px] px-1"
+        >
+          ×
+        </button>
+      </div>
+      <div className="grid gap-x-6 gap-y-3 sm:grid-cols-3">
+        <DriverGroup title="Fundamentals">
+          <DriverRow label="EPS (reconstructed)" d={d.inputs.eps} fmt={money} />
+          <DriverRow label="FCF/share" d={d.inputs.fcfPerShare} fmt={money} />
+          <DriverRow label="Book value" d={d.inputs.bvps} fmt={money} />
+          <DriverRow label="Growth" d={d.inputs.growth} fmt={(v) => fmtPct(v)} />
+        </DriverGroup>
+        <DriverGroup title="Model outputs">
+          <ModelRow label="Graham Number" d={d.models.grahamNumber} k={k} ccy={ccy} />
+          <ModelRow label="Graham Growth" d={d.models.grahamGrowth} k={k} ccy={ccy} />
+          <ModelRow label="Earnings DCF" d={d.models.dcf} k={k} ccy={ccy} />
+          <ModelRow label="FCF DCF" d={d.models.fcf} k={k} ccy={ccy} />
+        </DriverGroup>
+        <DriverGroup title="Result">
+          <Row
+            label="Fair Value"
+            value={`${d.fairValue.before != null ? money(d.fairValue.before) : '—'} → ${d.fairValue.after != null ? money(d.fairValue.after) : '—'}`}
+          />
+          <Row label="Δ Fair Value" value={pctLabel(d.fairValue.deltaPct)} muted />
+          <div className="pt-1.5 mt-1 border-t border-hairline space-y-1">
+            <Row label="Buy ≤" value={`${money(d.zones.entryTarget.before)} → ${money(d.zones.entryTarget.after)}`} muted />
+            <Row label="Overvalued ≥" value={`${money(d.zones.overvaluedAt.before)} → ${money(d.zones.overvaluedAt.after)}`} muted />
+            <Row label="Sell ≥" value={`${money(d.zones.sellZoneAt.before)} → ${money(d.zones.sellZoneAt.after)}`} muted />
+          </div>
+        </DriverGroup>
+      </div>
     </div>
   );
 }

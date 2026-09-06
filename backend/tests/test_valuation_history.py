@@ -159,3 +159,20 @@ def test_model_valid_vs_contributed_distinct_when_negative_eps():
     # grahamGrowth needs eps>0 -> invalid in 2021, so not contributed either.
     assert dr["models"]["grahamGrowth"]["valid"] is False
     assert dr["models"]["grahamGrowth"]["contributed"] is False
+
+
+def test_valuation_history_public_shape():
+    history, cashflow, balance = _fixture()
+    data = {"history": history, "cashflow": cashflow, "balance": balance, "financialCurrency": "USD"}
+    out = vh.valuation_history("AAPL", data=data, settings=None)
+    assert out["symbol"] == "AAPL"
+    assert out["currency"] == "USD"
+    assert out["coverageFrom"] == out["snapshots"][0]["asOf"]
+    assert out["snapshots"][0]["drivers"] is None
+    assert isinstance(out["note"], str) and out["note"]
+
+
+def test_valuation_history_empty_when_no_statements():
+    out = vh.valuation_history("XYZ", data={"history": [], "cashflow": {}, "balance": {}, "financialCurrency": None}, settings=None)
+    assert out["snapshots"] == []
+    assert out["coverageFrom"] is None

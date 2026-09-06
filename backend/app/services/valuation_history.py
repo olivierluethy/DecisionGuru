@@ -8,6 +8,7 @@ from __future__ import annotations
 from datetime import date, timedelta
 
 from . import valuation as v
+from . import fundamentals as fund
 from ..providers.base import normalize_minor_currency
 
 FILING_LAG_DAYS = 90
@@ -194,3 +195,24 @@ def attach_drivers(snaps: list[dict]) -> None:
                 "sellZoneAt": {"before": prev["sellZoneAt"], "after": cur["sellZoneAt"]},
             },
         }
+
+
+_NOTE = (
+    "Valuation zones are reconstructed from the annual statements known at each date "
+    "(effective date = period-end + a 90-day filing-lag assumption; the provider exposes "
+    "no exact filing date). Annual granularity, ~4 years of coverage."
+)
+
+
+def valuation_history(symbol: str, data: dict | None = None, settings: dict | None = None) -> dict:
+    cfg = v._val_cfg(settings)
+    data = data if data is not None else (fund.get_fundamentals(symbol) or {})
+    snaps = build_snapshots(data, cfg)
+    attach_drivers(snaps)
+    return {
+        "symbol": symbol,
+        "currency": data.get("financialCurrency"),
+        "coverageFrom": snaps[0]["asOf"] if snaps else None,
+        "snapshots": snaps,
+        "note": _NOTE,
+    }

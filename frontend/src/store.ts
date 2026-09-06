@@ -70,11 +70,34 @@ interface AppState {
   setNavOpen: (v: boolean) => void;
 }
 
+// Recently-researched symbols persist across reloads in localStorage (per browser), so the
+// "Recently viewed" list survives a refresh. Degrades to session-only if storage is blocked.
+const RECENTS_KEY = 'dg.researchRecents';
+
+function loadResearchRecents(): string[] {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(RECENTS_KEY) ?? 'null');
+    return Array.isArray(parsed)
+      ? parsed.filter((x): x is string => typeof x === 'string').slice(0, 6)
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveResearchRecents(recents: string[]): void {
+  try {
+    localStorage.setItem(RECENTS_KEY, JSON.stringify(recents));
+  } catch {
+    /* private mode / storage disabled — recents simply stay session-only */
+  }
+}
+
 export const useApp = create<AppState>((set) => ({
   view: 'dashboard',
   selectedInstrumentId: null,
   researchSymbol: null,
-  researchRecents: [],
+  researchRecents: loadResearchRecents(),
   modal: null,
   preTax: false,
   benchmark: 'VWRL.SW',
@@ -87,9 +110,11 @@ export const useApp = create<AppState>((set) => ({
   setResearchSymbol: (researchSymbol) => set({ researchSymbol }),
   researchSymbolView: (researchSymbol) => set({ researchSymbol, view: 'research' }),
   pushResearchRecent: (s) =>
-    set((state) => ({
-      researchRecents: [s, ...state.researchRecents.filter((x) => x !== s)].slice(0, 6),
-    })),
+    set((state) => {
+      const researchRecents = [s, ...state.researchRecents.filter((x) => x !== s)].slice(0, 6);
+      saveResearchRecents(researchRecents);
+      return { researchRecents };
+    }),
   openResearchSearch: () => set({ view: 'research', researchSymbol: null }),
   openModal: (modal) => set({ modal }),
   closeModal: () => set({ modal: null }),

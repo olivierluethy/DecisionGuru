@@ -72,3 +72,45 @@ def test_year_without_shares_is_not_reconstructable():
     # must NOT use for a historical year -> not reconstructable from per-share inputs.
     out = vh._year_inputs(2022, history, cashflow, balance, "USD", CFG)
     assert out is None
+
+
+import copy
+
+
+def test_effective_date_uses_lag_when_no_filing_date():
+    d, src = vh._effective_date("2020-12-31", None, 2020)
+    assert d == "2021-03-31"   # +90 days
+    assert src == "assumed"
+
+
+def test_effective_date_prefers_filing_date():
+    d, src = vh._effective_date("2020-12-31", "2021-02-10", 2020)
+    assert d == "2021-02-10"
+    assert src == "filing"
+
+
+def test_build_snapshots_sorted_and_shaped():
+    history, cashflow, balance = _fixture()
+    data = {"history": history, "cashflow": cashflow, "balance": balance, "financialCurrency": "USD"}
+    snaps = vh.build_snapshots(data, CFG)
+    assert [s["fiscalYear"] for s in snaps] == sorted(s["fiscalYear"] for s in snaps)
+    s = snaps[-1]
+    assert s["fairValue"] > 0
+    assert s["entryTarget"] == round(s["fairValue"] * (1 - CFG["mos"]), 2)
+    assert s["sellZoneAt"] == round(s["fairValue"] * (1 + CFG["sig"]), 2)
+    assert s["inputs"]["eps"] == 1.5
+    assert s["effectiveDateSource"] == "assumed"
+
+
+def test_stability_mutating_latest_year_leaves_priors_unchanged():
+    history, cashflow, balance = _fixture()
+    data = {"history": history, "cashflow": cashflow, "balance": balance, "financialCurrency": "USD"}
+    before = vh.build_snapshots(copy.deepcopy(data), CFG)
+    # Mutate ONLY the latest (2022) fundamentals — a proxy for "today's data changed".
+    data["history"][2]["netIncome"] = 999.0
+    data["cashflow"]["years"][2]["freeCashFlow"] = 999.0
+    data["balance"]["years"][2]["stockholdersEquity"] = 9990.0
+    after = vh.build_snapshots(data, CFG)
+    prior_before = [s for s in before if s["fiscalYear"] < 2022]
+    prior_after = [s for s in after if s["fiscalYear"] < 2022]
+    assert prior_before == prior_after   # no look-ahead: history is immutable to future data

@@ -5,8 +5,12 @@ at that year (no look-ahead). It reuses the live valuation engine's model/zone h
 there is a single source of the financial formulas."""
 from __future__ import annotations
 
+from datetime import date, timedelta
+
 from . import valuation as v
 from ..providers.base import normalize_minor_currency
+
+FILING_LAG_DAYS = 90
 
 
 def _norm(value: float | None, ccy: str | None) -> float | None:
@@ -78,3 +82,61 @@ def _year_inputs(year: int, history: list[dict], cashflow: dict, balance: dict,
         "models": models,
         "fairValue": fair_value,
     }
+
+
+def _effective_date(period_end: str | None, filing_date: str | None, year: int) -> tuple[str, str]:
+    """Real filing date wins; else periodEnd + FILING_LAG_DAYS; else fiscal year-end + lag.
+    yfinance has no filing date today, so in practice source is always "assumed"."""
+    if filing_date:
+        return filing_date, "filing"
+    if period_end:
+        try:
+            d = date.fromisoformat(period_end) + timedelta(days=FILING_LAG_DAYS)
+            return d.isoformat(), "assumed"
+        except ValueError:
+            pass
+    # Last resort: fiscal year-end + lag.
+    return (date(year, 12, 31) + timedelta(days=FILING_LAG_DAYS)).isoformat(), "assumed"
+
+
+def _years_present(data: dict) -> list[int]:
+    ys: set[int] = set()
+    for r in (data.get("history") or []):
+        if r.get("year") is not None:
+            ys.add(r["year"])
+    return sorted(ys)
+
+
+def build_snapshots(data: dict, cfg: dict) -> list[dict]:
+    """Assemble the reconstructed annual snapshot series: one snapshot per fiscal year
+    with statement rows only up to that year (no look-ahead), sorted ascending by
+    (asOf, fiscalYear)."""
+    history = data.get("history") or []
+    cashflow = data.get("cashflow") or {}
+    balance = data.get("balance") or {}
+    fin_ccy = data.get("financialCurrency")
+    snaps: list[dict] = []
+    for year in _years_present(data):
+        inp = _year_inputs(year, history, cashflow, balance, fin_ccy, cfg)
+        if inp is None:
+            continue
+        edges = v.zone_edges(inp["fairValue"], cfg)
+        filing_date = (_by_year(balance.get("years") or []).get(year) or {}).get("filingDate")  # None today
+        as_of, src = _effective_date(inp["periodEnd"], filing_date, year)
+        snaps.append({
+            "asOf": as_of,
+            "effectiveDateSource": src,
+            "fiscalPeriodEnd": inp["periodEnd"],
+            "filingDate": filing_date,
+            "fiscalYear": year,
+            "fairValue": inp["fairValue"],
+            "entryTarget": edges["entryTarget"],
+            "overvaluedAt": edges["overvaluedAt"],
+            "sellZoneAt": edges["sellZoneAt"],
+            "inputs": {"eps": inp["eps"], "bvps": inp["bvps"],
+                       "fcfPerShare": inp["fcfPerShare"], "growth": inp["growth"]},
+            "models": inp["models"],
+            "drivers": None,
+        })
+    snaps.sort(key=lambda s: (s["asOf"], s["fiscalYear"]))
+    return snaps

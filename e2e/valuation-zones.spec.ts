@@ -232,6 +232,71 @@ test.describe('Valuation zones — historical fair-value chart (AAPL, real cache
     // The price line itself still renders (this isn't the "no price data yet" placeholder).
     await expect(chart.locator(`svg path.recharts-line-curve[stroke="${ZONE_FILL.fair}"]`)).toHaveCount(1);
 
+    // The top-right "Fair value … · MoS …" badge and the right-edge Buy/Over/Sell zone-edge
+    // labels must also be absent — not just the zone fills/spine/footer.
+    await expect(chart.locator('div.absolute.top-0.right-2')).toHaveCount(0);
+    await expect(chart.getByText('Buy', { exact: true })).toHaveCount(0);
+    await expect(chart.getByText('Over', { exact: true })).toHaveCount(0);
+    await expect(chart.getByText('Sell', { exact: true })).toHaveCount(0);
+
     await shootChart(page, chart, 'valuation-zones-no-data.png');
+  });
+
+  test('exactly one reconstructable snapshot: still renders uniformly unavailable (not half-populated)', async ({ page }) => {
+    // The one-snapshot case is the sharpest edge case: `hasHistory` (snapshots.length >= 2) is
+    // false, but `lastSnap` (the LAST snapshot) is non-null — so anything gated only on
+    // `lastSnap` (the top badge, the right-edge Buy/Over/Sell labels, the snapshot card) would
+    // still render a populated valuation while the zone fills/spine/footer stay correctly
+    // hidden, contradicting the "Historical valuation unavailable" caption right next to them.
+    // Stub a single real-shaped snapshot (AAPL's FY2022 one, no `drivers` — nothing to compare
+    // a lone snapshot against) with everything else on the real cache.
+    await page.route('**/research/valuation/history/AAPL', (route) =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          symbol: 'AAPL',
+          currency: 'USD',
+          coverageFrom: '2023-03-31',
+          snapshots: [{
+            asOf: '2023-03-31',
+            effectiveDateSource: 'assumed',
+            fiscalPeriodEnd: null,
+            filingDate: null,
+            fiscalYear: 2022,
+            fairValue: 71.05,
+            entryTarget: 49.73,
+            overvaluedAt: 85.26,
+            sellZoneAt: 99.47,
+            inputs: { eps: 6.26, bvps: 3.18, fcfPerShare: 6.99, growth: 0 },
+            models: { grahamNumber: 21.16, grahamGrowth: 53.21, dcf: 88.88, fcf: 99.25 },
+            drivers: null,
+          }],
+          note: 'stubbed: exactly one snapshot',
+        }),
+      }));
+
+    const chart = await openValueAnalysis(page, 'AAPL');
+
+    // Zone fills, FV spine and transition markers stay absent (same as the zero-snapshot case).
+    const areas = zoneAreas(chart);
+    for (const key of Object.keys(areas) as (keyof typeof areas)[]) {
+      await expect(areas[key], `${key} zone area (should be absent)`).toHaveCount(0);
+    }
+    await expect(chart.locator(`svg path.recharts-line-curve[stroke="${FV_SPINE_STROKE}"]`)).toHaveCount(0);
+    await expect(chart.locator(`svg circle[fill="${TRANSITION_DOT_FILL}"]`)).toHaveCount(0);
+
+    // The bug this test guards: the top badge and right-edge labels must NOT render just
+    // because `lastSnap` (the lone snapshot) is non-null.
+    await expect(chart.locator('div.absolute.top-0.right-2')).toHaveCount(0);
+    await expect(chart.getByText('Buy', { exact: true })).toHaveCount(0);
+    await expect(chart.getByText('Over', { exact: true })).toHaveCount(0);
+    await expect(chart.getByText('Sell', { exact: true })).toHaveCount(0);
+
+    // The snapshot card must show the same "unavailable" message, never a populated valuation.
+    await expect(snapshotCard(page)).toContainText('Historical valuation unavailable');
+    await expect(snapshotCard(page)).not.toContainText('vs Fair Value');
+
+    // The honest caption is present, no zone fills anywhere on the page.
+    await expect(page.getByText('Historical valuation unavailable', { exact: false }).first()).toBeVisible();
   });
 });

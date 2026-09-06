@@ -439,7 +439,7 @@ export function PriceBandChart({
           aria-label="Kursverlauf mit Bewertungszonen. Pfeiltasten bewegen den Cursor, Eingabetaste fixiert ihn, Escape hebt die Auswahl auf."
           onKeyDown={onChartKeyDown}
         >
-          {windowHasLatest && lastSnap && (
+          {windowHasLatest && hasHistory && lastSnap && (
             <div className="chip absolute top-0 right-2 z-10 pointer-events-none !bg-surface-2/90">
               Fair value {fmtMoney(lastSnap.fairValue * k, ccy)} · MoS {fmtPct(lastSnapMoS, 0)}
             </div>
@@ -549,7 +549,7 @@ export function PriceBandChart({
                   today's thresholds stay legible against the deliberately quiet historical steps
                   (ZONE_STYLE fill opacities). Never a flat zone spanning history — just the three
                   edges as they stand today, pinned to the right-hand (today) edge of the plot. */}
-              {windowHasLatest && !rebase && lastSnap && (
+              {windowHasLatest && !rebase && hasHistory && lastSnap && (
                 <>
                   <ReferenceDot x={lastDate} y={lastSnap.entryTarget * k} r={2.5}
                     fill={ZONE_STYLE.buy.color} stroke="none" ifOverflow="hidden"
@@ -618,6 +618,7 @@ export function PriceBandChart({
         ccy={ccy}
         coverageFrom={coverageFrom}
         pinned={pinned}
+        hasHistory={hasHistory}
       />
     </div>
     {/* Transition detail panel (Step 2) — only when a transition marker (or the keyboard/
@@ -666,7 +667,7 @@ function Row({ label, value, muted }: { label: string; value: string; muted?: bo
  * isn't enough fundamental history at all) it honestly says so instead of guessing.
  */
 function SnapshotCard({
-  activeDate, activeSnap, price, k, ccy, coverageFrom, pinned,
+  activeDate, activeSnap, price, k, ccy, coverageFrom, pinned, hasHistory,
 }: {
   activeDate: string | null;
   activeSnap: ValuationSnapshot | null;
@@ -675,6 +676,12 @@ function SnapshotCard({
   ccy: string;
   coverageFrom: string | null;
   pinned: boolean;
+  /** Fewer than two reconstructable snapshots (see `hasHistory` at the call site): even when
+   *  `activeSnap` itself is non-null (e.g. exactly one snapshot exists and covers the active
+   *  date), there isn't enough fundamental history to call this a reconstructed *path* — show
+   *  the same "unavailable" message the chart's zones/spine/footer are already gated on,
+   *  rather than a populated valuation that contradicts them. */
+  hasHistory: boolean;
 }) {
   if (!activeDate) {
     return (
@@ -704,9 +711,9 @@ function SnapshotCard({
         <span className="text-text-muted font-medium">{fmtDate(activeDate)}</span>
         {pinned && <span className="chip !py-0 !px-1.5 text-azure">pinned</span>}
       </div>
-      {activeSnap == null ? (
+      {!hasHistory || activeSnap == null ? (
         <p className="text-text-faint">
-          {coverageFrom
+          {hasHistory && coverageFrom
             ? `No reconstructed valuation before ${fmtDate(coverageFrom)}.`
             : 'Historical valuation unavailable — insufficient fundamental history for this security.'}
         </p>

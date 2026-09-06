@@ -7,6 +7,7 @@ import {
 import clsx from 'clsx';
 import dayjs from 'dayjs';
 import { api, type ValuationBand, type ValuationBandKey } from '../lib/api';
+import { mergePriceWithSnapshots } from '../lib/valuationHistory';
 import { fmtMoney, fmtDate, fmtPct } from '../lib/format';
 
 /** Recharts stroke/fill props are SVG *presentation attributes*, where `var(--token)` does
@@ -126,6 +127,18 @@ export function PriceBandChart({
     retry: 1,
   });
 
+  // Reconstructed valuation history — the stepped snapshot series this chart's zones are
+  // built from. Fewer than two snapshots means there isn't enough fundamental history to
+  // reconstruct a path, so the honest answer is "unavailable" rather than a flat guess.
+  const { data: valHistory } = useQuery({
+    queryKey: ['valuationHistory', symbol],
+    queryFn: () => api.valuationHistory(symbol),
+    staleTime: 60 * 60_000,
+    retry: 1,
+  });
+  const snapshots = valHistory?.snapshots ?? [];
+  const hasHistory = snapshots.length >= 2;
+
   // Unique, colon-free prefix so this instance's gradient ids never clash with another chart's.
   const uid = useId().replace(/:/g, '');
   const todayISO = new Date().toISOString().slice(0, 10);
@@ -146,6 +159,14 @@ export function PriceBandChart({
     () => (history ?? []).map((h) => ({ date: h.date, close: h.close * k })).filter((d) => d.close > 0),
     [history, k],
   );
+
+  // Per-date reconstructed valuation, aligned to every price point — the stepped source
+  // the zone bands and FV spine below are drawn from (see lib/valuationHistory.ts).
+  const merged = useMemo(
+    () => mergePriceWithSnapshots(full, snapshots, k),
+    [full, snapshots, k],
+  );
+  const coverageFrom = valHistory?.coverageFrom ?? null;
 
   // --- View controls ------------------------------------------------------------------
   const [chartType, setChartType] = useState<ChartType>('line');
@@ -181,18 +202,40 @@ export function PriceBandChart({
   const effScale: Scale = rebase ? 'linear' : scale;
   const base = full.length ? full[Math.min(range.start, full.length - 1)].close : 0;
   const plot = useMemo(
-    () => full.map((d) => ({
-      date: d.date,
-      value: rebase && base ? (d.close / base - 1) * 100 : d.close,
-    })),
-    [full, rebase, base],
+    () => full.map((d, i) => {
+      const m = merged[i];
+      return {
+        date: d.date,
+        value: rebase && base ? (d.close / base - 1) * 100 : d.close,
+        fairValue: m?.fairValue ?? null,
+        entryTarget: m?.entryTarget ?? null,
+        overvaluedAt: m?.overvaluedAt ?? null,
+        sellZoneAt: m?.sellZoneAt ?? null,
+        // Stacked-area *thicknesses* (the gap between adjacent thresholds), not absolute
+        // edges — Recharts stacks by summing dataKeys, so each layer must carry only the
+        // slice it contributes, cumulative bottom-up: buy -> fair -> over -> sell.
+        buyBand: m?.entryTarget ?? null,
+        fairBand: m && m.entryTarget != null && m.overvaluedAt != null
+          ? m.overvaluedAt - m.entryTarget : null,
+        overBand: m && m.overvaluedAt != null && m.sellZoneAt != null
+          ? m.sellZoneAt - m.overvaluedAt : null,
+        // Sell zone has no natural upper edge — extend it well above the sell threshold so
+        // the fill reaches the top of whatever Y-domain the price data settles on; Recharts
+        // clips the stacked area to the plotting rect, so overshoot is harmless.
+        sellBand: m?.sellZoneAt != null ? m.sellZoneAt * 0.6 : null,
+      };
+    }),
+    [full, rebase, base, merged],
   );
 
   // Y-domain autoscales to the *visible* slice (the user's choice), so tight windows show
-  // real detail. In price mode it is then stretched to the zone thresholds that *bracket*
-  // the visible price — the nearest one below and above — so the current zone stays fully
-  // marked with its neighbours as context (instead of the band vanishing off-screen). Zones
-  // clip to this domain (ifOverflow="hidden").
+  // real detail. In price mode it is then stretched to bracket the visible price against the
+  // *reconstructed* zone thresholds for that same window — the nearest edge below and above
+  // the price's min/max — so the current zone stays fully marked with its neighbours as
+  // context. Because the thresholds step over time, the bracket pool is every distinct edge
+  // value the merged series took across the visible window (not one constant per boundary),
+  // via the min/max each threshold field reached there. With no reconstructed history the
+  // pool is empty and the domain simply tracks the price — never the flat `band` snapshot.
   const [lo, hi] = useMemo<[number, number]>(() => {
     const s = Math.min(range.start, plot.length - 1);
     const e = Math.min(range.end, plot.length - 1);
@@ -204,15 +247,27 @@ export function PriceBandChart({
       const pad = Math.max((mx - mn) * 0.08, 1);
       return [mn - pad, mx + pad];
     }
-    const thresholds = [entryTarget, overvaluedAt, sellZoneAt]
-      .filter((t) => Number.isFinite(t) && t > 0)
-      .sort((a, b) => a - b);
-    const below = thresholds.filter((t) => t <= mn).pop(); // nearest threshold ≤ visible min
-    const above = thresholds.find((t) => t >= mx);         // nearest threshold ≥ visible max
+    let thresholds: number[] = [];
+    if (hasHistory) {
+      const ms = Math.min(range.start, merged.length - 1);
+      const me = Math.min(range.end, merged.length - 1);
+      const visible = merged.slice(ms, me + 1);
+      const edgesOf = (key: 'entryTarget' | 'overvaluedAt' | 'sellZoneAt') => visible
+        .map((m) => m[key])
+        .filter((v): v is number => v != null && Number.isFinite(v) && v > 0);
+      thresholds = (['entryTarget', 'overvaluedAt', 'sellZoneAt'] as const)
+        .flatMap((key) => {
+          const es = edgesOf(key);
+          return es.length ? [Math.min(...es), Math.max(...es)] : [];
+        })
+        .sort((a, b) => a - b);
+    }
+    const below = thresholds.filter((t) => t <= mn).pop(); // nearest edge ≤ visible min
+    const above = thresholds.find((t) => t >= mx);         // nearest edge ≥ visible max
     const dLo = below != null ? Math.min(mn, below) : mn;
     const dHi = above != null ? Math.max(mx, above) : mx;
     return [dLo * 0.98, dHi * 1.02];
-  }, [plot, range, rebase, entryTarget, overvaluedAt, sellZoneAt]);
+  }, [plot, range, rebase, hasHistory, merged]);
 
   // No price path to draw yet — show a labelled placeholder instead of an empty chart.
   // (The backfill runs in the background; the line lands on a later poll.)
@@ -245,23 +300,10 @@ export function PriceBandChart({
   const windowHasLatest = range.end >= lastIdx;
   const lastDate = full[lastIdx].date;
   const lastValue = plot[lastIdx].value;
-
-  // Fill each zone with a flat, uniform colour so it spans the whole visible window at any
-  // timeframe. An optional right-edge label tags the zone. Guarded against an inverted band
-  // once a zone edge falls outside the autoscaled domain (then it simply doesn't render).
-  const zone = (
-    y1: number, y2: number, style: { color: string; fill: number }, key: string,
-    label?: string,
-  ) => {
-    const a = Math.max(y1, lo);
-    const b = Math.min(y2, hi);
-    if (b <= a) return null;
-    return (
-      <ReferenceArea key={key} y1={a} y2={b}
-        fill={style.color} fillOpacity={style.fill} ifOverflow="hidden" stroke="none"
-        label={label ? { value: label, position: 'right', fill: style.color, fontSize: 10 } : undefined} />
-    );
-  };
+  // Pre-coverage span — before the earliest reconstructed snapshot, only greyed out (never
+  // the flat `band` zones): there simply isn't enough fundamental history to reconstruct a
+  // path there.
+  const showPreCoverage = hasHistory && !!coverageFrom && full[0].date < coverageFrom;
 
   return (
     <div>
@@ -305,12 +347,35 @@ export function PriceBandChart({
             </defs>
             {/* Subtle horizontal grid, kept behind the bands so it never competes. */}
             <CartesianGrid stroke={C.hairline} strokeDasharray="2 4" strokeOpacity={0.5} vertical={false} />
-            {/* Zones, cheapest at the bottom — flat fills that span the whole window. Hidden in
-                rebase mode, where absolute-price levels no longer map onto a % series. */}
-            {!rebase && zone(0, entryTarget, ZONE_STYLE.buy, 'buy', 'Buy')}
-            {!rebase && zone(entryTarget, overvaluedAt, ZONE_STYLE.fair, 'fair', 'Fair')}
-            {!rebase && zone(overvaluedAt, sellZoneAt, ZONE_STYLE.over, 'over', 'Over')}
-            {!rebase && zone(sellZoneAt, hi * 2, ZONE_STYLE.sell, 'sell', 'Sell')}
+            {/* Pre-coverage span — greyed, no zone fills — before the earliest reconstructed
+                snapshot. Rendered only alongside real history, never as a `band` fallback. */}
+            {!rebase && showPreCoverage && (
+              <ReferenceArea x1={full[0].date} x2={coverageFrom!} y1={lo} y2={hi}
+                fill={C.hairline} fillOpacity={0.4} ifOverflow="hidden" stroke="none"
+                label={{ value: 'insufficient fundamental history', position: 'insideTopLeft',
+                  fill: C.textFaint, fontSize: 9 }} />
+            )}
+            {/* Stepped zone bands, reconstructed per-date from the fundamentals then in force —
+                stacked bottom-up (buy → fair → over → sell) so each layer is drawn as the
+                *thickness* between adjacent thresholds, not an absolute edge. Stepped (never
+                interpolated) because a real report lands on one day, not gradually. Hidden in
+                rebase mode, where absolute-price levels no longer map onto a % series, and
+                whenever there isn't enough fundamental history to reconstruct a path. */}
+            {!rebase && hasHistory && (
+              <>
+                <Area type="stepAfter" dataKey="buyBand" stackId="zones" stroke="none"
+                  fill={ZONE_STYLE.buy.color} fillOpacity={ZONE_STYLE.buy.fill} isAnimationActive={false} />
+                <Area type="stepAfter" dataKey="fairBand" stackId="zones" stroke="none"
+                  fill={ZONE_STYLE.fair.color} fillOpacity={ZONE_STYLE.fair.fill} isAnimationActive={false} />
+                <Area type="stepAfter" dataKey="overBand" stackId="zones" stroke="none"
+                  fill={ZONE_STYLE.over.color} fillOpacity={ZONE_STYLE.over.fill} isAnimationActive={false} />
+                <Area type="stepAfter" dataKey="sellBand" stackId="zones" stroke="none"
+                  fill={ZONE_STYLE.sell.color} fillOpacity={ZONE_STYLE.sell.fill} isAnimationActive={false} />
+                {/* Stepped Fair Value spine — the reconstructed FV as it stood at each date. */}
+                <Line type="stepAfter" dataKey="fairValue" stroke={C.textFaint} strokeWidth={1.6}
+                  strokeDasharray="2 3" dot={false} isAnimationActive={false} />
+              </>
+            )}
             <XAxis dataKey="date" tick={{ fontSize: 10, fill: C.textFaint }}
               tickFormatter={(d) => fmtDate(d).replace(/ \d{4}$/, '')} minTickGap={48}
               stroke={C.hairline} />
@@ -325,11 +390,6 @@ export function PriceBandChart({
                 ? [`${v >= 0 ? '+' : ''}${v.toFixed(1)}%`, 'Rendite']
                 : [fmtMoney(v, ccy), 'Price'])}
               labelFormatter={(d) => fmtDate(d as string)} />
-            {/* Band-boundary dividers + fair value — solid, faded strokes; only when not rebased. */}
-            {!rebase && <ReferenceLine y={entryTarget} stroke={ZONE_STYLE.buy.color} strokeOpacity={ZONE_STYLE.buy.line} strokeDasharray="4 3" />}
-            {!rebase && <ReferenceLine y={overvaluedAt} stroke={ZONE_STYLE.over.color} strokeOpacity={ZONE_STYLE.over.line} strokeDasharray="4 3" />}
-            {!rebase && <ReferenceLine y={sellZoneAt} stroke={ZONE_STYLE.sell.color} strokeOpacity={ZONE_STYLE.sell.line} strokeDasharray="4 3" />}
-            {!rebase && <ReferenceLine y={fairValue} stroke={C.textFaint} strokeOpacity={0.7} strokeDasharray="2 3" />}
             {/* Zero baseline in rebase mode — the reference every % return is measured from. */}
             {rebase && <ReferenceLine y={0} stroke={C.textFaint} strokeOpacity={0.6} strokeDasharray="2 3" />}
             {chartType === 'area' && (
@@ -384,8 +444,9 @@ export function PriceBandChart({
         </div>
       )}
       <p className="mt-1.5 text-[10px] leading-snug text-text-faint/90 italic">
-        Zones are a snapshot of today's fair value ({fmtDate(todayISO)}) — held flat across the window.
-        The price line is real history; earlier prices were valued against different fundamentals.
+        {hasHistory
+          ? "Valuation zones are reconstructed from the fundamentals reported at each date — they step when a new annual report lands. Scrub to any point to see the Fair Value and zones as they stood then."
+          : "Historical valuation unavailable — insufficient fundamental history for this security."}
       </p>
     </div>
   );

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
 import {
@@ -499,6 +499,15 @@ export function Research() {
   // Symbol lives in the store so the Research view is deep-linkable (#/research/AAPL).
   const symbol = useApp((s) => s.researchSymbol);
   const setSymbol = useApp((s) => s.setResearchSymbol);
+  const recents = useApp((s) => s.researchRecents);
+  const pushRecent = useApp((s) => s.pushResearchRecent);
+
+  // Remember every asset actually opened (via search, a chip, "research this" from another
+  // view, or a deep link) so the landing can offer a one-click way back — "New search" and the
+  // sidebar's Research nav both clear the current symbol without losing where you've been.
+  useEffect(() => {
+    if (symbol) pushRecent(symbol);
+  }, [symbol, pushRecent]);
 
   return (
     <div className="p-6 max-w-[1200px] mx-auto">
@@ -519,12 +528,35 @@ export function Research() {
             <div className="eyebrow mb-2">Find an asset</div>
             <SymbolSearch onPick={(p) => setSymbol(p.symbol)} />
           </div>
-          <div className="mt-3 flex flex-wrap gap-2">
-            {['VWRL.SW', 'AAPL', 'NVDA', 'CSPX.L', 'NESN.SW'].map((s) => (
-              <button key={s} className="chip hover:border-azure/50 hover:text-azure" onClick={() => setSymbol(s)}>
-                {s}
-              </button>
-            ))}
+
+          {recents.length > 0 && (
+            <div className="mt-4">
+              <div className="eyebrow mb-2">Recently viewed</div>
+              <div className="flex flex-wrap gap-2">
+                {recents.map((s) => (
+                  <button
+                    key={s}
+                    className="chip hover:border-azure/50 hover:text-azure"
+                    onClick={() => setSymbol(s)}
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="mt-4">
+            <div className="eyebrow mb-2">Popular</div>
+            <div className="flex flex-wrap gap-2">
+              {['VWRL.SW', 'AAPL', 'NVDA', 'CSPX.L', 'NESN.SW']
+                .filter((s) => !recents.includes(s))
+                .map((s) => (
+                  <button key={s} className="chip hover:border-azure/50 hover:text-azure" onClick={() => setSymbol(s)}>
+                    {s}
+                  </button>
+                ))}
+            </div>
           </div>
         </div>
       )}

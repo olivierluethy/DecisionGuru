@@ -56,7 +56,7 @@ const NAV: { label: string; items: readonly NavItem[] }[] = [
 ];
 
 export function Sidebar() {
-  const { view, setView, openModal, navOpen, setNavOpen } = useApp();
+  const { view, setView, openModal, navOpen, setNavOpen, openResearchSearch } = useApp();
   // Any destination choice also closes the mobile drawer (no-op on desktop).
   const go = (fn: () => void) => {
     fn();
@@ -122,9 +122,13 @@ export function Sidebar() {
                       }
                       onSelect={() =>
                         go(() =>
-                          item.view
-                            ? setView(item.view)
-                            : openModal({ kind: 'compare', instrumentIds: [] }),
+                          item.view === 'research'
+                            // Always land on the search page (keeping recents), so the nav
+                            // gives a fresh start instead of re-showing the last company.
+                            ? openResearchSearch()
+                            : item.view
+                              ? setView(item.view)
+                              : openModal({ kind: 'compare', instrumentIds: [] }),
                         )
                       }
                     />

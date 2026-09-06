@@ -40,6 +40,9 @@ interface AppState {
   selectedInstrumentId: number | null;
   /** Symbol shown in the Research view — held in the store so it can be deep-linked. */
   researchSymbol: string | null;
+  /** Recently-researched symbols (most-recent first), so the search landing can offer a
+   *  one-click way back after "New search" or a Research nav click clears the current one. */
+  researchRecents: string[];
   modal: ModalKind;
   preTax: boolean;
   benchmark: string;
@@ -53,6 +56,11 @@ interface AppState {
   setResearchSymbol: (s: string | null) => void;
   /** Jump straight to the Research view for a given symbol (deep-link friendly). */
   researchSymbolView: (s: string) => void;
+  /** Record a symbol as recently researched (dedup, most-recent first, capped). */
+  pushResearchRecent: (s: string) => void;
+  /** Open the Research view on its search landing (clears the current symbol but keeps
+   *  the recents, so nothing is lost). Used by the sidebar "Research" nav item. */
+  openResearchSearch: () => void;
   openModal: (m: ModalKind) => void;
   closeModal: () => void;
   setPreTax: (v: boolean) => void;
@@ -66,6 +74,7 @@ export const useApp = create<AppState>((set) => ({
   view: 'dashboard',
   selectedInstrumentId: null,
   researchSymbol: null,
+  researchRecents: [],
   modal: null,
   preTax: false,
   benchmark: 'VWRL.SW',
@@ -77,6 +86,11 @@ export const useApp = create<AppState>((set) => ({
   selectInstrument: (id) => set({ selectedInstrumentId: id, view: 'position' }),
   setResearchSymbol: (researchSymbol) => set({ researchSymbol }),
   researchSymbolView: (researchSymbol) => set({ researchSymbol, view: 'research' }),
+  pushResearchRecent: (s) =>
+    set((state) => ({
+      researchRecents: [s, ...state.researchRecents.filter((x) => x !== s)].slice(0, 6),
+    })),
+  openResearchSearch: () => set({ view: 'research', researchSymbol: null }),
   openModal: (modal) => set({ modal }),
   closeModal: () => set({ modal: null }),
   setPreTax: (preTax) => set({ preTax }),

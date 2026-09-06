@@ -197,10 +197,14 @@ echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc && source ~/.zshrc
 Then run the project (from the repo root):
 
 ```bash
-cd backend && uv sync && cd ..   # install backend deps (creates backend/.venv, ~1 min)
-npm install                      # install frontend workspaces
-npm run dev                      # API (uvicorn :5178) + web (vite :5173)
+cd backend && uv sync && cd ..
+npm install
+npm run dev
 ```
+
+- `cd backend && uv sync && cd ..` — install backend deps (creates `backend/.venv`, ~1 min)
+- `npm install` — install frontend workspaces
+- `npm run dev` — API (uvicorn :5178) + web (vite :5173)
 
 > **Java is optional.** PySpark powers the bulk analytics path, but macOS's stock `java` is
 > only a stub — the backend logs `Spark unavailable (…); using pandas reducer` once and

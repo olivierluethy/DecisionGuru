@@ -33,6 +33,18 @@ def _is_rate_limited(exc: Exception) -> bool:
     return bool(_RATE_LIMIT_RE.search(str(exc)))
 
 
+def _period_end(col) -> str | None:
+    """ISO date for a statement column label (a pandas period-end Timestamp)."""
+    try:
+        import pandas as _pd
+        ts = _pd.Timestamp(col)
+        if ts is _pd.NaT:
+            return None
+        return ts.strftime("%Y-%m-%d")
+    except Exception:  # noqa: BLE001
+        return None
+
+
 class YFinanceProvider(MarketDataProvider):
     def __init__(self) -> None:
         # Bounded concurrency instead of a single global lock: up to yf_concurrency
@@ -294,14 +306,14 @@ class YFinanceProvider(MarketDataProvider):
                         gp, oi = cell(gp_r, col), cell(oi_r, col)
                         ok = lambda a: rev not in (None, 0) and a is not None  # noqa: E731
                         history.append({
-                            "year": int(yr),
+                            "year": int(yr), "periodEnd": _period_end(col),
                             "revenue": rev, "netIncome": ni, "grossProfit": gp, "operatingIncome": oi,
                             "netMargin": (ni / rev) if ok(ni) else None,
                             "grossMargin": (gp / rev) if ok(gp) else None,
                             "operatingMargin": (oi / rev) if ok(oi) else None,
                         })
                         income_years.append({
-                            "year": int(yr), "operatingIncome": oi,
+                            "year": int(yr), "periodEnd": _period_end(col), "operatingIncome": oi,
                             "interestExpense": cell(int_r, col),
                             "pretaxIncome": cell(pre_r, col),
                             "taxProvision": cell(tax_r, col),
@@ -343,7 +355,8 @@ class YFinanceProvider(MarketDataProvider):
                         if fcf is None and ocf is not None and capex is not None:
                             fcf = ocf + capex
                         years_cf.append({
-                            "year": int(yr), "operatingCashFlow": ocf, "capex": capex,
+                            "year": int(yr), "periodEnd": _period_end(col),
+                            "operatingCashFlow": ocf, "capex": capex,
                             "freeCashFlow": fcf, "dna": ccell(dna_r, col),
                             "netIncome": ccell(ni_r, col),
                         })
@@ -380,7 +393,8 @@ class YFinanceProvider(MarketDataProvider):
                         if yr is None:
                             continue
                         byears.append({
-                            "year": int(yr), "investedCapital": bcell(ic_r, col),
+                            "year": int(yr), "periodEnd": _period_end(col),
+                            "investedCapital": bcell(ic_r, col),
                             "totalDebt": bcell(td_r, col), "cash": bcell(cash_r, col),
                             "stockholdersEquity": bcell(se_r, col),
                             "currentAssets": bcell(ca_r, col),

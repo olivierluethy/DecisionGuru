@@ -449,10 +449,20 @@ export interface Scenario {
 }
 
 export interface ScenarioConfig {
+  /** 'portfolio' = the holdings-vs-ETF counterfactual (needs owned positions);
+   *  'hypothetical' = a holdings-free "invest CHF X in a symbol vs a benchmark" study.
+   *  Absent is treated as 'portfolio' for backward compatibility. */
+  mode?: 'portfolio' | 'hypothetical';
   includedInstrumentIds: number[];
   benchmarkSymbol: string;
   /** whole-portfolio "sell all -> ETF" mode */
   sellAllToEtf: boolean;
+  /** Hypothetical mode: the subject asset (any stock/ETF, no ownership required). */
+  symbol?: string | null;
+  /** Hypothetical mode: the amount invested in the subject, in CHF. */
+  amountCHF?: number | null;
+  /** Hypothetical mode: extra symbols to include in the historical comparison table. */
+  compareSymbols?: string[];
   expectedStockCagr?: number | null;
   expectedEtfCagr?: number | null;
   projectionYears?: number;

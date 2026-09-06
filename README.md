@@ -93,6 +93,60 @@ lets you draw conclusions. A persistent "Not financial advice" note is shown thr
   see always come from your local backend. Works from `npm run dev` on `localhost` and from
   any https host; Safari installs via *Share → Add to Dock/Home Screen* instead.
 
+## The app, screen by screen
+
+The sidebar's views (URL-hash routed; a shared, valuation-driven **verdict engine** —
+`backend/app/services/verdict.py` — produces the same Buy more / Hold / Sell badge everywhere):
+
+- **Overview** — the portfolio home: cash by currency, invested value with a live equity
+  sparkline, today's P/L and total gain incl. dividends; the portfolio equity curve with range
+  stats; a value-weighted 3D globe of country/sector exposure with concentration metrics; an
+  account/trade timeline; a searchable holdings table with per-holding verdict badges and
+  multi-select *Compare vs ETF*; and a dividends-by-security table. Proactive banners surface the
+  top Decision and today's Forecast action.
+- **Decisions** — ranks every holding **Buy more / Hold / Sell** by capital at stake, each with
+  conviction, the CHF impact (after-tax proceeds if sold, or benchmark opportunity cost), the ETF
+  recovery time for sells, a reinvest target, and an expandable counterfactual chart. The verdict
+  is deterministic and **valuation-driven — benchmark underperformance alone never triggers a
+  Sell**; a sound, undervalued laggard stays Hold / Buy more. See
+  `backend/app/services/recommend.py`.
+- **Forecasts** — a forward view built on Decisions. The headline *Motivationshebel* is the
+  CHF-per-day opportunity cost of inaction (projected to a week and a month), followed by a
+  today action list and a dated 30-day timeline of predicted buy / sell / reinvest / watch
+  events. It composes existing cached surfaces only — no invented data, and (since the provider
+  has no earnings calendar) no fake event dates. See `backend/app/services/forecast.py`.
+- **Advisory** — a rebalancing view: for each holding held ≥ 1 year it flags names that lagged
+  the best benchmark alternative by ≥ 5 % of invested capital over the same period, with the
+  reallocation gain in CHF and a plain-language rationale. Explicitly historical context, **not**
+  a sell signal. See `backend/app/services/advisory.py`.
+- **Plans** — a decision journal: name a plan (what to sell, where the proceeds go, the expected
+  outcome), snapshot its baseline, then compare *plan-reinvested value now* vs *held-instead
+  value now* since the plan date. It measures your decisions against the counterfactual of doing
+  nothing. See `backend/app/services/plans.py`.
+- **Watchlist** — monitors names you don't own: a fair-value table (price, fair value, attractive
+  entry target, gap-to-entry / in-buy-zone, valuation band, verdict, one-click *alert me at the
+  entry price*) plus a ranked 3 / 5 / 10-year comparison of every watched name, the benchmark
+  and your own portfolio (money-weighted XIRR) on CAGR / total return / volatility / max
+  drawdown. See `backend/app/services/watchlist.py`.
+- **Discover** — a global **value screener**: ranks the universe (curated seed ∪ your holdings ∪
+  watchlist) by a 0–100 attractiveness score blending Graham/Buffett intrinsic value, margin of
+  safety, a quality scorecard, supportable return and portfolio fit — with a signature
+  interactive world *opportunity map*, all-names vs new-opportunity modes, rich filters,
+  grouping, and point-in-time replay. A throttled background *warmer* fills missing fundamentals
+  over successive visits to respect provider rate limits. See `backend/app/services/screener.py`.
+- **Alerts** — the notification centre and price-alert manager: a day-grouped feed (alert /
+  opportunity / scan / rivalry) and price alerts (target defaults to fair value). A background
+  **scan runs every 6 hours** off cached data — it auto-maintains buy-zone and sell-zone alerts,
+  surfaces freshly-attractive screener names, and warns when a competitor is about to overtake a
+  holding. See `backend/app/services/scan.py`.
+- **Research** — deep-dive a single stock or ETF: fundamentals, market analysis (Market position,
+  Best historical combination, Competitor watch), the **Value analysis** and **Price vs
+  Fair-Value Zones** described above, opportunity-cost projections and more.
+- **Scenarios** — the scenario workbench (single stock, bundled baskets, or whole-portfolio
+  "sell everything → ETF"), savable and re-openable.
+- **Comparison** — opens the *Compare vs ETF* modal (the shared universal-compare engine, also
+  reached from the Overview holdings table and Watchlist) rather than a standalone page.
+
 ## Stack
 
 - **Frontend** React + Vite + TypeScript + Tailwind (dark mode only), Recharts, cobe, lucide.

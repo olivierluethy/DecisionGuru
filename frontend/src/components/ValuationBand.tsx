@@ -154,17 +154,18 @@ export function PriceBandChart({
 
   // Unique, colon-free prefix so this instance's gradient ids never clash with another chart's.
   const uid = useId().replace(/:/g, '');
-  const todayISO = new Date().toISOString().slice(0, 10);
 
   // Convert every monetary figure by the same scalar FX rate so the chart matches the
   // CHF headline; a scalar multiply preserves the zone shape and all relationships. When
   // no rate is supplied the chart stays in the native currency (unchanged behavior).
   const k = rate != null ? rate : 1;
   const ccy = ((rate != null && displayCurrency) ? displayCurrency : currency) || '';
-  const entryTarget = band.entryTarget * k;
-  const overvaluedAt = band.overvaluedAt * k;
-  const sellZoneAt = band.sellZoneAt * k;
-  const fairValue = band.fairValue * k;
+  // NOTE: `band.entryTarget/overvaluedAt/sellZoneAt/fairValue` (today's LIVE band, recomputed
+  // fresh) are intentionally NOT read as display values anywhere below — every zone number
+  // shown (right-edge labels, the top badge, the snapshot card, the footer legend) comes from
+  // `lastSnap`, the last RECONSTRUCTED snapshot, so they never contradict each other. `band` is
+  // only still used for its margin-of-safety *percentage*, a config value rather than a
+  // reconstructed one.
 
   // Full converted price path (positive closes only). The backend already serves up to 10y,
   // so every preset and the Brush slice this in place — no refetch when the window changes.
@@ -336,18 +337,6 @@ export function PriceBandChart({
         >
           {isLoading ? 'Loading price history…' : 'Price history not cached yet — the zones will fill in shortly.'}
         </div>
-        <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-[11px] text-text-faint">
-          <LegendDot cls="bg-gain" label={`Buy ≤ ${fmtMoney(entryTarget, ccy)}`} />
-          <LegendDot cls="bg-azure/40" label="Fair range" />
-          <LegendDot cls="bg-warn" label={`Overvalued ≥ ${fmtMoney(overvaluedAt, ccy)}`} />
-          <LegendDot cls="bg-loss" label={`Sell zone ≥ ${fmtMoney(sellZoneAt, ccy)}`} />
-          <span className="ml-auto">
-            fair value {fmtMoney(fairValue, ccy)} · MoS {fmtPct(band.marginOfSafetyPct, 0)}
-          </span>
-        </div>
-        <p className="mt-1.5 text-[10px] leading-snug text-text-faint/90 italic">
-          Zones reflect today's fair value ({fmtDate(todayISO)}).
-        </p>
       </div>
     );
   }
@@ -590,22 +579,31 @@ export function PriceBandChart({
             </ComposedChart>
           </ResponsiveContainer>
         </div>
+        {/* Footer legend — driven by the LAST reconstructed snapshot (`lastSnap`), never the
+            live `band` prop: `band.*` reflects today's inputs recomputed fresh, which can
+            drift slightly from the reconstructed snapshot's own stored zone edges (same
+            fundamentals, but the two paths aren't guaranteed to land on identical floating-
+            point results) — showing `band.*` here previously contradicted the right-edge
+            labels, the top badge and the snapshot card, which all read `lastSnap`. Only the
+            MoS *percentage* still comes from `band` (a config value, not a reconstructed one). */}
         {rebase ? (
           <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-[11px] text-text-faint">
             <span>% return since {fmtDate(full[Math.min(range.start, lastIdx)].date)} · fair-value zones hidden in rebase</span>
-            <span className="ml-auto">fair value {fmtMoney(fairValue, ccy)} · MoS {fmtPct(band.marginOfSafetyPct, 0)}</span>
+            {hasHistory && lastSnap && (
+              <span className="ml-auto">fair value {fmtMoney(lastSnap.fairValue * k, ccy)} · MoS {fmtPct(band.marginOfSafetyPct, 0)}</span>
+            )}
           </div>
-        ) : (
+        ) : hasHistory && lastSnap ? (
           <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-[11px] text-text-faint">
-            <LegendDot cls="bg-gain" label={`Buy ≤ ${fmtMoney(entryTarget, ccy)}`} />
+            <LegendDot cls="bg-gain" label={`Buy ≤ ${fmtMoney(lastSnap.entryTarget * k, ccy)}`} />
             <LegendDot cls="bg-azure/40" label="Fair range" />
-            <LegendDot cls="bg-warn" label={`Overvalued ≥ ${fmtMoney(overvaluedAt, ccy)}`} />
-            <LegendDot cls="bg-loss" label={`Sell zone ≥ ${fmtMoney(sellZoneAt, ccy)}`} />
+            <LegendDot cls="bg-warn" label={`Overvalued ≥ ${fmtMoney(lastSnap.overvaluedAt * k, ccy)}`} />
+            <LegendDot cls="bg-loss" label={`Sell zone ≥ ${fmtMoney(lastSnap.sellZoneAt * k, ccy)}`} />
             <span className="ml-auto">
-              fair value {fmtMoney(fairValue, ccy)} · MoS {fmtPct(band.marginOfSafetyPct, 0)}
+              fair value {fmtMoney(lastSnap.fairValue * k, ccy)} · MoS {fmtPct(band.marginOfSafetyPct, 0)}
             </span>
           </div>
-        )}
+        ) : null}
         <p className="mt-1.5 text-[10px] leading-snug text-text-faint/90 italic">
           {hasHistory
             ? "Valuation zones are reconstructed from the fundamentals reported at each date — they step when a new annual report lands. Scrub to any point to see the Fair Value and zones as they stood then."

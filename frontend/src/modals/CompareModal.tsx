@@ -6,10 +6,56 @@ import { DeltaChart } from '../components/DeltaChart';
 import { TimeRangeSelector } from '../components/TimeRangeSelector';
 import { Segmented, Spinner, KindBadge } from '../components/ui';
 import { SymbolSearch, type SymbolPick } from '../components/SymbolSearch';
-import { api } from '../lib/api';
+import { api, type AssetMetrics } from '../lib/api';
 import { useApp } from '../store';
 import { sliceByRange } from '../lib/range';
-import { fmtCHF, fmtCHFSigned, fmtPct, fmtPctSigned, plClass } from '../lib/format';
+import { fmtCHF, fmtCHFSigned, fmtNum, fmtPct, fmtPctSigned, plClass } from '../lib/format';
+
+const SIM_WINDOWS = [
+  { value: '3', label: '3Y' },
+  { value: '5', label: '5Y' },
+  { value: '10', label: '10Y' },
+];
+
+/** Price-based ranking of arbitrary securities — needs no holdings. Same metric set and
+ *  columns as Research → Ranked, powered by the universal-compare engine. */
+function SecuritiesTable({ entities }: { entities: AssetMetrics[] }) {
+  return (
+    <div className="border border-hairline rounded overflow-hidden">
+      <div className="overflow-x-auto max-h-[50vh] overflow-y-auto">
+        <table className="w-full text-sm">
+          <thead className="sticky top-0 z-10">
+            <tr>
+              <th className="th w-8">#</th>
+              <th className="th">Asset</th>
+              <th className="th text-right">Return</th>
+              <th className="th text-right">Total return</th>
+              <th className="th text-right">Vol</th>
+              <th className="th text-right">Max DD</th>
+              <th className="th text-right">Sharpe</th>
+            </tr>
+          </thead>
+          <tbody>
+            {entities.map((m) => (
+              <tr key={m.symbol} className="hover:bg-surface-2">
+                <td className="td font-mono text-text-faint">{m.rank}</td>
+                <td className="td">
+                  <span className="font-mono text-azure">{m.symbol}</span>
+                  <span className="text-text-muted ml-2 text-[13px]">{m.name}</span>
+                </td>
+                <td className={`td text-right font-mono tnum ${plClass(m.cagr)}`}>{fmtPctSigned(m.cagr)}</td>
+                <td className={`td text-right font-mono tnum ${plClass(m.totalReturnPct)}`}>{fmtPctSigned(m.totalReturnPct)}</td>
+                <td className="td text-right font-mono tnum text-text-muted">{fmtPct(m.annualizedVol)}</td>
+                <td className="td text-right font-mono tnum text-loss">{fmtPct(m.maxDrawdownPct)}</td>
+                <td className="td text-right font-mono tnum">{m.sharpe != null ? fmtNum(m.sharpe) : '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
 
 type MetricKey = 'price' | 'actual' | 'etf' | 'delta' | 'deltaPct' | 'xirr' | 'etfXirr' | 'yield';
 const METRICS: { key: MetricKey; label: string }[] = [
@@ -33,11 +79,22 @@ export function CompareModal({ instrumentIds }: { instrumentIds: number[] }) {
   const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: api.getSettings });
   const { data: instruments } = useQuery({ queryKey: ['instruments'], queryFn: api.listInstruments });
 
+  // Two modes: the holdings-vs-ETF counterfactual (needs owned positions), and a price-based
+  // "securities" comparison of arbitrary symbols that works with no holdings at all.
+  const [mode, setMode] = useState<'holdings' | 'securities'>('holdings');
+  const [modeAuto, setModeAuto] = useState(true); // follow holdings-presence until the user picks
+  const [simWindow, setSimWindow] = useState(5);  // lookback (years) for the securities table
+
   // Editable basket — seeded from the passed selection, or all holdings when empty.
   const [basket, setBasket] = useState<number[]>(instrumentIds);
   useEffect(() => {
-    if (instrumentIds.length === 0 && instruments && basket.length === 0) {
+    if (!instruments) return;
+    if (instrumentIds.length === 0 && basket.length === 0) {
       setBasket(instruments.map((i) => i.id));
+    }
+    // No holdings anywhere → default to the securities comparison so Compare is still usable.
+    if (modeAuto && instrumentIds.length === 0 && instruments.length === 0) {
+      setMode('securities');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [instruments]);
@@ -72,7 +129,24 @@ export function CompareModal({ instrumentIds }: { instrumentIds: number[] }) {
   const compare = useQuery({
     queryKey: ['compare', basket, selected, preTax],
     queryFn: () => api.compare(basket, selected, preTax),
-    enabled: selected.length > 0 && basket.length > 0,
+    enabled: mode === 'holdings' && selected.length > 0 && basket.length > 0,
+  });
+
+  // Securities mode: every selected symbol is an entity, ranked against the others on
+  // price-based metrics. No holdings required.
+  const securities = useQuery({
+    queryKey: ['universal-compare', selected, simWindow],
+    queryFn: () =>
+      api.universalCompare(
+        selected.map((sym) => ({
+          type: 'symbol' as const,
+          symbol: sym,
+          name: picks[sym]?.name ?? sym,
+          kind: picks[sym]?.kind ?? 'stock',
+        })),
+        simWindow,
+      ),
+    enabled: mode === 'securities' && selected.length >= 2,
   });
 
   const nameById = useMemo(() => new Map((instruments ?? []).map((i) => [i.id, i])), [instruments]);
@@ -83,8 +157,12 @@ export function CompareModal({ instrumentIds }: { instrumentIds: number[] }) {
 
   return (
     <Modal
-      title="Compare holdings vs securities"
-      subtitle={`${basket.length} holding${basket.length === 1 ? '' : 's'} vs ${selected.length} comparison${selected.length === 1 ? '' : 's'}`}
+      title={mode === 'holdings' ? 'Compare holdings vs securities' : 'Compare securities'}
+      subtitle={
+        mode === 'holdings'
+          ? `${basket.length} holding${basket.length === 1 ? '' : 's'} vs ${selected.length} comparison${selected.length === 1 ? '' : 's'}`
+          : `${selected.length} securit${selected.length === 1 ? 'y' : 'ies'} · price-based, no holdings needed`
+      }
       onClose={closeModal}
       size="xl"
       footer={
@@ -94,31 +172,54 @@ export function CompareModal({ instrumentIds }: { instrumentIds: number[] }) {
       }
     >
       <div className="space-y-5">
-        {/* Basket multi-select */}
-        <div>
-          <div className="label">Holdings in comparison ({basket.length})</div>
-          <div className="flex flex-wrap gap-2 max-h-24 overflow-y-auto">
-            {(instruments ?? []).map((i) => {
-              const on = basket.includes(i.id);
-              return (
-                <button
-                  key={i.id}
-                  onClick={() => toggleInstrument(i.id)}
-                  className={`chip cursor-pointer ${on ? '!border-azure/60 !text-azure' : 'opacity-60'}`}
-                  title={i.name}
-                >
-                  <KindBadge kind={i.kind} />
-                  {i.symbol}
-                </button>
-              );
-            })}
-          </div>
+        {/* Mode toggle — securities mode compares any symbols and needs no holdings. */}
+        <div className="flex flex-wrap items-center gap-3">
+          <Segmented
+            value={mode}
+            onChange={(v) => { setMode(v as 'holdings' | 'securities'); setModeAuto(false); }}
+            options={[
+              { value: 'holdings', label: 'Holdings vs ETF' },
+              { value: 'securities', label: 'Securities' },
+            ]}
+          />
+          {mode === 'securities' && (
+            <span className="text-[12px] text-text-faint">
+              Compare any stocks / ETFs on price — no holdings needed.
+            </span>
+          )}
         </div>
+
+        {/* Basket multi-select — holdings mode only. */}
+        {mode === 'holdings' && (
+          <div>
+            <div className="label">Holdings in comparison ({basket.length})</div>
+            <div className="flex flex-wrap gap-2 max-h-24 overflow-y-auto">
+              {(instruments ?? []).map((i) => {
+                const on = basket.includes(i.id);
+                return (
+                  <button
+                    key={i.id}
+                    onClick={() => toggleInstrument(i.id)}
+                    className={`chip cursor-pointer ${on ? '!border-azure/60 !text-azure' : 'opacity-60'}`}
+                    title={i.name}
+                  >
+                    <KindBadge kind={i.kind} />
+                    {i.symbol}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Benchmark multi-select + tax basis */}
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <div className="label">Compare against (stocks, ETFs, indices)</div>
+            <div className="label">
+              {mode === 'holdings'
+                ? 'Compare against (stocks, ETFs, indices)'
+                : 'Securities to compare (add two or more)'}
+            </div>
             <div className="flex flex-wrap gap-2">
               {benchmarks.map((b) => {
                 const on = selected.includes(b.symbol);
@@ -154,33 +255,52 @@ export function CompareModal({ instrumentIds }: { instrumentIds: number[] }) {
               <SymbolSearch onPick={addPick} />
             </div>
           </div>
-          <Segmented
-            value={preTax ? 'pre' : 'after'}
-            onChange={(v) => setPreTax(v === 'pre')}
-            options={[
-              { value: 'after', label: 'After-tax' },
-              { value: 'pre', label: 'Pre-tax' },
-            ]}
-          />
+          {mode === 'holdings' && (
+            <Segmented
+              value={preTax ? 'pre' : 'after'}
+              onChange={(v) => setPreTax(v === 'pre')}
+              options={[
+                { value: 'after', label: 'After-tax' },
+                { value: 'pre', label: 'Pre-tax' },
+              ]}
+            />
+          )}
         </div>
 
-        {/* Metric toggles + range */}
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex flex-wrap gap-1.5">
-            {METRICS.map((m) => (
-              <button
-                key={m.key}
-                onClick={() => toggleMetric(m.key)}
-                className={`chip cursor-pointer ${visible.has(m.key) ? '!border-azure/50 !text-text' : 'opacity-50'}`}
-              >
-                {m.label}
-              </button>
-            ))}
+        {/* Metric toggles + range (holdings) — or lookback window (securities) */}
+        {mode === 'holdings' ? (
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap gap-1.5">
+              {METRICS.map((m) => (
+                <button
+                  key={m.key}
+                  onClick={() => toggleMetric(m.key)}
+                  className={`chip cursor-pointer ${visible.has(m.key) ? '!border-azure/50 !text-text' : 'opacity-50'}`}
+                >
+                  {m.label}
+                </button>
+              ))}
+            </div>
+            <TimeRangeSelector value={range} onChange={setRange} />
           </div>
-          <TimeRangeSelector value={range} onChange={setRange} />
-        </div>
+        ) : (
+          <div className="flex flex-wrap items-center justify-end gap-3">
+            <span className="label !mb-0">Window</span>
+            <Segmented value={String(simWindow)} onChange={(v) => setSimWindow(Number(v))} options={SIM_WINDOWS} />
+          </div>
+        )}
 
-        {compare.isLoading ? (
+        {mode === 'securities' ? (
+          securities.isLoading ? (
+            <Spinner label="Comparing…" />
+          ) : selected.length < 2 ? (
+            <p className="text-sm text-text-faint">Add at least two securities to compare.</p>
+          ) : !securities.data ? (
+            <p className="text-sm text-text-faint">No comparison data.</p>
+          ) : (
+            <SecuritiesTable entities={securities.data.entities} />
+          )
+        ) : compare.isLoading ? (
           <Spinner label="Comparing…" />
         ) : basket.length === 0 || selected.length === 0 ? (
           <p className="text-sm text-text-faint">Pick at least one holding and one benchmark.</p>

@@ -1,6 +1,10 @@
-# DecisionGuru
+<p align="center">
+  <img src="frontend/public/icon-512.png" alt="DecisionGuru logo" width="128" height="128" />
+</p>
 
-**Swiss tax-aware investment counterfactual analyzer — "stocks vs. ETF" decision engine.**
+<h1 align="center">DecisionGuru</h1>
+
+<p align="center"><strong>Swiss tax-aware investment counterfactual analyzer — "stocks vs. ETF" decision engine.</strong></p>
 
 For every position and for the whole portfolio, DecisionGuru answers one question:
 *how much better or worse off am I holding this individual stock versus having put the
@@ -25,6 +29,24 @@ lets you draw conclusions. A persistent "Not financial advice" note is shown thr
   labelled and excluded from P/L). Any other XLS/XLSX/CSV/PDF falls back to the generic
   column-mapping modal with preview, dedupe and savable presets.
 - **Manual entry** — add a position with just ticker + date + amount (price auto-derived).
+- **Value analysis (intrinsic value & quality)** — a Graham/Buffett-style read on any stock:
+  an intrinsic-value estimate blended from the Graham Number, the Graham growth formula, a
+  two-stage owner-earnings DCF and an FCF-based DCF (the median is the fair value), a
+  margin-of-safety verdict against the live price, bear/base/bull scenarios with a valuation
+  range, a reverse-DCF *implied growth*, and a 6-point quality scorecard (ROE, margins, growth,
+  leverage, payout, long-run trend). Every figure is None-safe and explicitly an estimate, in
+  one display currency (CHF) beside the native one. See `backend/app/services/valuation.py`.
+- **Price vs Fair-Value Zones (point-in-time)** — the price chart shaded with the Buy / Fair /
+  Overvalued / Sell zones **reconstructed as they stood at each past date** — not today's zones
+  projected backward. Fair Value and its zones are rebuilt from the fundamentals actually
+  reported at each fiscal year, so the bands and a Fair-Value "spine" form an **annual step
+  function with no look-ahead** (each snapshot uses only statements known then; changing today's
+  fundamentals never alters history). Scrub or arrow-key any date to see the valuation as it
+  stood, click a report-to-report **transition** to see the full **Fundamentals → Model outputs
+  → Fair Value → Zones** chain (before → after, observed changes only — no fabricated causal
+  split), and where fundamentals are too thin to reconstruct it shows an honest *unavailable*
+  state rather than falling back to today's zones. `GET /research/valuation/history/{symbol}`;
+  see `backend/app/services/valuation_history.py`.
 - **Market position** — inside *Market analysis* (Research → a stock, Portfolio → a position,
   or any Opportunity modal): every company in the same competitive market ranked on two axes
   at once — how cheap it is *and* how strongly it is growing relative to that market. It names
@@ -184,6 +206,8 @@ Interactive API docs are at **http://localhost:5178/docs**. Production build of 
 
 ## Documentation
 
+- `docs/RUNNING.md` — the full local-setup guide (prerequisites, first run, troubleshooting).
+- `docs/API_CONTRACT.md` — the HTTP API contract shared with the frontend (`shared/` types).
 - `docs/STYLEGUIDE.md` — the dark-mode design system (single source of truth for the UI).
 - `docs/TAX-MODEL.md` — the Swiss private-investor tax assumptions, with defaults and the
   exact after-tax computation.

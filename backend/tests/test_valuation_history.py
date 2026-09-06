@@ -17,14 +17,19 @@ CFG = v._val_cfg(None)
 
 def _fixture():
     # 3 fiscal years; net income & FCF grow, shares flat. USD (major unit).
+    # Net income 100 -> 108 -> 150 is deliberate: CAGR(2020->2021) = 8% stays BELOW
+    # GROWTH_CAP (15%) while CAGR(2020->2022) ~= 22.5% clamps to 15% — so the raw (and
+    # clamped) growth used for 2021 genuinely diverges from what a look-ahead bug (using
+    # the full 2020-2022 series when computing 2021's growth) would produce. A fixture
+    # where both CAGRs exceed GROWTH_CAP would clamp to the same value and mask that bug.
     history = [
         {"year": 2020, "periodEnd": "2020-12-31", "revenue": 1000.0, "netIncome": 100.0},
-        {"year": 2021, "periodEnd": "2021-12-31", "revenue": 1100.0, "netIncome": 120.0},
+        {"year": 2021, "periodEnd": "2021-12-31", "revenue": 1100.0, "netIncome": 108.0},
         {"year": 2022, "periodEnd": "2022-12-31", "revenue": 1210.0, "netIncome": 150.0},
     ]
     cashflow = {"sharesOutstanding": 100.0, "years": [
         {"year": 2020, "periodEnd": "2020-12-31", "freeCashFlow": 90.0, "netIncome": 100.0, "dna": 20.0, "capex": -30.0},
-        {"year": 2021, "periodEnd": "2021-12-31", "freeCashFlow": 110.0, "netIncome": 120.0, "dna": 22.0, "capex": -32.0},
+        {"year": 2021, "periodEnd": "2021-12-31", "freeCashFlow": 110.0, "netIncome": 108.0, "dna": 22.0, "capex": -32.0},
         {"year": 2022, "periodEnd": "2022-12-31", "freeCashFlow": 140.0, "netIncome": 150.0, "dna": 25.0, "capex": -35.0},
     ]}
     balance = {"years": [
@@ -47,10 +52,17 @@ def test_year_inputs_reconstructs_per_share_values():
 
 def test_no_look_ahead_growth_uses_only_past_years():
     history, cashflow, balance = _fixture()
-    # Growth at 2021 must derive ONLY from 2020..2021, ignoring 2022.
+    # Growth at 2021 must derive ONLY from 2020..2021, ignoring 2022. This is decisive:
+    # the correct (filtered) CAGR is 8% (unclamped), while a look-ahead bug that let 2022
+    # leak into the CAGR would compute ~22.47% (2020->2022), which clamps to 15% — a
+    # different number from the correct 8%. (Contrast: with a fixture where BOTH raw
+    # CAGRs exceed GROWTH_CAP, both clamp to the same 15% and the test can't tell the two
+    # implementations apart — that was the bug in the original version of this test.)
     g2021 = vh._year_inputs(2021, history, cashflow, balance, "USD", CFG)["growth"]
-    expected = (120.0 / 100.0) ** (1 / 1) - 1  # CAGR 2020->2021
-    assert abs(g2021 - v._clamp(expected, -0.05, v.GROWTH_CAP)) < 1e-9
+    expected_filtered = (108.0 / 100.0) ** (1 / 1) - 1     # CAGR 2020->2021 = 0.08
+    expected_leaked = (150.0 / 100.0) ** (1 / 2) - 1        # CAGR 2020->2022 (look-ahead bug)
+    assert v._clamp(expected_filtered, -0.05, v.GROWTH_CAP) != v._clamp(expected_leaked, -0.05, v.GROWTH_CAP)
+    assert abs(g2021 - v._clamp(expected_filtered, -0.05, v.GROWTH_CAP)) < 1e-9
 
 
 def test_year_without_shares_is_not_reconstructable():
@@ -59,4 +71,4 @@ def test_year_without_shares_is_not_reconstructable():
     # 2022 has no shares in balance and cashflow.sharesOutstanding is a *current* fallback we
     # must NOT use for a historical year -> not reconstructable from per-share inputs.
     out = vh._year_inputs(2022, history, cashflow, balance, "USD", CFG)
-    assert out is None or "grahamNumber" not in out["models"]
+    assert out is None

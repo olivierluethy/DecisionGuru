@@ -56,6 +56,8 @@ def _year_inputs(year: int, history: list[dict], cashflow: dict, balance: dict,
     g_used_raw, _ = v._pick_growth({}, hist_upto)
     g = v._clamp(g_used_raw, -0.05, v.GROWTH_CAP)
 
+    # Unlike value_analysis's base_eps (which falls back to forward EPS), a historical
+    # year has no forward estimate to fall back to — intentionally no fwd_eps fallback here.
     base_eps = eps if (eps and eps > 0) else None
     models = v.compute_models(eps, bvps, base_eps, g, normalized_fcf_ps, cfg)
     if not models:

@@ -176,3 +176,46 @@ def test_valuation_history_empty_when_no_statements():
     out = vh.valuation_history("XYZ", data={"history": [], "cashflow": {}, "balance": {}, "financialCurrency": None}, settings=None)
     assert out["snapshots"] == []
     assert out["coverageFrom"] is None
+
+
+# --- Cross-listing / ADR abstention -------------------------------------------------
+# The reconstruction is per reporting-currency share (netIncome / ordinary shares, in
+# `financialCurrency`). When the security TRADES in a different currency — e.g. a USD ADR
+# of a EUR-reporting company like Sanofi (SNY) — overlaying these zones on the trading-
+# currency price line mixes currency AND share basis (the ADR ratio), so the chart would
+# read "undervalued" while the live per-listing valuation reads "overvalued". We must NOT
+# emit a misleading reconstructed series there — abstain honestly instead.
+
+
+def test_valuation_history_abstains_on_currency_mismatch_adr():
+    history, cashflow, balance = _fixture()
+    # Reporting currency EUR, but the quote (ADR) trades in USD -> different basis.
+    data = {"history": history, "cashflow": cashflow, "balance": balance,
+            "financialCurrency": "EUR", "snapshot": {"currency": "USD"}}
+    out = vh.valuation_history("SNY", data=data, settings=None)
+    assert out["snapshots"] == []
+    assert out["coverageFrom"] is None
+    assert out["unavailableReason"] == "cross-listing-currency-mismatch"
+    # The note must name the mismatch honestly (currency), not claim "insufficient history".
+    assert isinstance(out["note"], str) and "currenc" in out["note"].lower()
+
+
+def test_valuation_history_reconstructs_when_currencies_match():
+    history, cashflow, balance = _fixture()
+    # Same trading & reporting currency -> the reconstruction is comparable; build normally.
+    data = {"history": history, "cashflow": cashflow, "balance": balance,
+            "financialCurrency": "EUR", "snapshot": {"currency": "EUR"}}
+    out = vh.valuation_history("SAN.PA", data=data, settings=None)
+    assert len(out["snapshots"]) >= 2
+    assert out["unavailableReason"] is None
+
+
+def test_valuation_history_no_abstention_when_trading_currency_unknown():
+    # Backward compatible: with no snapshot currency we can't prove a mismatch, so we
+    # keep the prior behaviour and still reconstruct (existing fixtures have no snapshot).
+    history, cashflow, balance = _fixture()
+    data = {"history": history, "cashflow": cashflow, "balance": balance,
+            "financialCurrency": "USD"}
+    out = vh.valuation_history("AAPL", data=data, settings=None)
+    assert len(out["snapshots"]) >= 2
+    assert out["unavailableReason"] is None

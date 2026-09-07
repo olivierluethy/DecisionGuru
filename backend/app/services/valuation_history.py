@@ -203,16 +203,49 @@ _NOTE = (
     "no exact filing date). Annual granularity, ~4 years of coverage."
 )
 
+# Honest abstention copy for a quote whose trading currency differs from the reporting
+# currency (ADR / cross-listing). The reconstruction values the ORDINARY share in the
+# reporting currency; the price line and the live headline are in the trading currency and
+# — for an ADR — on a different share basis (the ADR ratio). Overlaying the two would make
+# the chart contradict the live per-listing valuation, so we don't draw reconstructed zones.
+_NOTE_CURRENCY_MISMATCH = (
+    "Historical valuation zones are unavailable for this listing: the company reports in "
+    "{fin}, but the quote trades in {trade} (a cross-listing / ADR), so reconstructed "
+    "per-share zones can't be placed on the trading-currency price without mixing "
+    "currencies and share basis. The live fair value above is computed for this listing "
+    "directly and remains the reference."
+)
+
 
 def valuation_history(symbol: str, data: dict | None = None, settings: dict | None = None) -> dict:
     cfg = v._val_cfg(settings)
     data = data if data is not None else (fund.get_fundamentals(symbol) or {})
+    fin_ccy = data.get("financialCurrency")
+    trading_ccy = (data.get("snapshot") or {}).get("currency")
+
+    # Cross-listing / ADR guard: when we can prove the quote trades in a different currency
+    # than the statements report in, the reconstructed (reporting-currency, ordinary-share)
+    # series is NOT comparable to the trading-currency price line — abstain rather than emit
+    # a series the chart would overlay wrongly (see VALUE_INVESTING_AUDIT §3 F-1; the ADR
+    # over/undervalued contradiction this fixes). When the trading currency is unknown we
+    # can't prove a mismatch, so we keep the prior behaviour and reconstruct.
+    if fin_ccy and trading_ccy and fin_ccy != trading_ccy:
+        return {
+            "symbol": symbol,
+            "currency": fin_ccy,
+            "coverageFrom": None,
+            "snapshots": [],
+            "note": _NOTE_CURRENCY_MISMATCH.format(fin=fin_ccy, trade=trading_ccy),
+            "unavailableReason": "cross-listing-currency-mismatch",
+        }
+
     snaps = build_snapshots(data, cfg)
     attach_drivers(snaps)
     return {
         "symbol": symbol,
-        "currency": data.get("financialCurrency"),
+        "currency": fin_ccy,
         "coverageFrom": snaps[0]["asOf"] if snaps else None,
         "snapshots": snaps,
         "note": _NOTE,
+        "unavailableReason": None,
     }

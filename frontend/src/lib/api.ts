@@ -547,7 +547,9 @@ export interface ValuationDriverDelta {
 }
 export interface ValuationSnapshot {
   asOf: string;
-  effectiveDateSource: 'filing' | 'assumed';
+  /** 'live' marks the synthetic today-snapshot the chart appends from the live valuation (so
+   *  its current zone matches the headline); 'filing'/'assumed' are the reconstructed ones. */
+  effectiveDateSource: 'filing' | 'assumed' | 'live';
   fiscalPeriodEnd: string | null;
   filingDate: string | null;
   fiscalYear: number;
@@ -570,6 +572,12 @@ export interface ValuationHistory {
   coverageFrom: string | null;
   snapshots: ValuationSnapshot[];
   note: string;
+  /** Set when the reconstructed series is deliberately withheld rather than merely empty —
+   *  e.g. 'cross-listing-currency-mismatch' for an ADR whose trading currency differs from
+   *  its reporting currency, where reconstructed per-share zones can't be placed on the
+   *  trading-currency price. The UI shows `note` as the honest reason instead of the
+   *  generic "insufficient fundamental history" copy. Older payloads may omit this. */
+  unavailableReason?: string | null;
 }
 
 export interface ValuationScenario {

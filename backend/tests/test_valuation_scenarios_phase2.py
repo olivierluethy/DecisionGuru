@@ -1,59 +1,58 @@
-"""Phase-2c: bear / base / bull scenario valuation (VALUE_INVESTING_AUDIT §3 F-10).
-
-Instead of a single "magic" point, the engine now also produces three explicit scenarios
-that vary the *assumptions* (growth, discount rate, terminal growth) → an intrinsic value
-range and a margin-of-safety range. Wide scenario spread lowers confidence / raises a
-valuation-uncertainty flag. The base scenario is consistent with the earnings DCF model.
-"""
+"""Superseded by Area 3. The Phase-2 bear/base/bull scenarios are replaced by the earning-power
+engine's no-growth ANCHOR plus a growth-SENSITIVITY read (0% / assumed g), which is a cleaner,
+Graham/Buffett-aligned way to express valuation uncertainty. These tests now guard that new shape."""
 from __future__ import annotations
 
 from app.services import valuation as V
 
 
-def mk_data(**snap):
+def mk_data(rows=None, **snap):
     base = {
         "currency": "USD", "sector": "Technology",
         "trailingEps": 5.0, "forwardEps": 5.2, "priceToBook": 3.0,
         "returnOnEquity": 0.22, "profitMargins": 0.18, "dividendYield": 1.0,
         "payoutRatio": 0.3, "totalDebt": 1e9, "ebitda": 3e9,
-        "revenueGrowth": 0.07, "earningsGrowth": 0.07,
     }
     base.update(snap)
-    hist = [{"year": 2021, "netIncome": 1e9}, {"year": 2023, "netIncome": 1.2e9}]
-    return {"snapshot": base, "history": hist, "financialCurrency": base["currency"]}
+    rows = rows or [(2021, 400.0, 400.0), (2022, 430.0, 430.0), (2023, 470.0, 470.0), (2024, 510.0, 510.0)]
+    hist = [{"year": y, "netIncome": ni} for (y, ni, _) in rows]
+    cf = {"sharesOutstanding": 100.0, "years": [{"year": y, "freeCashFlow": f} for (y, _, f) in rows]}
+    bal = {"years": [{"year": y, "stockholdersEquity": 4000.0, "sharesOutstanding": 100.0} for (y, _, _) in rows]}
+    return {"snapshot": base, "history": hist, "cashflow": cf, "balance": bal,
+            "financialCurrency": base["currency"]}
 
 
-def test_scenarios_present_and_ordered():
+def test_no_growth_anchor_is_exposed_as_the_fundamental_base():
     va = V.value_analysis("T", 80.0, "USD", data=mk_data(), settings=None)
-    s = va["scenarios"]
-    assert set(s) == {"bear", "base", "bull"}
-    assert s["bear"]["intrinsicValue"] < s["base"]["intrinsicValue"] < s["bull"]["intrinsicValue"]
+    assert va["reliableValue"] is True
+    ep = va["earningPower"]
+    assert ep is not None
+    assert va["noGrowthValue"] == ep["noGrowthValue"]         # the anchor is visible
+    # The intrinsic range runs from the no-growth anchor to the with-growth fair value.
+    assert va["intrinsic"]["low"] == va["noGrowthValue"]
+    assert va["intrinsic"]["mid"] == va["fairValue"]
 
 
-def test_bear_more_conservative_assumptions_than_bull():
+def test_growth_only_lifts_value_above_the_anchor():
+    va = V.value_analysis("T", 80.0, "USD", data=mk_data(), settings=None)  # rising series → supported growth
+    assert va["growthBasis"] == "supported"
+    assert va["fairValue"] >= va["noGrowthValue"]
+
+
+def test_sensitivity_block_reports_value_at_zero_and_at_growth():
     va = V.value_analysis("T", 80.0, "USD", data=mk_data(), settings=None)
-    s = va["scenarios"]
-    assert s["bear"]["assumptions"]["growth"] < s["bull"]["assumptions"]["growth"]
-    assert s["bear"]["assumptions"]["discountRate"] > s["bull"]["assumptions"]["discountRate"]
+    s = va["earningPower"]["sensitivity"]
+    assert s["at0"] is not None and s["atGrowth"] is not None
+    assert s["atGrowth"] >= s["at0"]
 
 
-def test_base_scenario_matches_the_earnings_dcf_model():
+def test_old_scenarios_field_is_retired_for_the_earnings_framework():
     va = V.value_analysis("T", 80.0, "USD", data=mk_data(), settings=None)
-    assert va["scenarios"]["base"]["intrinsicValue"] == va["models"]["dcf"]
+    assert va["scenarios"] is None and va["valuationRange"] is None
 
 
-def test_margin_of_safety_range_tracks_scenarios():
-    va = V.value_analysis("T", 80.0, "USD", data=mk_data(), settings=None)
-    s = va["scenarios"]
-    assert s["bear"]["marginOfSafety"] < s["bull"]["marginOfSafety"]
-    vr = va["valuationRange"]
-    assert vr["low"] == s["bear"]["intrinsicValue"]
-    assert vr["high"] == s["bull"]["intrinsicValue"]
-    assert va["valuationUncertainty"] in {"low", "moderate", "high"}
-
-
-def test_no_scenarios_without_positive_earnings():
-    va = V.value_analysis("T", 80.0, "USD", data=mk_data(trailingEps=None, forwardEps=None),
-                          settings=None)
-    assert va["scenarios"] is None
-    assert va["valuationRange"] is None
+def test_no_value_without_a_normalizable_earnings_series():
+    # Two years only → can't normalize a level → NO RELIABLE FAIR VALUE.
+    va = V.value_analysis("T", 80.0, "USD",
+                          data=mk_data(rows=[(2023, 400.0, 400.0), (2024, 430.0, 430.0)]), settings=None)
+    assert va["reliableValue"] is False and va["fairValue"] is None

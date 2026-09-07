@@ -14,7 +14,25 @@ from datetime import date as _date
 from . import fundamentals as fund
 from . import fx
 from . import quality as quality_mod
+from . import earning_power as ep
 from ..providers.base import normalize_minor_currency
+
+
+def _per_share_series(hist: list[dict], balance: dict | None, cashflow: dict | None,
+                      norm_fn) -> tuple[list, list]:
+    """Per-share net-income and free-cash-flow series (balance-sheet shares → price-independent,
+    minor-unit normalized), aligned by fiscal year. Feeds the Area 3 earning-power engine."""
+    bal = {y.get("year"): y for y in (balance or {}).get("years") or []}
+    cf = {y.get("year"): y for y in (cashflow or {}).get("years") or []}
+    years = sorted(y for y in {h.get("year") for h in (hist or [])} if y)
+    ni_by_year = {h.get("year"): h.get("netIncome") for h in (hist or [])}
+    eps_s, fcf_s = [], []
+    for y in years:
+        sh = (bal.get(y) or {}).get("sharesOutstanding")
+        ni, f = ni_by_year.get(y), (cf.get(y) or {}).get("freeCashFlow")
+        eps_s.append(norm_fn(ni / sh) if (ni is not None and sh) else None)
+        fcf_s.append(norm_fn(f / sh) if (f is not None and sh) else None)
+    return eps_s, fcf_s
 
 DISCOUNT_RATE = 0.09
 TERMINAL_GROWTH = 0.025
@@ -40,6 +58,44 @@ def _val_cfg(settings: dict | None) -> dict:
         "ov": float(v.get("overvaluedPremium", OVERVALUED_PREMIUM)),
         "sig": float(v.get("significantOvervaluedPremium", SIGNIFICANT_OVERVALUED_PREMIUM)),
     }
+
+
+# --- Area 2: business-type routing + abstention ---------------------------------------
+# Businesses whose intrinsic value is asset/book, not an earnings-growth DCF. An earnings model
+# must never run as the OFFICIAL fair value for these (mark-dominated or revaluation-driven GAAP
+# earnings) — they route to NAV/book, or abstain when the book data can't be trusted.
+_BOOK_SECTORS = {
+    "financial services", "financials", "financial", "banks", "bank",
+    "insurance", "capital markets", "real estate", "reit", "mortgage reit",
+}
+
+
+def _framework_for_sector(sector: str | None) -> str:
+    return "book_nav" if (sector or "").strip().lower() in _BOOK_SECTORS else "earnings"
+
+
+def _positive_earnings_years(hist: list[dict]) -> int:
+    return sum(1 for h in hist if isinstance(h.get("netIncome"), (int, float)) and h["netIncome"] > 0)
+
+
+def validate_book_value(price: float | None, p2b: float | None, nav: float | None) -> tuple[bool, str | None]:
+    """Guard book/NAV data before trusting it (your point 2). `nav` is the balance-sheet book
+    per share (equity ÷ shares), already price-independent and minor-unit normalized. We reject:
+      - no usable equity/shares;
+      - an absurd price-to-book (Berkshire's 0.001×: per-A-share book vs the B-share price);
+      - a balance-sheet book that disagrees with the feed's price-to-book book (a share-class /
+        stale-data signal, e.g. Swatch's registered-vs-bearer count).
+    A cross-listing where reporting ≠ trading currency already has nav=None upstream (the same
+    guard the Graham number uses), so it abstains here too."""
+    if nav is None or nav <= 0:
+        return False, "no usable balance-sheet book value"
+    if not p2b or p2b <= 0.05 or p2b > 50:
+        return False, "implausible price-to-book — corrupt or share-class book data"
+    if price and price > 0:
+        implied = price / p2b
+        if implied > 0 and not (0.6 <= nav / implied <= 1.7):
+            return False, "balance-sheet and feed book values disagree — possible share-class / stale data"
+    return True, None
 
 
 def zone_edges(fair_value: float, cfg: dict) -> dict:
@@ -262,6 +318,16 @@ def value_analysis(symbol: str, price: float | None, currency: str | None = None
     _, major_ccy = normalize_minor_currency(1.0, currency or snap_ccy)
     ccy = major_ccy or currency or snap_ccy
 
+    # Cross-listing / ADR guard for the CASH lane. EPS/price are in the trading currency
+    # (snap_ccy) — verified (AUDIT §9). But the cash-flow statement is in the REPORTING
+    # currency (financialCurrency); dividing it by shares and comparing to the trading-currency
+    # price with no FX contaminates the fair value and shows FCF/owner-earnings in the wrong
+    # currency for every ADR (AUDIT §3 F-1, cash-lane part — not covered by the EPS "non-issue"
+    # verification). We don't fabricate an FX rate: when the two currencies differ we drop the
+    # cash lane (the EPS-based models stay, correctly in the trading currency) and say so.
+    fin_ccy = (data or {}).get("financialCurrency")
+    cash_lane_comparable = not (fin_ccy and snap_ccy and fin_ccy != snap_ccy)
+
     def _norm_px(v: float | None) -> float | None:
         return normalize_minor_currency(v, snap_ccy)[0] if v is not None else None
 
@@ -276,7 +342,21 @@ def value_analysis(symbol: str, price: float | None, currency: str | None = None
 
     g_used_raw, g_reported = _pick_growth(snap, hist)
     g = _clamp(g_used_raw, -0.05, GROWTH_CAP)
-    bvps = (price / p2b) if (p2b and price and p2b > 0) else None
+    # Book value per share from the BALANCE SHEET (equity ÷ shares) — price-INDEPENDENT, so the
+    # intrinsic value never tracks the market price and the margin of safety stays a real discount
+    # to an independent estimate (was `price / priceToBook`, which made the Graham number rise with
+    # the quote). Normalized by the snapshot's own currency for minor units. For a cross-listing
+    # (reporting ≠ trading currency) the balance-sheet book is in the reporting currency and can't
+    # be placed against the trading-currency EPS in the Graham number, so it is dropped there — the
+    # same abstention the cash lane uses (`cash_lane_comparable`).
+    _bal_years = (data.get("balance") or {}).get("years") or []
+    _bal_latest = max(_bal_years, key=lambda y: y.get("year", 0)) if _bal_years else {}
+    _equity, _bshares = _bal_latest.get("stockholdersEquity"), _bal_latest.get("sharesOutstanding")
+    bvps = (
+        _norm_px(_equity / _bshares)
+        if (cash_lane_comparable and _equity is not None and _bshares and _bshares > 0)
+        else None
+    )
     base_eps = eps if (eps and eps > 0) else fwd_eps
 
     # --- Cash-based lane: free cash flow & owner earnings (AUDIT §3 F-8) ---------
@@ -293,14 +373,14 @@ def value_analysis(symbol: str, price: float | None, currency: str | None = None
             return None
         return _norm_px(v / shares)   # per-share, minor-unit normalised by snapshot ccy
 
-    fcf_ps_series = [ps for y in cf_years if (ps := _per_share(y.get("freeCashFlow"))) is not None]
-    fcf_per_share = _per_share(cf_years[-1].get("freeCashFlow")) if cf_years else None
+    fcf_ps_series = [ps for y in cf_years if (ps := _per_share(y.get("freeCashFlow"))) is not None] if cash_lane_comparable else []
+    fcf_per_share = _per_share(cf_years[-1].get("freeCashFlow")) if (cf_years and cash_lane_comparable) else None
     normalized_fcf_ps = round(_median(fcf_ps_series), 2) if fcf_ps_series else None
 
     models = compute_models(eps, bvps, base_eps, g, normalized_fcf_ps, cfg)
 
     owner_earnings_ps = None
-    if cf_years:
+    if cf_years and cash_lane_comparable:
         last = cf_years[-1]
         ni, dna, capex = last.get("netIncome"), last.get("dna"), last.get("capex")
         if ni is not None and dna is not None and capex is not None:
@@ -383,6 +463,13 @@ def value_analysis(symbol: str, price: float | None, currency: str | None = None
     ]
 
     confidence, flags = _confidence(snap, models, price)
+    if not cash_lane_comparable:
+        flags.append(
+            f"This is a cross-listing/ADR: it trades in {snap_ccy} but reports in {fin_ccy}. "
+            f"Free-cash-flow, owner-earnings and book-value (Graham number) estimates are omitted "
+            f"here (they can't be placed on the {snap_ccy} price without an FX assumption); the "
+            f"valuation uses the trading-currency earnings models only."
+        )
     if valuation_uncertainty == "high":
         # Extreme assumption-sensitivity → never present a high-confidence point (AUDIT §6).
         if _CONF_RANK[confidence] > _CONF_RANK["medium"]:
@@ -391,6 +478,109 @@ def value_analysis(symbol: str, price: float | None, currency: str | None = None
             "Wide bear-to-bull valuation spread — intrinsic value is highly sensitive to the "
             "growth/discount assumptions; read the range, not a single fair value."
         )
+
+    # --- Area 2: route by business type, then decide whether a value is reliable ----------
+    # Financials/REITs are valued on NAV/book (their GAAP earnings are mark- or revaluation-
+    # driven, so an earnings DCF would mislead); a company without enough positive-earnings
+    # history gets NO RELIABLE FAIR VALUE instead of a forward-EPS fantasy. When we abstain the
+    # earnings figures are cleared so no surface can show a value the evidence doesn't support.
+    framework = _framework_for_sector(snap.get("sector"))
+    reliable, reliability_reason, book_nav_block, earning_power_block = True, None, None, None
+    reliability_tier = 1
+    if framework == "book_nav":
+        ok, why = validate_book_value(price, p2b, bvps)
+        if ok:
+            fair_value = bvps
+            band = classify_band(price, fair_value, cfg)
+            mos = round(fair_value / price - 1, 4) if (fair_value and price and price > 0) else None
+            intrinsic = {"low": None, "mid": round(bvps, 2), "high": None}
+            models = {}                       # earnings models are not the basis for a book value
+            scenarios = valuation_range = valuation_uncertainty = None
+            book_nav_block = {
+                "navPerShare": round(bvps, 2),
+                "priceToNav": round(price / fair_value, 3) if (fair_value and price) else None,
+                "caveat": (
+                    "Below or above NAV is a starting point, not a verdict: read it with leverage, "
+                    "financing/rate risk and asset-mark quality. A discount to NAV is never an "
+                    "automatic buy."
+                ),
+            }
+        else:
+            reliable, reliability_reason = False, why
+    else:
+        # --- Area 3: sustainable earning power first, growth only when justified -----------
+        eps_s, fcf_s = _per_share_series(hist, data.get("balance"), data.get("cashflow"), _norm_px)
+        measure, level = ep.select_measure(eps_s, fcf_s)
+        chosen = fcf_s if "owner" in measure else eps_s
+        recent_fcf = [x for x in fcf_s[-2:] if x is not None]
+        if len([h for h in hist if isinstance(h.get("netIncome"), (int, float))]) >= 3 \
+                and _positive_earnings_years(hist) < 3:
+            reliable, reliability_reason = False, (
+                "insufficient positive-earnings history (fewer than 3 profitable years on record)")
+        elif not cash_lane_comparable:
+            # Cross-listing (reports ≠ trades currency): earning power can't be normalized in the
+            # trading currency/share basis without an FX/ADR assumption → abstain (honest).
+            reliable, reliability_reason = False, (
+                "cross-listing (reports in a different currency than it trades) — sustainable earning "
+                "power can't be normalized in the trading-currency/share basis")
+        elif measure.startswith("normalized net income") and recent_fcf and all(x <= 0 for x in recent_fcf):
+            # Net income positive but the owner is not receiving cash (recent FCF ≤ 0) — owner
+            # earning power isn't established, so an NI-based value would overstate it.
+            reliable, reliability_reason = False, (
+                "net income is positive but recent free cash flow is ≤ 0 — earning power is not "
+                "converting to owner cash")
+        elif level is None or level <= 0:
+            reliable, reliability_reason = False, "normalized earning power is not positive/establishable"
+        else:
+            cser = [x for x in chosen if x is not None]
+            cov = ep._cov(cser)
+            if cser and cser[-1] < ep.EXTREME_TROUGH * level and cov and cov > ep.TROUGH_COV and len(cser) < 6:
+                reliable, reliability_reason = False, (
+                    "deep cyclical trough; the short history can't establish a through-cycle level")
+            else:
+                gr = ep.derive_growth(cser, roe, bool(margins and margins >= 0.08))
+                g_asmp = gr["growth"]
+                no_growth_value = ep.value_at_growth(level, 0.0, bvps, roe, cfg)
+                fv = ep.value_at_growth(level, g_asmp, bvps, roe, cfg)
+                if not fv:
+                    reliable, reliability_reason = False, "no positive valuation anchor"
+                else:
+                    fair_value, mos = fv, (round(fv / price - 1, 4) if (price and price > 0) else None)
+                    band = classify_band(price, fair_value, cfg)
+                    intrinsic = {"low": no_growth_value, "mid": fv, "high": None}
+                    models = {}
+                    scenarios = valuation_range = valuation_uncertainty = None
+                    # Sensitivity IS the reliability signal: does the ASSUMED growth change the
+                    # verdict vs the no-growth anchor? (A hypothetical higher growth only ever makes
+                    # a name look cheaper, so it can't threaten the conservative conclusion; what
+                    # matters is whether credited growth turned the verdict away from no-growth.)
+                    # An exceptional (capped) rate is inherently assumption-sensitive.
+                    sens = ep.sensitivity(level, bvps, roe, g_asmp, cfg)
+                    b0 = classify_band(price, sens["at0"], cfg)
+                    bg = classify_band(price, sens["atG"], cfg)
+                    verdict_moved = bool(b0 and bg and b0["band"] != bg["band"])
+                    assumption_sensitive = verdict_moved or gr["basis"] == "high-capped"
+                    reliability_tier = 2 if assumption_sensitive else 1
+                    if gr["confidence"] == "low" or assumption_sensitive:
+                        confidence = "low"     # a decision constraint, not just a label
+                    earning_power_block = {
+                        "measure": measure, "normalizedLevel": round(level, 2),
+                        "growthAssumption": g_asmp, "growthBasis": gr["basis"],
+                        "growthConfidence": gr["confidence"], "growthReason": gr["reason"],
+                        "noGrowthValue": no_growth_value,
+                        "sensitivity": {"at0": sens["at0"], "atGrowth": sens["atG"], "atGrowthPlus": sens["atGplus"]},
+                        "assumptionSensitive": assumption_sensitive,
+                    }
+
+    if not reliable:
+        fair_value = band = mos = None
+        intrinsic = {"low": None, "mid": None, "high": None}
+        models = {}
+        scenarios = valuation_range = valuation_uncertainty = None
+        reliability_tier = 3
+        confidence = "low"
+        if reliability_reason:
+            flags.append(f"No reliable fair value — {reliability_reason}.")
 
     return {
         "symbol": symbol,
@@ -404,6 +594,20 @@ def value_analysis(symbol: str, price: float | None, currency: str | None = None
         "fairValue": fair_value,
         "entryTarget": band["entryTarget"] if band else None,
         "band": band,
+        # Area 2: which framework valued it, whether the value is trustworthy, and (for a
+        # financial/REIT) the NAV read. `reliableValue: false` means NO RELIABLE FAIR VALUE.
+        "valuationFramework": framework,
+        "reliableValue": reliable,
+        "reliabilityReason": reliability_reason,
+        "reliabilityTier": reliability_tier,   # 1 reliable · 2 assumption-sensitive (no buy) · 3 abstain
+        "bookNav": book_nav_block,
+        # Area 3: the earning-power basis. `noGrowthValue` is the fundamental anchor; `fairValue`
+        # adds only justified growth; `assumptionSensitive`/tier-2 forbids a BUY.
+        "earningPower": earning_power_block,
+        "noGrowthValue": (earning_power_block or {}).get("noGrowthValue"),
+        "growthAssumption": (earning_power_block or {}).get("growthAssumption"),
+        "growthBasis": (earning_power_block or {}).get("growthBasis"),
+        "assumptionSensitive": (earning_power_block or {}).get("assumptionSensitive", False),
         "impliedGrowth": round(implied_g, 4) if implied_g is not None else None,
         "supportableReturn": round((g or 0) + (dy or 0), 4),
         "quality": {

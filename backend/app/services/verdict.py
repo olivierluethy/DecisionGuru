@@ -407,7 +407,11 @@ def _build_rationale(verdict, band_label, mos, q_score, q_max, perf, lag_pct,
     if mos is not None and mos > 0:
         parts.append(f"{_pct(mos)} margin of safety")
     elif mos is not None and mos < 0:
-        parts.append(f"{_pct(-mos)} above fair value")
+        # "% above fair value" is the true price/fair − 1 premium (matches the sell panel and
+        # dashboard), NOT −mos (= 1 − fair/price), which understates it. Derive it exactly from
+        # mos: premiumToFair = −mos / (1 + mos).
+        premium = (-mos / (1 + mos)) if (1 + mos) != 0 else -mos
+        parts.append(f"{_pct(premium)} above fair value")
     if q_score is not None and q_max:
         parts.append(f"quality {q_score}/{q_max}")
     if perf == "underperform" and lag_pct is not None:

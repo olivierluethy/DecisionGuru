@@ -203,11 +203,12 @@ test.describe('Valuation zones — historical fair-value chart (AAPL, real cache
     await shootChart(page, chart, 'valuation-zones-narrow-390.png');
   });
 
-  test('no reconstructable history: "Historical valuation unavailable" caption, no zone fills', async ({ page }) => {
+  test('no reconstructable history: today\'s live zones render as flat bands (no historical steps)', async ({ page }) => {
     // AAPL's own asset/quote/valuation/price-history endpoints stay real (all cache hits); we
-    // override only the valuation-history endpoint, mirroring the existing fixture-stubbing
-    // pattern (market-analysis.spec / forecast.spec) to produce the one state the live cache
-    // can't hand us on demand: a valid current-day band with zero reconstructable snapshots.
+    // override only the valuation-history endpoint to produce a valid current-day band with zero
+    // reconstructable snapshots. The chart must NOT go blank — it falls back to today's LIVE
+    // zones (from the current `band`) drawn as flat reference bands, so a viewer always sees
+    // where the price sits vs today's fair value; only the per-year *history* is unavailable.
     await page.route('**/research/valuation/history/AAPL', (route) =>
       route.fulfill({
         contentType: 'application/json',
@@ -216,40 +217,39 @@ test.describe('Valuation zones — historical fair-value chart (AAPL, real cache
 
     const chart = await openValueAnalysis(page, 'AAPL');
 
-    // No zone fills at all.
+    // Today's live zone fills + FV spine ARE drawn (flat, from the live band).
     const areas = zoneAreas(chart);
     for (const key of Object.keys(areas) as (keyof typeof areas)[]) {
-      await expect(areas[key], `${key} zone area (should be absent)`).toHaveCount(0);
+      await expect(areas[key], `${key} zone area (today's flat band)`).toHaveCount(1);
     }
-    await expect(chart.locator(`svg path.recharts-line-curve[stroke="${FV_SPINE_STROKE}"]`)).toHaveCount(0);
+    await expect(chart.locator(`svg path.recharts-line-curve[stroke="${FV_SPINE_STROKE}"]`)).toHaveCount(1);
+    // …but NO reconstructed-history chrome: no transition markers, no pre-coverage grey band.
     await expect(chart.locator(`svg circle[fill="${TRANSITION_DOT_FILL}"]`)).toHaveCount(0);
+    await expect(chart.getByText('price only · zones from', { exact: false })).toHaveCount(0);
 
-    // The honest caption appears both under the chart (italic legend line) and in the
-    // snapshot card's default (no reconstructable data at all) state.
-    await expect(page.getByText('Historical valuation unavailable', { exact: false }).first()).toBeVisible();
-    await expect(snapshotCard(page)).toContainText('Historical valuation unavailable');
+    // The top-right badge and the right-edge Buy/Over/Sell labels ARE present (live zones).
+    await expect(chart.locator('div.absolute.top-0.right-2')).toHaveCount(1);
+    await expect(chart.getByText('Buy', { exact: true })).toHaveCount(1);
+    await expect(chart.getByText('Over', { exact: true })).toHaveCount(1);
+    await expect(chart.getByText('Sell', { exact: true })).toHaveCount(1);
 
-    // The price line itself still renders (this isn't the "no price data yet" placeholder).
+    // The caption explains these are today's zones, not a reconstruction; the snapshot card
+    // says the same rather than showing a fabricated historical valuation.
+    await expect(page.getByText("today's fair-value zones", { exact: false }).first()).toBeVisible();
+    await expect(snapshotCard(page)).toContainText('no per-year history');
+
+    // The price line itself still renders.
     await expect(chart.locator(`svg path.recharts-line-curve[stroke="${ZONE_FILL.fair}"]`)).toHaveCount(1);
 
-    // The top-right "Fair value … · MoS …" badge and the right-edge Buy/Over/Sell zone-edge
-    // labels must also be absent — not just the zone fills/spine/footer.
-    await expect(chart.locator('div.absolute.top-0.right-2')).toHaveCount(0);
-    await expect(chart.getByText('Buy', { exact: true })).toHaveCount(0);
-    await expect(chart.getByText('Over', { exact: true })).toHaveCount(0);
-    await expect(chart.getByText('Sell', { exact: true })).toHaveCount(0);
-
-    await shootChart(page, chart, 'valuation-zones-no-data.png');
+    await shootChart(page, chart, 'valuation-zones-live-only.png');
   });
 
-  test('exactly one reconstructable snapshot: still renders uniformly unavailable (not half-populated)', async ({ page }) => {
-    // The one-snapshot case is the sharpest edge case: `hasHistory` (snapshots.length >= 2) is
-    // false, but `lastSnap` (the LAST snapshot) is non-null — so anything gated only on
-    // `lastSnap` (the top badge, the right-edge Buy/Over/Sell labels, the snapshot card) would
-    // still render a populated valuation while the zone fills/spine/footer stay correctly
-    // hidden, contradicting the "Historical valuation unavailable" caption right next to them.
-    // Stub a single real-shaped snapshot (AAPL's FY2022 one, no `drivers` — nothing to compare
-    // a lone snapshot against) with everything else on the real cache.
+  test('a single snapshot is treated as no history: live zones only, no steps or transition markers', async ({ page }) => {
+    // One snapshot is below the >=2 threshold for a reconstructed *path*, so it's treated the
+    // same as no history: the chart shows today's LIVE zones (flat), never a lone half-populated
+    // stepped series. The guard here is that a single snapshot produces neither stepped zones
+    // (which need >=2 points to step) nor a transition marker nor a pre-coverage band — just the
+    // uniform live-zone fallback, consistent with the badge, labels and snapshot card.
     await page.route('**/research/valuation/history/AAPL', (route) =>
       route.fulfill({
         contentType: 'application/json',
@@ -277,26 +277,25 @@ test.describe('Valuation zones — historical fair-value chart (AAPL, real cache
 
     const chart = await openValueAnalysis(page, 'AAPL');
 
-    // Zone fills, FV spine and transition markers stay absent (same as the zero-snapshot case).
+    // Live zone fills + FV spine render (today's flat bands), same as the zero-snapshot case.
     const areas = zoneAreas(chart);
     for (const key of Object.keys(areas) as (keyof typeof areas)[]) {
-      await expect(areas[key], `${key} zone area (should be absent)`).toHaveCount(0);
+      await expect(areas[key], `${key} zone area (today's flat band)`).toHaveCount(1);
     }
-    await expect(chart.locator(`svg path.recharts-line-curve[stroke="${FV_SPINE_STROKE}"]`)).toHaveCount(0);
+    await expect(chart.locator(`svg path.recharts-line-curve[stroke="${FV_SPINE_STROKE}"]`)).toHaveCount(1);
+    // A lone snapshot must NOT create a transition marker or a pre-coverage band.
     await expect(chart.locator(`svg circle[fill="${TRANSITION_DOT_FILL}"]`)).toHaveCount(0);
+    await expect(chart.getByText('price only · zones from', { exact: false })).toHaveCount(0);
 
-    // The bug this test guards: the top badge and right-edge labels must NOT render just
-    // because `lastSnap` (the lone snapshot) is non-null.
-    await expect(chart.locator('div.absolute.top-0.right-2')).toHaveCount(0);
-    await expect(chart.getByText('Buy', { exact: true })).toHaveCount(0);
-    await expect(chart.getByText('Over', { exact: true })).toHaveCount(0);
-    await expect(chart.getByText('Sell', { exact: true })).toHaveCount(0);
+    // Badge + right-edge labels present and consistent (all from the live band, uniformly).
+    await expect(chart.locator('div.absolute.top-0.right-2')).toHaveCount(1);
+    await expect(chart.getByText('Buy', { exact: true })).toHaveCount(1);
+    await expect(chart.getByText('Over', { exact: true })).toHaveCount(1);
+    await expect(chart.getByText('Sell', { exact: true })).toHaveCount(1);
 
-    // The snapshot card must show the same "unavailable" message, never a populated valuation.
-    await expect(snapshotCard(page)).toContainText('Historical valuation unavailable');
-    await expect(snapshotCard(page)).not.toContainText('vs Fair Value');
-
-    // The honest caption is present, no zone fills anywhere on the page.
-    await expect(page.getByText('Historical valuation unavailable', { exact: false }).first()).toBeVisible();
+    // The snapshot card shows today's live valuation (with its honest "no per-year history" note),
+    // not a fabricated as-of-2023 reconstruction from the lone stubbed snapshot.
+    await expect(snapshotCard(page)).toContainText('no per-year history');
+    await expect(page.getByText("today's fair-value zones", { exact: false }).first()).toBeVisible();
   });
 });

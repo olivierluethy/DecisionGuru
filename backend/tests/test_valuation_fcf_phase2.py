@@ -19,8 +19,13 @@ def mk_data(cashflow=None, **snap):
         "revenueGrowth": 0.06, "earningsGrowth": 0.06,
     }
     base.update(snap)
-    hist = [{"year": 2021, "netIncome": 4e9}, {"year": 2023, "netIncome": 4.5e9}]
-    data = {"snapshot": base, "history": hist, "financialCurrency": base["currency"]}
+    # Net income (4e8/1e8 = 4.0) sits BELOW the cash the owner receives (FCF 5–6/share) — an
+    # amortization-heavy profile → the engine should value on owner earnings / free cash flow.
+    hist = [{"year": 2021, "netIncome": 4e8}, {"year": 2022, "netIncome": 4e8},
+            {"year": 2023, "netIncome": 4e8}]
+    bal = {"years": [{"year": y, "stockholdersEquity": 4e9, "sharesOutstanding": 1e8}
+                     for y in (2021, 2022, 2023)]}
+    data = {"snapshot": base, "history": hist, "balance": bal, "financialCurrency": base["currency"]}
     if cashflow is not None:
         data["cashflow"] = cashflow
     return data
@@ -40,10 +45,12 @@ CF = {
 }
 
 
-def test_fcf_model_added_to_the_range_when_cashflow_present():
+def test_free_cash_flow_drives_the_valuation_when_it_is_the_cleaner_measure():
+    # Area 3: FCF/share (6e8/1e8 = 6, above the 5.5 accounting earnings, stable) becomes the
+    # earning-power measure, not a "model" in a median.
     va = V.value_analysis("KO", 50.0, "USD", data=mk_data(cashflow=CF), settings=None)
-    assert "fcf" in va["models"]
-    assert va["intrinsic"]["mid"] is not None
+    assert va["reliableValue"] is True and va["fairValue"] is not None
+    assert "free cash flow" in va["earningPower"]["measure"]
 
 
 def test_latest_fcf_per_share_and_yield_exposed():
@@ -65,7 +72,8 @@ def test_owner_earnings_is_ni_plus_dna_minus_capex():
 
 def test_degrades_gracefully_without_cashflow():
     va = V.value_analysis("KO", 50.0, "USD", data=mk_data(cashflow=None), settings=None)
-    assert "fcf" not in va["models"]
     assert va["fcfPerShare"] is None
     assert va["ownerEarningsPerShare"] is None
-    assert va["intrinsic"]["mid"] is not None        # other models still value it
+    # Without cash-flow data the engine falls back to normalized net income and still values it.
+    assert va["reliableValue"] is True and va["fairValue"] is not None
+    assert "net income" in va["earningPower"]["measure"]

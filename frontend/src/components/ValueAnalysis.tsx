@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { Check, X, TrendingDown, TrendingUp, AlertTriangle } from 'lucide-react';
 import { api, type Verdict } from '../lib/api';
-import { Spinner } from './ui';
+import { Spinner, InfoTooltip } from './ui';
 import { BandBadge, PriceBandChart } from './ValuationBand';
 import { VerdictBadge, VerdictRationale } from './Verdict';
 import { fmtPct, fmtMoney, priceFreshnessLabel } from '../lib/format';
@@ -101,8 +101,22 @@ export function ValueAnalysis({
     priceAsOf ?? data.priceAsOf,
   );
   const mid = data.intrinsic.mid;
-  const mos = data.marginOfSafety; // + = undervalued vs models
-  const overvalued = mos != null && mos < 0;
+  const mos = data.marginOfSafety; // + = undervalued vs models (fair/price − 1)
+  // The verdict WORD comes from the band's threshold zones; the number is stated factually so
+  // the two can never contradict (a price 0–20% above fair is "Fairly valued", NOT "Overvalued
+  // by X%"). The "above fair value" figure uses premiumToFair (price/fair − 1) — the same basis
+  // the sell-signal panel and dashboard use — so the same holding never shows two different
+  // overvaluation numbers across surfaces.
+  const bandKey = data.band?.band ?? null;
+  const premium = data.band?.premiumToFair ?? null; // +ve = price above fair value
+  const isExpensive = bandKey === 'overvalued' || bandKey === 'significantly-overvalued';
+  // A price below fair value always has a (real) margin of safety, even inside the fair band —
+  // that is NOT a contradiction with a "Fairly valued" badge. The contradiction we fix is the
+  // reverse: the text said "Overvalued by X%" whenever price was above fair, even when the band
+  // (which needs +20%) still reads "fair". So the "overvalued" WORD appears only when the band
+  // agrees; a price above fair but inside the fair band is stated neutrally.
+  const showMoS = mos != null && mos > 0;
+  const showOvervalued = mos != null && mos <= 0 && isExpensive;
 
   const horizon = data.assumptions.years;
   const requiredCagr = catchUpPct != null && catchUpPct > 0 ? Math.pow(1 + catchUpPct, 1 / horizon) - 1 : null;
@@ -148,7 +162,7 @@ export function ValueAnalysis({
       )}
       {/* Verdict headline: intrinsic value vs price */}
       <div className="grid sm:grid-cols-[minmax(200px,1fr)_2fr] gap-5">
-        <div className={`card !p-4 border-l-2 ${overvalued ? 'border-l-loss' : 'border-l-gain'}`}>
+        <div className={`card !p-4 border-l-2 ${showOvervalued ? 'border-l-loss' : showMoS ? 'border-l-gain' : 'border-l-hairline-strong'}`}>
           <div className="flex items-center justify-between mb-1">
             <div className="eyebrow">Fair value (est.)</div>
             {data.band && <BandBadge band={data.band.band} />}
@@ -162,12 +176,14 @@ export function ValueAnalysis({
               range {money(data.intrinsic.low)} – {money(data.intrinsic.high)}
             </div>
           )}
-          {mos != null && (
-            <div className={`mt-2 text-sm font-medium ${overvalued ? 'text-loss' : 'text-gain'}`}>
-              {overvalued ? (
-                <><TrendingDown size={14} className="inline mr-1" />Overvalued by {fmtPct(-mos, 1)}</>
-              ) : (
+          {mos != null && bandKey && (
+            <div className={`mt-2 text-sm font-medium ${showOvervalued ? 'text-loss' : showMoS ? 'text-gain' : 'text-text-muted'}`}>
+              {showMoS ? (
                 <><TrendingUp size={14} className="inline mr-1" />Margin of safety {fmtPct(mos, 1)}</>
+              ) : showOvervalued ? (
+                <><TrendingDown size={14} className="inline mr-1" />Overvalued by {fmtPct(premium ?? 0, 1)}</>
+              ) : (
+                <>Trading {fmtPct(premium ?? 0, 1)} above fair value</>
               )}
               {lowConf && <span className="text-text-faint font-normal"> · indicative only</span>}
             </div>
@@ -287,7 +303,30 @@ export function ValueAnalysis({
       {/* Price history with shaded buy / fair / overvalued / sell zones */}
       {data.band && (
         <div className="card !p-4">
-          <div className="eyebrow mb-2">Price vs fair-value zones</div>
+          <div className="flex items-center gap-1.5 mb-2">
+            <div className="eyebrow">Price vs fair-value zones</div>
+            <InfoTooltip
+              label="How to read this chart"
+              text={
+                <span className="space-y-1.5 block">
+                  <span className="block">
+                    The blue line is the share’s <b>market price</b> over time — not your holding’s value or what you paid.
+                  </span>
+                  <span className="block">
+                    The shaded bands are the fair-value zones: <b className="text-gain">buy</b> (cheap) ·
+                    {' '}fair · <b className="text-warn">overvalued</b> · <b className="text-loss">sell</b>. Where the
+                    line sits tells you the verdict — today’s zones and fair value are exactly the estimate shown above,
+                    so the current point never contradicts it.
+                  </span>
+                  <span className="block">
+                    Earlier steps are rebuilt from each past annual report (the zones step when a new report lands). The
+                    final step is today’s <b>live</b> estimate — it uses current earnings, so it can differ from the last
+                    reported year.
+                  </span>
+                </span>
+              }
+            />
+          </div>
           <PriceBandChart symbol={symbol} band={data.band} currency={ccy} rate={fxRate} displayCurrency={dc?.code ?? null} />
         </div>
       )}

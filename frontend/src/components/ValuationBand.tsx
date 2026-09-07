@@ -1,4 +1,4 @@
-import { useId, useState, useMemo, useEffect, type ReactNode, type KeyboardEvent } from 'react';
+import { useId, useState, useMemo, useEffect, useRef, type ReactNode, type KeyboardEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   ComposedChart, Line, Area, ReferenceArea, ReferenceLine, ReferenceDot, CartesianGrid,
@@ -149,8 +149,16 @@ export function PriceBandChart({
     staleTime: 60 * 60_000,
     retry: 1,
   });
-  const snapshots = valHistory?.snapshots ?? [];
-  const hasHistory = snapshots.length >= 2;
+  const snapshotsRaw = valHistory?.snapshots ?? [];
+  // Why there are no reconstructed zones. When the backend deliberately WITHHELD the series
+  // (e.g. an ADR whose trading currency differs from its reporting currency — reconstructed
+  // per-share zones can't be placed on the trading-currency price without mixing currency and
+  // share basis), it sends a specific `note`; show that honest reason instead of the generic
+  // insufficient-history line, so the chart never silently contradicts the live headline.
+  const unavailableReason = valHistory?.unavailableReason ?? null;
+  const historyNote = unavailableReason
+    ? (valHistory?.note ?? 'Historical valuation zones are unavailable for this listing.')
+    : 'Historical valuation unavailable — insufficient fundamental history for this security.';
 
   // Unique, colon-free prefix so this instance's gradient ids never clash with another chart's.
   const uid = useId().replace(/:/g, '');
@@ -160,12 +168,12 @@ export function PriceBandChart({
   // no rate is supplied the chart stays in the native currency (unchanged behavior).
   const k = rate != null ? rate : 1;
   const ccy = ((rate != null && displayCurrency) ? displayCurrency : currency) || '';
-  // NOTE: `band.entryTarget/overvaluedAt/sellZoneAt/fairValue` (today's LIVE band, recomputed
-  // fresh) are intentionally NOT read as display values anywhere below — every zone number
-  // shown (right-edge labels, the top badge, the snapshot card, the footer legend) comes from
-  // `lastSnap`, the last RECONSTRUCTED snapshot, so they never contradict each other. `band` is
-  // only still used for its margin-of-safety *percentage*, a config value rather than a
-  // reconstructed one.
+  // The chart's CURRENT-day fair value + zones (right-edge labels, top badge, snapshot card,
+  // footer legend, and the final stepped zone segment) come from `lastSnap` — which is the
+  // synthetic live snapshot appended just below, i.e. the SAME live valuation the headline
+  // shows. So the chart's "today" verdict can never contradict the headline. The RECONSTRUCTED
+  // annual snapshots (computed from different inputs) drive only the PAST steps and the
+  // scrub-to-history inspection. `band` is the live valuation, passed straight through.
 
   // Full converted price path (positive closes only). The backend already serves up to 10y,
   // so every preset and the Brush slice this in place — no refetch when the window changes.
@@ -173,6 +181,44 @@ export function PriceBandChart({
     () => (history ?? []).map((h) => ({ date: h.date, close: h.close * k })).filter((d) => d.close > 0),
     [history, k],
   );
+
+  // The live valuation as a synthetic "today" snapshot — the SAME estimate the headline shows,
+  // so the chart's zones/verdict/labels can never contradict it. Two modes:
+  //  • WITH a reconstructed series (>=2 annual snaps): append it at the LAST price date, so it
+  //    forms the final step of the stepped historical zones.
+  //  • WITHOUT one (an ADR whose reconstruction was withheld, or too little fundamental history):
+  //    place it at the FIRST price date, so TODAY's zones render as flat reference bands across
+  //    the whole window. The current Buy/Fair/Overvalued/Sell levels are correct in the price's
+  //    own currency even for an ADR — only the *per-year history* isn't reconstructable there,
+  //    so the chart still shows where the price sits vs today's fair value rather than nothing.
+  const hasReconstruction = snapshotsRaw.length >= 2;
+  const liveSnap = useMemo<ValuationSnapshot | null>(() => {
+    if (full.length === 0) return null;
+    const d = hasReconstruction ? full[full.length - 1].date : full[0].date;
+    return {
+      asOf: d,
+      effectiveDateSource: 'live',
+      fiscalPeriodEnd: null,
+      filingDate: null,
+      fiscalYear: Number(d.slice(0, 4)),
+      fairValue: band.fairValue,
+      entryTarget: band.entryTarget,
+      overvaluedAt: band.overvaluedAt,
+      sellZoneAt: band.sellZoneAt,
+      inputs: { eps: null, bvps: null, fcfPerShare: null, growth: 0 },
+      models: {},
+      drivers: null,
+    };
+  }, [hasReconstruction, full, band]);
+  const snapshots = useMemo(
+    () => (liveSnap ? (hasReconstruction ? [...snapshotsRaw, liveSnap] : [liveSnap]) : snapshotsRaw),
+    [snapshotsRaw, liveSnap, hasReconstruction],
+  );
+  // Zones render whenever today's live band is mapped onto the price path (always, once prices
+  // exist): STEPPED when reconstructed history exists, otherwise FLAT at today's levels.
+  // `hasReconstruction` gates only the history-specific chrome — the per-year steps' transition
+  // markers, the pre-coverage band, and scrubbing to a past valuation.
+  const hasZones = liveSnap != null;
 
   // Per-date reconstructed valuation, aligned to every price point — the stepped source
   // the zone bands and FV spine below are drawn from (see lib/valuationHistory.ts).
@@ -207,6 +253,14 @@ export function PriceBandChart({
     setSelectedDate(null);
     setPinned(false);
   }, [full.length]);
+
+  // rAF-coalesced Brush updates: a fast drag fires onChange many times per frame; we keep
+  // only the latest indices and commit the range once per paint, so the main chart re-renders
+  // at most ~60/s instead of on every emitted event. The Brush's own travellers still track
+  // the pointer natively (their position is internal to Recharts), so the drag stays smooth.
+  const brushRaf = useRef<number | null>(null);
+  const brushNext = useRef<{ start: number; end: number } | null>(null);
+  useEffect(() => () => { if (brushRaf.current != null) cancelAnimationFrame(brushRaf.current); }, []);
 
   // date -> index into `full`, so keyboard nav and the snapshot card's "price on that date"
   // lookup are O(1) instead of re-scanning the whole series on every scrub/arrow-key.
@@ -257,13 +311,18 @@ export function PriceBandChart({
   // Rebase turns absolute prices into % return from the first *visible* day; log makes no
   // sense on a signed % series, so it falls back to linear there.
   const effScale: Scale = rebase ? 'linear' : scale;
-  const base = full.length ? full[Math.min(range.start, full.length - 1)].close : 0;
-  const plot = useMemo(
+  // Absolute plot rows, built ONCE per data change and independent of the visible window.
+  // Dragging the Brush only moves `range`; keeping this heavy (~2500-row) build off `range`
+  // is what stops the slider from stuttering — previously `base` (a function of range.start)
+  // was a dependency, so every drag tick rebuilt the entire series. `value` carries the
+  // absolute close here; rebase remaps it in the light pass just below.
+  const plotAbs = useMemo(
     () => full.map((d, i) => {
       const m = merged[i];
       return {
         date: d.date,
-        value: rebase && base ? (d.close / base - 1) * 100 : d.close,
+        close: d.close,
+        value: d.close,
         fairValue: m?.fairValue ?? null,
         entryTarget: m?.entryTarget ?? null,
         overvaluedAt: m?.overvaluedAt ?? null,
@@ -282,7 +341,15 @@ export function PriceBandChart({
         sellBand: m?.sellZoneAt != null ? m.sellZoneAt * 0.6 : null,
       };
     }),
-    [full, rebase, base, merged],
+    [full, merged],
+  );
+  // Rebase turns absolute prices into % return from the first *visible* day. When NOT
+  // rebasing (the common case, and the only one that shows zones) `plot` is the stable
+  // `plotAbs` reference, so a Brush drag never re-derives it.
+  const base = full.length ? full[Math.min(range.start, full.length - 1)].close : 0;
+  const plot = useMemo(
+    () => (rebase && base ? plotAbs.map((d) => ({ ...d, value: (d.close / base - 1) * 100 })) : plotAbs),
+    [plotAbs, rebase, base],
   );
 
   // Y-domain autoscales to the *visible* slice (the user's choice), so tight windows show
@@ -305,7 +372,7 @@ export function PriceBandChart({
       return [mn - pad, mx + pad];
     }
     let thresholds: number[] = [];
-    if (hasHistory) {
+    if (hasZones) {
       const ms = Math.min(range.start, merged.length - 1);
       const me = Math.min(range.end, merged.length - 1);
       const visible = merged.slice(ms, me + 1);
@@ -324,7 +391,7 @@ export function PriceBandChart({
     const dLo = below != null ? Math.min(mn, below) : mn;
     const dHi = above != null ? Math.max(mx, above) : mx;
     return [dLo * 0.98, dHi * 1.02];
-  }, [plot, range, rebase, hasHistory, merged]);
+  }, [plot, range, rebase, hasZones, merged]);
 
   // No price path to draw yet — show a labelled placeholder instead of an empty chart.
   // (The backfill runs in the background; the line lands on a later poll.)
@@ -348,7 +415,7 @@ export function PriceBandChart({
   // Pre-coverage span — before the earliest reconstructed snapshot, only greyed out (never
   // the flat `band` zones): there simply isn't enough fundamental history to reconstruct a
   // path there.
-  const showPreCoverage = hasHistory && !!coverageFrom && full[0].date < coverageFrom;
+  const showPreCoverage = hasReconstruction && !!coverageFrom && full[0].date < coverageFrom;
 
   // Scrub cursor — defaults to today whenever the visible window still includes it, so the
   // snapshot card shows something useful before the user ever hovers. `activeSnap` is the
@@ -363,13 +430,46 @@ export function PriceBandChart({
   const activeSnapIdx = activeSnap ? snapshots.indexOf(activeSnap) : -1;
   const prevSnap = activeSnapIdx > 0 ? snapshots[activeSnapIdx - 1] : null;
 
-  // Current-day emphasis (Step 4) — the LAST snapshot, drawn at full opacity against the
-  // quieter historical steps, never as a flat zone spanning history.
+  // Current-day emphasis (Step 4) — the LAST snapshot (the live one, when appended), drawn at
+  // full opacity against the quieter historical steps, never as a flat zone spanning history.
   const lastSnap = snapshots.length ? snapshots[snapshots.length - 1] : null;
-  const lastSnapMoS = lastSnap && lastSnap.fairValue ? 1 - lastSnap.entryTarget / lastSnap.fairValue : null;
+  // Price vs fair value TODAY, worded exactly like the headline card: the verdict word comes
+  // from the band's zones, the number is the headline's own figure. Undervalued → "margin of
+  // safety" (mos = fair/price − 1, recovered from premiumToFair as 1/(1+p) − 1); overvalued →
+  // "overvalued" by the true premiumToFair (price/fair − 1, the same basis the sell panel uses);
+  // the fair zone states the premium/discount neutrally. This replaces the former "MoS 30%"
+  // (the *configured* buy-discount — a different quantity that shared the "MoS" label).
+  const premiumToFair = band.premiumToFair;
+  const mosToday = premiumToFair != null && Number.isFinite(premiumToFair) && 1 + premiumToFair > 0
+    ? 1 / (1 + premiumToFair) - 1
+    : null;
+  const isExpensiveZone = band.band === 'overvalued' || band.band === 'significantly-overvalued';
+  const priceVsFairLabel = mosToday != null && mosToday > 0
+    ? `${fmtPct(mosToday, 0)} margin of safety`
+    : isExpensiveZone
+      ? `overvalued ${fmtPct(premiumToFair ?? 0, 0)}`
+      : premiumToFair == null || !Number.isFinite(premiumToFair)
+        ? null
+        : `${fmtPct(premiumToFair, 0)} above fair`;
 
   const onChartMouseMove = (state: { activeLabel?: string }) => {
     if (!pinned && state?.activeLabel) setSelectedDate(state.activeLabel);
+  };
+
+  const onBrushChange = (r: { startIndex?: number; endIndex?: number }) => {
+    if (r && typeof r.startIndex === 'number' && typeof r.endIndex === 'number'
+        && r.endIndex > r.startIndex) {
+      brushNext.current = { start: r.startIndex, end: r.endIndex };
+      if (brushRaf.current == null) {
+        brushRaf.current = requestAnimationFrame(() => {
+          brushRaf.current = null;
+          if (brushNext.current) {
+            setRange(brushNext.current);
+            setPreset('custom');
+          }
+        });
+      }
+    }
   };
 
   // Clicking a transition marker pins the detail view on that snapshot (Step 1) — a click is
@@ -439,9 +539,9 @@ export function PriceBandChart({
           aria-label="Kursverlauf mit Bewertungszonen. Pfeiltasten bewegen den Cursor, Eingabetaste fixiert ihn, Escape hebt die Auswahl auf."
           onKeyDown={onChartKeyDown}
         >
-          {windowHasLatest && hasHistory && lastSnap && (
+          {windowHasLatest && hasZones && lastSnap && (
             <div className="chip absolute top-0 right-2 z-10 pointer-events-none !bg-surface-2/90">
-              Fair value {fmtMoney(lastSnap.fairValue * k, ccy)} · MoS {fmtPct(lastSnapMoS, 0)}
+              Fair value {fmtMoney(lastSnap.fairValue * k, ccy)}{priceVsFairLabel ? ` · ${priceVsFairLabel}` : ''}
             </div>
           )}
           <ResponsiveContainer>
@@ -462,8 +562,8 @@ export function PriceBandChart({
               {!rebase && showPreCoverage && (
                 <ReferenceArea x1={full[0].date} x2={coverageFrom!} y1={lo} y2={hi}
                   fill={C.hairline} fillOpacity={0.4} ifOverflow="hidden" stroke="none"
-                  label={{ value: 'insufficient fundamental history', position: 'insideTopLeft',
-                    fill: C.textFaint, fontSize: 9 }} />
+                  label={{ value: `price only · zones from ${fmtDate(coverageFrom!)}`,
+                    position: 'insideTopLeft', fill: C.textFaint, fontSize: 9 }} />
               )}
               {/* Stepped zone bands, reconstructed per-date from the fundamentals then in force —
                   stacked bottom-up (buy → fair → over → sell) so each layer is drawn as the
@@ -471,7 +571,11 @@ export function PriceBandChart({
                   interpolated) because a real report lands on one day, not gradually. Hidden in
                   rebase mode, where absolute-price levels no longer map onto a % series, and
                   whenever there isn't enough fundamental history to reconstruct a path. */}
-              {!rebase && hasHistory && (
+              {/* Zone bands + FV spine. STEPPED per-date when reconstructed history exists, else
+                  FLAT at today's live levels (a single "today" snapshot spanning the window) so an
+                  ADR / thin-history name still shows where the price sits vs today's fair value.
+                  Hidden only in rebase mode, where absolute-price levels no longer map. */}
+              {!rebase && hasZones && (
                 <>
                   <Area type="stepAfter" dataKey="buyBand" stackId="zones" stroke="none"
                     fill={ZONE_STYLE.buy.color} fillOpacity={ZONE_STYLE.buy.fill} isAnimationActive={false} />
@@ -481,27 +585,27 @@ export function PriceBandChart({
                     fill={ZONE_STYLE.over.color} fillOpacity={ZONE_STYLE.over.fill} isAnimationActive={false} />
                   <Area type="stepAfter" dataKey="sellBand" stackId="zones" stroke="none"
                     fill={ZONE_STYLE.sell.color} fillOpacity={ZONE_STYLE.sell.fill} isAnimationActive={false} />
-                  {/* Stepped Fair Value spine — the reconstructed FV as it stood at each date. */}
+                  {/* Fair Value spine — stepped reconstruction, or a flat line at today's FV. */}
                   <Line type="stepAfter" dataKey="fairValue" stroke={C.textFaint} strokeWidth={1.6}
                     strokeDasharray="2 3" dot={false} isAnimationActive={false} />
-                  {/* Valuation-transition markers — one per snapshot with a before/after `drivers`
-                      chain. Clicking pins the detail panel (Step 2) on that transition. */}
-                  {transitions.map(({ date, snap }) => (
-                    <ReferenceDot
-                      key={snap.asOf}
-                      x={date}
-                      y={snap.fairValue * k}
-                      r={pinned && selectedDate === date ? 5 : 3.5}
-                      fill={pinned && selectedDate === date ? C.azure : C.surface2}
-                      stroke={C.azure}
-                      strokeWidth={1.5}
-                      ifOverflow="hidden"
-                      style={{ cursor: 'pointer' }}
-                      onClick={() => onSelectTransition(date)}
-                    />
-                  ))}
                 </>
               )}
+              {/* Valuation-transition markers — one per reconstructed snapshot with a before/after
+                  `drivers` chain (never the flat live-only mode, which has no transitions). */}
+              {!rebase && hasReconstruction && transitions.map(({ date, snap }) => (
+                <ReferenceDot
+                  key={snap.asOf}
+                  x={date}
+                  y={snap.fairValue * k}
+                  r={pinned && selectedDate === date ? 5 : 3.5}
+                  fill={pinned && selectedDate === date ? C.azure : C.surface2}
+                  stroke={C.azure}
+                  strokeWidth={1.5}
+                  ifOverflow="hidden"
+                  style={{ cursor: 'pointer' }}
+                  onClick={() => onSelectTransition(date)}
+                />
+              ))}
               <XAxis dataKey="date" tick={{ fontSize: 10, fill: C.textFaint }}
                 tickFormatter={(d) => fmtDate(d).replace(/ \d{4}$/, '')} minTickGap={48}
                 stroke={C.hairline} />
@@ -549,7 +653,7 @@ export function PriceBandChart({
                   today's thresholds stay legible against the deliberately quiet historical steps
                   (ZONE_STYLE fill opacities). Never a flat zone spanning history — just the three
                   edges as they stand today, pinned to the right-hand (today) edge of the plot. */}
-              {windowHasLatest && !rebase && hasHistory && lastSnap && (
+              {windowHasLatest && !rebase && hasZones && lastSnap && (
                 <>
                   <ReferenceDot x={lastDate} y={lastSnap.entryTarget * k} r={2.5}
                     fill={ZONE_STYLE.buy.color} stroke="none" ifOverflow="hidden"
@@ -569,13 +673,7 @@ export function PriceBandChart({
               <Brush dataKey="date" height={22} travellerWidth={8} gap={4}
                 stroke={C.hairline} fill={C.surface2} startIndex={range.start} endIndex={range.end}
                 tickFormatter={(d) => fmtDate(String(d)).replace(/ \d{4}$/, '')}
-                onChange={(r) => {
-                  if (r && typeof r.startIndex === 'number' && typeof r.endIndex === 'number'
-                      && r.endIndex > r.startIndex) {
-                    setRange({ start: r.startIndex, end: r.endIndex });
-                    setPreset('custom');
-                  }
-                }} />
+                onChange={onBrushChange} />
             </ComposedChart>
           </ResponsiveContainer>
         </div>
@@ -589,25 +687,35 @@ export function PriceBandChart({
         {rebase ? (
           <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-[11px] text-text-faint">
             <span>% return since {fmtDate(full[Math.min(range.start, lastIdx)].date)} · fair-value zones hidden in rebase</span>
-            {hasHistory && lastSnap && (
-              <span className="ml-auto">fair value {fmtMoney(lastSnap.fairValue * k, ccy)} · MoS {fmtPct(band.marginOfSafetyPct, 0)}</span>
+            {hasZones && lastSnap && (
+              <span className="ml-auto">fair value {fmtMoney(lastSnap.fairValue * k, ccy)}{priceVsFairLabel ? ` · ${priceVsFairLabel}` : ''}</span>
             )}
           </div>
-        ) : hasHistory && lastSnap ? (
+        ) : hasZones && lastSnap ? (
           <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-[11px] text-text-faint">
             <LegendDot cls="bg-gain" label={`Buy ≤ ${fmtMoney(lastSnap.entryTarget * k, ccy)}`} />
             <LegendDot cls="bg-azure/40" label="Fair range" />
             <LegendDot cls="bg-warn" label={`Overvalued ≥ ${fmtMoney(lastSnap.overvaluedAt * k, ccy)}`} />
             <LegendDot cls="bg-loss" label={`Sell zone ≥ ${fmtMoney(lastSnap.sellZoneAt * k, ccy)}`} />
             <span className="ml-auto">
-              fair value {fmtMoney(lastSnap.fairValue * k, ccy)} · MoS {fmtPct(band.marginOfSafetyPct, 0)}
+              fair value {fmtMoney(lastSnap.fairValue * k, ccy)}{priceVsFairLabel ? ` · ${priceVsFairLabel}` : ''}
             </span>
           </div>
         ) : null}
         <p className="mt-1.5 text-[10px] leading-snug text-text-faint/90 italic">
-          {hasHistory
-            ? "Valuation zones are reconstructed from the fundamentals reported at each date — they step when a new annual report lands. Scrub to any point to see the Fair Value and zones as they stood then."
-            : "Historical valuation unavailable — insufficient fundamental history for this security."}
+          {hasReconstruction
+            ? `Valuation zones are reconstructed from the fundamentals reported at each date — they step when a new annual report lands.${
+                showPreCoverage && coverageFrom
+                  ? ` The full price history is shown; zones begin ${fmtDate(coverageFrom)} (no earlier fundamentals).`
+                  : ''
+              } Scrub to any point to see the Fair Value and zones as they stood then.`
+            : hasZones
+              ? `The bands are today's fair-value zones (flat reference lines). ${
+                  unavailableReason
+                    ? "Per-year history isn't reconstructed for this cross-listing (it reports in a different currency than it trades in) — the live zones above are computed for this listing directly."
+                    : "There isn't enough fundamental history to reconstruct how the zones evolved over time."
+                }`
+              : historyNote}
         </p>
       </div>
       <SnapshotCard
@@ -618,7 +726,9 @@ export function PriceBandChart({
         ccy={ccy}
         coverageFrom={coverageFrom}
         pinned={pinned}
-        hasHistory={hasHistory}
+        hasHistory={hasZones}
+        liveOnly={hasZones && !hasReconstruction}
+        emptyNote={historyNote}
       />
     </div>
     {/* Transition detail panel (Step 2) — only when a transition marker (or the keyboard/
@@ -667,7 +777,7 @@ function Row({ label, value, muted }: { label: string; value: string; muted?: bo
  * isn't enough fundamental history at all) it honestly says so instead of guessing.
  */
 function SnapshotCard({
-  activeDate, activeSnap, price, k, ccy, coverageFrom, pinned, hasHistory,
+  activeDate, activeSnap, price, k, ccy, coverageFrom, pinned, hasHistory, liveOnly, emptyNote,
 }: {
   activeDate: string | null;
   activeSnap: ValuationSnapshot | null;
@@ -676,6 +786,14 @@ function SnapshotCard({
   ccy: string;
   coverageFrom: string | null;
   pinned: boolean;
+  /** Live-only mode: today's zones are shown as flat bands (no reconstructed per-year history —
+   *  e.g. an ADR). The card then reads the SAME (current) fair value at every scrub point, so it
+   *  says so rather than implying the level was reconstructed as-of that past date. */
+  liveOnly: boolean;
+  /** Honest "no reconstructed valuation" copy from the parent — the backend's specific reason
+   *  (e.g. an ADR currency/share-basis mismatch) when the series was withheld, else the
+   *  generic insufficient-history line. Shown when there's no snapshot to display. */
+  emptyNote: string;
   /** Fewer than two reconstructable snapshots (see `hasHistory` at the call site): even when
    *  `activeSnap` itself is non-null (e.g. exactly one snapshot exists and covers the active
    *  date), there isn't enough fundamental history to call this a reconstructed *path* — show
@@ -715,12 +833,17 @@ function SnapshotCard({
         <p className="text-text-faint">
           {hasHistory && coverageFrom
             ? `No reconstructed valuation before ${fmtDate(coverageFrom)}.`
-            : 'Historical valuation unavailable — insufficient fundamental history for this security.'}
+            : emptyNote}
         </p>
       ) : (
         <div className="space-y-1.5">
+          {liveOnly && (
+            <p className="text-[10px] text-text-faint leading-snug pb-1">
+              Today's zones (no per-year history for this listing) — the fair value is the current estimate at every point.
+            </p>
+          )}
           <Row label="Price" value={fmtMoney(price, ccy)} />
-          <Row label="Fair Value" value={fmtMoney(fv, ccy)} />
+          <Row label={liveOnly ? 'Fair Value (today)' : 'Fair Value'} value={fmtMoney(fv, ccy)} />
           <Row label="vs Fair Value" value={pctLabel(discount)} />
           {zoneKey && <div className="pt-0.5"><BandBadge band={zoneKey} /></div>}
           <div className="pt-2 mt-1.5 border-t border-hairline space-y-1">

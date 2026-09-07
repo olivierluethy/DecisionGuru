@@ -210,7 +210,14 @@ function OpportunitySummary({
 
   const mid = data.intrinsic.mid;
   const mos = data.marginOfSafety;
-  const overvalued = mos != null && mos < 0;
+  // Verdict word from the band; overvaluation number from premiumToFair (price/fair − 1) — the
+  // same basis as the sell panel/dashboard — so the word matches the badge and the number
+  // matches every other surface (no "Fairly valued" badge next to "Overvalued by X%").
+  const bandKey = data.band?.band ?? null;
+  const premium = data.band?.premiumToFair ?? null;
+  const isExpensive = bandKey === 'overvalued' || bandKey === 'significantly-overvalued';
+  const showMoS = mos != null && mos > 0;                       // price below fair → real cushion
+  const showOvervalued = mos != null && mos <= 0 && isExpensive; // "overvalued" only if the band agrees
   const px = data.price ?? price ?? null;
   const rec = data.recommendation ?? null;
 
@@ -222,11 +229,15 @@ function OpportunitySummary({
         </div>
       )}
       <HeroStat label="Fair value" value={money(mid)} extra={data.band && <BandBadge band={data.band.band} />} />
-      {mos != null && (
+      {mos != null && bandKey && (
         <HeroStat
-          label={overvalued ? 'Overvalued by' : 'Margin of safety'}
-          value={fmtPct(overvalued ? -mos : mos, 1)}
-          valueClass={overvalued ? 'text-loss' : 'text-gain'}
+          label={showMoS ? 'Margin of safety' : showOvervalued ? 'Overvalued by' : 'Vs fair value'}
+          value={
+            showMoS ? fmtPct(mos, 1)
+              : showOvervalued ? fmtPct(premium ?? 0, 1)
+                : `${(premium ?? 0) >= 0 ? '+' : ''}${fmtPct(premium ?? 0, 1)}`
+          }
+          valueClass={showOvervalued ? 'text-loss' : showMoS ? 'text-gain' : 'text-text-muted'}
         />
       )}
       <HeroStat label="Price today" value={money(px)} />

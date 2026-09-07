@@ -24,13 +24,24 @@ def _sector_of(symbol: str) -> str | None:
 
 
 def _is_attractive(symbol: str, settings: dict) -> bool:
-    """Cheap attractiveness read from cached fundamentals only (no provider call): a positive
-    margin of safety and non-weak quality. Used to gate the 'prefer ETF' fit decision."""
+    """Cheap attractiveness read from cached data only (no provider call): a positive margin of
+    safety and non-weak quality. Used to gate the 'prefer ETF' fit decision.
+
+    Needs a price — `value_analysis` returns marginOfSafety=None without one, which made this
+    silently ALWAYS False (killing 'prefer ETF'/'improves' and inverting the fit label for
+    genuinely attractive names). We resolve the most recent cached close (a DB read, still no
+    provider call); with no price anywhere the margin of safety is undefined, so we abstain
+    (False) rather than fabricate 'attractive'."""
     cached = get_cached_fundamentals(symbol)
     if not cached or not (cached.get("snapshot")):
         return False
     from .valuation import value_analysis  # lazy — avoids import cycle
-    va = value_analysis(symbol, None, (cached.get("snapshot") or {}).get("currency"),
+    from .marketdata import latest_cached_close
+    close = latest_cached_close(symbol)
+    price = close["close"] if close else None
+    if not price or price <= 0:
+        return False
+    va = value_analysis(symbol, price, (cached.get("snapshot") or {}).get("currency"),
                         data=cached, settings=settings)
     mos = va.get("marginOfSafety")
     q = va.get("quality") or {}

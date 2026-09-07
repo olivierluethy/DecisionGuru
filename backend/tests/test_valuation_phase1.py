@@ -47,14 +47,19 @@ def test_median_of_three_is_the_middle():
     assert V._median([100.0, 150.0, 180.0]) == 150.0
 
 
-def test_intrinsic_mid_uses_median_of_models():
-    va = V.value_analysis("TEST", price=100.0, currency="USD", data=mk_data(), settings=None)
-    model_vals = sorted(v for v in va["models"].values() if v and v > 0)
-    assert len(model_vals) >= 2
-    assert va["intrinsic"]["mid"] == round(V._median(model_vals), 2)
-    # The index-median bug would have picked the max; the true median is <= max.
-    assert va["intrinsic"]["mid"] <= va["intrinsic"]["high"]
-    assert va["intrinsic"]["mid"] < va["intrinsic"]["high"]  # distinct models → strict
+def test_intrinsic_mid_is_the_earning_power_fair_value():
+    # Area 3: intrinsic.mid is the earning-power fair value (with justified growth), and
+    # intrinsic.low is the no-growth anchor — not a median of a model set.
+    d = {"snapshot": {"currency": "USD", "sector": "Technology", "trailingEps": 5.0,
+                      "forwardEps": 5.2, "priceToBook": 2.0, "returnOnEquity": 0.15, "profitMargins": 0.15},
+         "history": [{"year": 2021, "netIncome": 400.0}, {"year": 2022, "netIncome": 400.0},
+                     {"year": 2023, "netIncome": 400.0}],
+         "cashflow": {"sharesOutstanding": 100.0, "years": [{"year": y, "freeCashFlow": 400.0} for y in (2021, 2022, 2023)]},
+         "balance": {"years": [{"year": y, "stockholdersEquity": 2000.0, "sharesOutstanding": 100.0} for y in (2021, 2022, 2023)]},
+         "financialCurrency": "USD"}
+    va = V.value_analysis("TEST", price=100.0, currency="USD", data=d, settings=None)
+    assert va["intrinsic"]["mid"] == va["fairValue"]
+    assert va["intrinsic"]["low"] == va["noGrowthValue"]
 
 
 # --- Scenario A: a debt-free company must not FAIL the leverage check ------------
@@ -101,15 +106,16 @@ def test_minor_unit_eps_and_currency_normalised():
     # Caller passes the price already normalised to the major unit (GBP), while the
     # fundamentals snapshot is still quoted in pence (GBp) — EPS must normalise by its
     # own source unit regardless of the price currency.
-    va = V.value_analysis("TEST.L", 50.0, "GBP",
-                          data=mk_data(currency="GBp", trailingEps=500.0, forwardEps=520.0,
-                                       priceToBook=2.0),
-                          settings=None)
+    data = mk_data(currency="GBp", trailingEps=500.0, forwardEps=520.0, priceToBook=2.0)
+    # Balance sheet in pence too — book value per share must normalise by its own (GBp) unit,
+    # like EPS. equity 50000 GBp / 100 sh = 500 GBp → 5.00 GBP.
+    data["balance"] = {"years": [{"year": 2023, "stockholdersEquity": 50_000.0, "sharesOutstanding": 100.0}]}
+    va = V.value_analysis("TEST.L", 50.0, "GBP", data=data, settings=None)
     assert va["currency"] == "GBP"
     assert va["eps"] == 5.0
     assert va["forwardEps"] == 5.2
-    # Graham number must be on a GBP scale (~ sqrt(22.5*5*25)=~53), not ~530.
-    assert va["models"]["grahamNumber"] < 100
+    # Book value per share normalizes by its own (GBp) unit → GBP scale (5.00, not 500).
+    assert va["bookValuePerShare"] == 5.0
 
 
 def test_minor_unit_eps_normalised_when_price_currency_absent():

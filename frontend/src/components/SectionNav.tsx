@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import clsx from 'clsx';
-import type { LucideIcon } from 'lucide-react';
+import { ChevronDown, type LucideIcon } from 'lucide-react';
 import type { ExchangeStatus } from '../lib/api';
 import { MarketStatusChip } from './MarketStatusChip';
 import { KindBadge } from './ui';
@@ -44,6 +44,13 @@ function getScrollParent(node: HTMLElement | null): HTMLElement | null {
  * scrolls to it via the target's own scrollIntoView, which reliably resolves the real
  * scroll container in either direction (the sections carry scroll-mt to clear the rail).
  *
+ * The rail is adaptive so every chapter is discoverable without side-scrolling: while it
+ * sits at the top of the page (the arrival state) the pills wrap onto as many rows as it
+ * takes, so the whole table of contents is visible at once. Once the reader scrolls into
+ * the content and the rail pins to the top, it collapses to a single space-saving row
+ * (active pill auto-centered) with a chevron to re-expand the full grid on demand — so a
+ * tall wrapped block never eats the viewport while reading, worst-case on mobile.
+ *
  * When an `asset` is supplied, the rail also carries a Spotify-style compact asset
  * context (name · ticker · price · live market status) that fades/slides in the moment
  * the rail pins to the top — i.e. once the large header has scrolled out of view — so the
@@ -52,11 +59,17 @@ function getScrollParent(node: HTMLElement | null): HTMLElement | null {
 export function SectionNav({ sections, asset }: { sections: NavSection[]; asset?: AssetContext }) {
   const [active, setActive] = useState(sections[0]?.id ?? '');
   const [stuck, setStuck] = useState(false);
+  // Manual override to re-open the full wrapped grid while the rail is pinned. Reset the
+  // moment the rail unpins (scrolls back to the top) so the chevron state stays honest.
+  const [userOpen, setUserOpen] = useState(false);
   const railRef = useRef<HTMLDivElement>(null);
   const navRef = useRef<HTMLElement>(null);
   const pillRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const railId = useId();
   const ids = sections.map((s) => s.id).join(',');
-  const hasAsset = asset != null;
+  // Wrapped (every section visible) at the top of the page, or when explicitly re-opened;
+  // collapsed to a single scrolling row once pinned to reclaim vertical space.
+  const expanded = !stuck || userOpen;
 
   // Scroll-spy: a section is "active" once its top crosses ~45% down the viewport.
   useEffect(() => {
@@ -79,16 +92,14 @@ export function SectionNav({ sections, asset }: { sections: NavSection[]; asset?
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ids]);
 
-  // Reveal the compact asset context exactly when the rail pins — i.e. once the large
-  // header has scrolled out of view. Detected by comparing the sticky rail's own top to
-  // the top of its scroll container: while pinned they coincide. This is layout-agnostic
-  // (works whether the container top is the viewport top on desktop or sits below the app
-  // bar on mobile, and regardless of flex/block flow around the rail) and adds no DOM.
+  // Track when the rail pins to the top — i.e. once the large header has scrolled out of
+  // view. Detected by comparing the sticky rail's own top to the top of its scroll
+  // container: while pinned they coincide. This is layout-agnostic (works whether the
+  // container top is the viewport top on desktop or sits below the app bar on mobile, and
+  // regardless of flex/block flow around the rail) and adds no DOM. Drives BOTH the
+  // wrapped→row collapse and the compact asset context reveal, so it always runs — even
+  // on views without an asset (e.g. the dashboard).
   useEffect(() => {
-    if (!hasAsset) {
-      setStuck(false);
-      return;
-    }
     const nav = navRef.current;
     if (!nav) return;
     const scroller = getScrollParent(nav);
@@ -97,7 +108,10 @@ export function SectionNav({ sections, asset }: { sections: NavSection[]; asset?
     const measure = () => {
       frame = 0;
       const rootTop = scroller ? scroller.getBoundingClientRect().top : 0;
-      setStuck(nav.getBoundingClientRect().top <= rootTop + 0.5);
+      const isStuck = nav.getBoundingClientRect().top <= rootTop + 0.5;
+      setStuck(isStuck);
+      // Back at the top: the full grid shows again, so drop any manual re-open.
+      if (!isStuck) setUserOpen(false);
     };
     const onScroll = () => {
       if (!frame) frame = requestAnimationFrame(measure);
@@ -110,18 +124,20 @@ export function SectionNav({ sections, asset }: { sections: NavSection[]; asset?
       target.removeEventListener('scroll', onScroll);
       window.removeEventListener('resize', onScroll);
     };
-  }, [hasAsset]);
+  }, []);
 
   // Keep the active pill in view by nudging ONLY the rail's horizontal scroll — never
-  // scrollIntoView, which would also move (and fight) the vertical page scroll.
+  // scrollIntoView, which would also move (and fight) the vertical page scroll. Only
+  // meaningful in the collapsed single-row state; the wrapped grid has no side-scroll.
   useEffect(() => {
+    if (expanded) return;
     const pill = pillRefs.current[active];
     const rail = railRef.current;
     if (!pill || !rail) return;
     const pr = pill.getBoundingClientRect();
     const rr = rail.getBoundingClientRect();
     rail.scrollLeft += pr.left - rr.left - (rr.width / 2 - pr.width / 2);
-  }, [active]);
+  }, [active, expanded]);
 
   const go = (id: string) => {
     const target = document.getElementById(id);
@@ -129,6 +145,8 @@ export function SectionNav({ sections, asset }: { sections: NavSection[]; asset?
     const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
     target.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
     setActive(id);
+    // Picking a section from the re-opened grid returns to the compact row.
+    setUserOpen(false);
   };
 
   if (sections.length < 2) return null;
@@ -182,9 +200,18 @@ export function SectionNav({ sections, asset }: { sections: NavSection[]; asset?
           </div>
         )}
 
-        <div className="flex items-center gap-2 py-2.5">
-          <span className="eyebrow shrink-0 hidden sm:block">On this page</span>
-          <div ref={railRef} className="flex items-center gap-1 overflow-x-auto no-scrollbar">
+        <div className={clsx('flex gap-2 py-2.5', expanded ? 'items-start' : 'items-center')}>
+          <span className={clsx('eyebrow shrink-0 hidden sm:block', expanded && 'pt-2')}>
+            On this page
+          </span>
+          <div
+            ref={railRef}
+            id={railId}
+            className={clsx(
+              'flex gap-1',
+              expanded ? 'flex-wrap' : 'items-center overflow-x-auto no-scrollbar',
+            )}
+          >
             {sections.map((s) => {
               const on = active === s.id;
               const Icon = s.icon;
@@ -211,6 +238,23 @@ export function SectionNav({ sections, asset }: { sections: NavSection[]; asset?
               );
             })}
           </div>
+          {/* Only offered once pinned: at the top the full grid is already showing. Toggles
+              the wrapped grid back open without leaving the reader's scroll position. */}
+          {stuck && (
+            <button
+              type="button"
+              onClick={() => setUserOpen((o) => !o)}
+              aria-expanded={expanded}
+              aria-controls={railId}
+              aria-label={expanded ? 'Collapse section list' : 'Show all sections'}
+              className="shrink-0 inline-flex items-center justify-center h-8 w-8 rounded-full text-text-muted hover:text-text hover:bg-surface-2 transition-colors"
+            >
+              <ChevronDown
+                size={16}
+                className={clsx('transition-transform motion-reduce:transition-none', expanded && 'rotate-180')}
+              />
+            </button>
+          )}
         </div>
       </nav>
   );

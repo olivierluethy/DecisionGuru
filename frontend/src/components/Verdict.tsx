@@ -65,6 +65,12 @@ export function VerdictRationale({
         </p>
       )}
       {verdict.trimNote && <p className="text-[12px] text-warn mt-1">{verdict.trimNote}</p>}
+      {verdict.conservativeBuyBlocked && verdict.conservativeBuyReason && (
+        <p className="text-[12px] text-warn mt-1 flex gap-1.5">
+          <span aria-hidden className="shrink-0">⚠</span>
+          <span>{verdict.conservativeBuyReason}</span>
+        </p>
+      )}
     </div>
   );
 }

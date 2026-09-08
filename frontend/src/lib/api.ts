@@ -604,6 +604,33 @@ export interface FinancialStrength {
   cashPosition: number | null;
 }
 
+/** Area 3 — the sustainable earning-power basis behind an 'earnings'-framework fair value. */
+export interface EarningPower {
+  /** Which measure the level was built on (e.g. 'normalized net income', 'owner earnings / FCF'). */
+  measure: string;
+  /** The through-cycle per-share earning power the value is anchored on. */
+  normalizedLevel: number;
+  /** Credited structural growth (fraction). 0 unless multi-year, still-trending evidence supports it. */
+  growthAssumption: number;
+  /** How the growth was justified: 'none' | 'supported' | 'high-capped'. */
+  growthBasis: string;
+  growthConfidence: 'high' | 'medium' | 'low';
+  growthReason: string;
+  /** Fair value with NO growth credited — the conservative anchor. */
+  noGrowthValue: number | null;
+  /** Fair value at 0% / credited g / g+3pp — the reliability (assumption-sensitivity) signal. */
+  sensitivity: { at0: number | null; atGrowth: number | null; atGrowthPlus: number | null };
+  /** True when the credited growth moved the verdict off the no-growth anchor (or is capped). */
+  assumptionSensitive: boolean;
+}
+
+/** Area 2 — the NAV/book read used for financials/REITs (never an auto-buy below NAV). */
+export interface BookNav {
+  navPerShare: number | null;
+  priceToNav: number | null;
+  caveat: string;
+}
+
 export interface ValuationResult {
   symbol: string;
   currency: string | null;
@@ -667,6 +694,24 @@ export interface ValuationResult {
   fcfYield?: number | null;
   qualityAssessment?: QualityAssessment | null;
   financialStrength?: FinancialStrength | null;
+  // ---- Area 2/3/4 — Graham/Buffett conservative engine (all optional / additive) ----
+  /** Which framework valued it: 'earnings' | 'book_nav' (financials/REITs). */
+  valuationFramework?: string | null;
+  /** false ⇒ NO RELIABLE FAIR VALUE — no fair-value/zone line may be drawn; band is null. */
+  reliableValue?: boolean;
+  /** Why the value is (un)reliable — shown when reliableValue is false. */
+  reliabilityReason?: string | null;
+  /** 1 reliable · 2 assumption-sensitive (no buy) · 3 abstain. */
+  reliabilityTier?: 1 | 2 | 3 | null;
+  /** NAV/book read for financials/REITs — label 'below/near NAV', never green 'undervalued'. */
+  bookNav?: BookNav | null;
+  /** The earning-power basis (measure, no-growth anchor, growth assumption, sensitivity). */
+  earningPower?: EarningPower | null;
+  /** Convenience mirrors of earningPower fields, present on the earnings framework. */
+  noGrowthValue?: number | null;
+  growthAssumption?: number | null;
+  growthBasis?: string | null;
+  assumptionSensitive?: boolean;
 }
 
 // ---- Market hours --------------------------------------------------------

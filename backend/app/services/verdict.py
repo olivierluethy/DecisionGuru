@@ -163,6 +163,23 @@ def resolve_verdict(va: dict | None, *, performance: dict | None = None, held: b
     low_conf_sell = _CONF_ORDER.get(va_conf, 0) < _CONF_ORDER["medium"]
     sell_supported = (not low_conf_sell) and model_count >= 2
 
+    # --- Area 4 conservative buy-gate ---------------------------------------------------
+    # A BUY may only rest on a fair value we can stand behind: a reliable value (Area 2/3),
+    # reliability tier 1 (NOT assumption-sensitive: the discount must not depend on a credited
+    # growth rate), and at least medium confidence. Defaults keep pre-Area-3 payloads (and the
+    # test fixtures) buying as before. Tier/reliability absent → treated as reliable tier 1.
+    reliable_value = (va or {}).get("reliableValue", True) if va else False
+    reliability_tier = (va or {}).get("reliabilityTier", 1) if va else None
+    assumption_sensitive = bool((va or {}).get("assumptionSensitive")) if va else False
+    va_framework = (va or {}).get("valuationFramework") if va else None
+    buy_conf_ok = _CONF_ORDER.get(va_conf, 0) >= _CONF_ORDER["medium"]
+    # A below-NAV financial/REIT is a starting point, not a buy — leverage and asset-mark
+    # quality must be judged first, so the book-nav framework never yields an auto-buy.
+    conservative_buy_ok = (
+        reliable_value and reliability_tier == 1 and not assumption_sensitive
+        and buy_conf_ok and va_framework != "book_nav"
+    )
+
     delta_pct = (performance or {}).get("deltaPct") if (held and performance) else None
     perf = classify_performance(delta_pct)
     lag_pct = (-delta_pct) if delta_pct is not None else None    # +ve = behind benchmark
@@ -173,6 +190,8 @@ def resolve_verdict(va: dict | None, *, performance: dict | None = None, held: b
     trim_note: str | None = None
     value_trap = False
     cause: str | None = None
+    conservative_buy_blocked = False
+    conservative_buy_reason: str | None = None
 
     # --- Valuation & fundamentals gate the verdict (rules 1–5) ---
     if band == "significantly-overvalued":
@@ -197,8 +216,27 @@ def resolve_verdict(va: dict | None, *, performance: dict | None = None, held: b
             "Trading above fair value and fundamentals are softening — consider trimming."
         )
     elif band == "undervalued":
-        if strong_fund:
-            verdict = "buy-more"        # Rule 3
+        if strong_fund and conservative_buy_ok:
+            verdict = "buy-more"        # Rule 3 — a genuine, reliable margin of safety
+        elif strong_fund:
+            # Undervalued and sound, but the discount rests on a fair value we won't stand
+            # behind — assumption-sensitive (the growth rate did the work), an unreliable
+            # value, or confidence too low. A conservative buy needs reliable assumptions,
+            # so Hold and say why, never auto-buy on a cap-bound growth assumption (gate 3).
+            verdict = "hold"
+            conservative_buy_blocked = True
+            if not reliable_value:
+                why = "the fair value is not reliable"
+            elif va_framework == "book_nav":
+                why = ("a discount to NAV is a starting point, not a buy — read it with leverage "
+                       "and asset-mark quality first")
+            elif reliability_tier != 1 or assumption_sensitive:
+                why = "the discount depends on a growth assumption (assumption-sensitive)"
+            else:
+                why = "confidence is too low to act on the discount"
+            conservative_buy_reason = (
+                f"Below fair value, but not a conservative buy — {why}; holding rather than adding."
+            )
         else:
             verdict = "hold"            # Rule 4 — value-trap caution, never auto-buy
             value_trap = True
@@ -269,6 +307,11 @@ def resolve_verdict(va: dict | None, *, performance: dict | None = None, held: b
         "trimNote": trim_note,
         "underperformanceCause": cause,
         "valueTrap": value_trap,
+        # Area 4: undervalued and sound, but not a conservative buy (assumption-sensitive /
+        # unreliable / low-confidence fair value). Distinct from the weak-fundamentals value
+        # trap: here the business is fine, the *valuation basis* is what blocks the buy.
+        "conservativeBuyBlocked": conservative_buy_blocked,
+        "conservativeBuyReason": conservative_buy_reason,
         "afterTax": after_tax,
     }
 

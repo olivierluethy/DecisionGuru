@@ -220,6 +220,15 @@ function OpportunitySummary({
   const showOvervalued = mos != null && mos <= 0 && isExpensive; // "overvalued" only if the band agrees
   const px = data.price ?? price ?? null;
   const rec = data.recommendation ?? null;
+  // Area 2/3/4: the conservative engine may abstain (NO RELIABLE FAIR VALUE). Show that state
+  // rather than an empty "Fair value —", and draw no band/MoS built on a number we don't have.
+  // Book/NAV (financials/REITs) is labelled "below/near/above NAV", never a green "undervalued".
+  const reliable = data.reliableValue !== false;
+  const bookNav = data.bookNav ?? null;
+  const isBookNav = data.valuationFramework === 'book_nav' || bookNav != null;
+  const navLabel = bookNav?.priceToNav != null
+    ? bookNav.priceToNav < 1 ? 'Below NAV' : bookNav.priceToNav > 1 ? 'Above NAV' : 'Near NAV'
+    : null;
 
   return (
     <div className="card !p-4 flex flex-wrap items-center gap-x-7 gap-y-4">
@@ -228,8 +237,18 @@ function OpportunitySummary({
           <VerdictBadge verdict={rec.verdict} action={rec.action} confidence={rec.confidence} withIcon />
         </div>
       )}
-      <HeroStat label="Fair value" value={money(mid)} extra={data.band && <BandBadge band={data.band.band} />} />
-      {mos != null && bandKey && (
+      {!reliable ? (
+        <HeroStat label="Fair value" value="No reliable estimate" valueClass="text-warn" />
+      ) : isBookNav ? (
+        <HeroStat
+          label="Net asset value"
+          value={money(bookNav?.navPerShare ?? mid)}
+          extra={navLabel && <span className={`chip !py-0 !px-2 ${navLabel === 'Below NAV' ? 'text-text' : 'text-warn'}`}>{navLabel}</span>}
+        />
+      ) : (
+        <HeroStat label="Fair value" value={money(mid)} extra={data.band && <BandBadge band={data.band.band} />} />
+      )}
+      {reliable && !isBookNav && mos != null && bandKey && (
         <HeroStat
           label={showMoS ? 'Margin of safety' : showOvervalued ? 'Overvalued by' : 'Vs fair value'}
           value={
@@ -239,6 +258,9 @@ function OpportunitySummary({
           }
           valueClass={showOvervalued ? 'text-loss' : showMoS ? 'text-gain' : 'text-text-muted'}
         />
+      )}
+      {reliable && isBookNav && bookNav?.priceToNav != null && (
+        <HeroStat label="Price / NAV" value={`${bookNav.priceToNav.toFixed(2)}×`} valueClass="text-text-muted" />
       )}
       <HeroStat label="Price today" value={money(px)} />
     </div>

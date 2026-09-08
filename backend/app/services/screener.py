@@ -58,12 +58,18 @@ _CONF_FACTOR = {"high": 1.0, "medium": 0.85, "low": 0.6}
 
 def discover_attractiveness(*, margin_of_safety: float | None, quality_rating: str | None,
                             expected_return: float | None, fit_bonus: float | None,
-                            confidence: str | None, data_sufficient: bool) -> int:
+                            confidence: str | None, data_sufficient: bool,
+                            reliability_tier: int | None = 1) -> int:
     """Rank an opportunity 0..100 on merit ONLY — valuation, business quality, expected
     return and portfolio-diversification fit — then SCALE by data confidence so a deep
     discount on unreliable data cannot outrank a moderate discount on robust data (brief
     §22, §30 Phase 6). An INSUFFICIENT-DATA name is sunk. Ownership is deliberately not an
-    input: it only rewords the action elsewhere, never the score."""
+    input: it only rewords the action elsewhere, never the score.
+
+    Area 4 — the score gates on a REAL margin of safety: a fairly- or over-priced name is
+    not an opportunity (good quality never substitutes for a discount), and an assumption-
+    sensitive (tier-2) discount is sunk like insufficient data — no BUY, and no high rank,
+    may rest on a credited growth assumption."""
     val = (_clamp(margin_of_safety, -0.5, 0.5) + 0.5) if margin_of_safety is not None else 0.3
     q = _QUALITY_WEIGHT.get(quality_rating or "unknown", 0.4)
     ret = _clamp((expected_return or 0.0) / 0.15, 0.0, 1.0)   # 15%+ supportable = full marks
@@ -72,6 +78,10 @@ def discover_attractiveness(*, margin_of_safety: float | None, quality_rating: s
     conf_factor = _CONF_FACTOR.get(confidence or "low", 0.6)
     if not data_sufficient:
         conf_factor = min(conf_factor, 0.30)   # no reliable valuation → sink it
+    if margin_of_safety is None or margin_of_safety <= 0:
+        conf_factor = min(conf_factor, 0.30)   # no genuine discount → not an opportunity
+    if reliability_tier is not None and reliability_tier != 1:
+        conf_factor = min(conf_factor, 0.30)   # assumption-sensitive discount → sink it
     return round(_clamp(blend * conf_factor, 0.0, 1.0) * 100)
 
 
@@ -154,7 +164,8 @@ def screen_universe(settings: dict) -> dict:
                 margin_of_safety=mos,
                 quality_rating=(rec.get("dimensions") or {}).get("quality", {}).get("rating"),
                 expected_return=supportable, fit_bonus=fit_bonus,
-                confidence=rec.get("confidence"), data_sufficient=rec.get("dataSufficient", True)),
+                confidence=rec.get("confidence"), data_sufficient=rec.get("dataSufficient", True),
+                reliability_tier=va.get("reliabilityTier")),
             "verdict": rec["verdict"],          # canonical: 'buy-more' | 'hold' | 'sell'
             "recommendation": rec,              # full engine output (rationale, drivers, …)
             "portfolioFit": {"status": fit_status, "sectorWeight": fit_weight},

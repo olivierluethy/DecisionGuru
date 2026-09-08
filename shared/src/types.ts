@@ -146,6 +146,12 @@ export interface Verdict {
   trimNote: string | null;
   underperformanceCause: 'fundamentals' | 'temporary-discount' | null;
   valueTrap: boolean;
+  /** Area 4: undervalued and fundamentally sound, but NOT a conservative buy — the discount
+   *  rests on an assumption-sensitive / unreliable / low-confidence fair value. Distinct from
+   *  the weak-fundamentals value trap: here the business is fine, the valuation basis blocks
+   *  the buy. Held, never auto-bought on a credited growth assumption. */
+  conservativeBuyBlocked?: boolean;
+  conservativeBuyReason?: string | null;
   /** After-tax gain if sold now (present only on a Sell verdict). */
   afterTax: {
     unrealizedGainCHF: number;

@@ -1,6 +1,6 @@
 # Valuation Engine Redesign — Status & Handoff
 
-> **Date:** 2026-09-08 · **Branch:** `feat/valuation-graham-buffett` · **State:** Areas 1–3 implemented + tested, **NOT committed**, still on the branch (main is untouched). Area 4 not started.
+> **Date:** 2026-09-08 · **Branch:** `main` · **State:** Areas 1–3 committed (550d6d4). Area 4 implemented + tested in the working tree (uncommitted) — visual/e2e check pending before commit.
 
 Governing goal: make DecisionGuru's valuation a **strictly conservative Graham/Buffett value-investing** engine — fewer, more defensible intrinsic values; abstain rather than fake precision. Statistics/heuristics are implementation tools only; they must never introduce a separate investment philosophy.
 
@@ -62,19 +62,47 @@ Review report (before/after, all columns): `https://claude.ai/code/artifact/3fa0
 
 ---
 
-## TODO — tomorrow
+## Area 4 — Buy-gate + separated concepts + frontend ✅ (implemented 2026-09-08)
 
-### Area 4 — Buy-gate + separated concepts + frontend (NOT started)
-1. **Buy-gate (backend `verdict.py` / `screener.py`):** a BUY/attractive verdict must require `reliableValue == true` AND `reliabilityTier == 1` AND `band == "undervalued"` (a genuine margin of safety) AND acceptable confidence. `assumptionSensitive` / tier 2 → never a buy. `discover_attractiveness` (currently `0.40·val + 0.30·quality + 0.20·return + 0.10·fit`) must not rate a *fair* quality name attractive — gate on real MoS.
-2. **Separate the three concepts in the UI:** intrinsic value · confidence · margin of safety, never merged into one "Fair". Show the **no-growth anchor**, the growth assumption + basis + reason, cap-sensitivity, and "**Not a conservative buy**" for tier-2/cap-sensitive names (e.g. Meta panel: Value / Price / MoS 0% / Confidence low / Growth-sensitive / Decision: No).
-3. **Render `NO RELIABLE FAIR VALUE`** on every surface (position page, screener, decisions, the price-vs-fair chart) — the chart must not draw a fair-value/zone line when `reliableValue == false`. Frontend must reflect the engine's decision, contain no valuation logic of its own.
-4. **Book/NAV display:** label "below NAV / near NAV" (not green "undervalued"); surface the leverage/asset-mark caveat; never auto-buy below NAV.
-5. Frontend fields now available from `value_analysis`: `valuationFramework`, `reliableValue`, `reliabilityReason`, `reliabilityTier`, `earningPower`, `noGrowthValue`, `growthAssumption`, `growthBasis`, `assumptionSensitive`, `bookNav`. (Old `scenarios`/`valuationRange` are now `null` for the earnings framework — replace that UI section with the sensitivity/no-growth display.)
+1. **Buy-gate ✅ (backend `verdict.py`):** `resolve_verdict` now issues a BUY only when the
+   undervalued band rests on a fair value we can stand behind — `reliableValue == true` AND
+   `reliabilityTier == 1` AND NOT `assumptionSensitive` AND confidence ≥ medium AND the
+   framework is not `book_nav`. An undervalued-but-sound name that fails any of these is Held
+   with a new `conservativeBuyBlocked`/`conservativeBuyReason` (distinct from the weak-quality
+   value trap). Because every surface's "attractive" is `verdict == "buy-more"` (screener,
+   `scan.py` movers, `_geo_density`), the gate propagates automatically — no per-surface logic.
+   `discover_attractiveness` now sinks names with no genuine positive MoS and tier-≠1
+   (assumption-sensitive) names the same way it sinks insufficient-data — good quality never
+   substitutes for a discount. Tests: `test_verdict_area4.py`, `test_discover_attractiveness_area4.py`.
+2. **Separated concepts ✅ (`ValueAnalysis.tsx`):** intrinsic value · confidence · margin of
+   safety shown as three distinct cells, never one "Fair" label. Renders the **no-growth
+   anchor**, the growth assumption + basis (`none`/`supported`/`high-capped`) + reason, and a
+   **"Not a conservative buy"** panel with the 0% / g / g+3pp sensitivity for assumption-
+   sensitive names. `conservativeBuyReason` also surfaces under the verdict badge (`Verdict.tsx`).
+3. **`NO RELIABLE FAIR VALUE` ✅:** `ValueAnalysis` shows a dedicated abstention panel with the
+   reason and draws no fair-value/band/zone chart (the chart is gated `reliable && !isBookNav`).
+   `OpportunityModal` shows "No reliable estimate" instead of an empty "Fair value —". Screener/
+   decisions already read the canonical `Insufficient data` verdict + null MoS. No valuation
+   logic added to the frontend — it renders the engine's decision.
+4. **Book/NAV display ✅:** `ValueAnalysis` and `OpportunityModal` label a financial/REIT
+   "Below / Near / Above NAV" (never green "undervalued"), show Price/NAV and the leverage/
+   asset-mark caveat, and draw no green buy-zone chart. The buy-gate never auto-buys `book_nav`.
+5. **Types ✅:** `shared/src/types.ts` (`Verdict.conservativeBuyBlocked/Reason`) and
+   `frontend/src/lib/api.ts` (`EarningPower`, `BookNav`, and the `valuationFramework`,
+   `reliableValue`, `reliabilityReason`, `reliabilityTier`, `bookNav`, `earningPower`,
+   `noGrowthValue`, `growthAssumption`, `growthBasis`, `assumptionSensitive` fields).
 
-### Then
-- Full frontend `tsc` + `vite build`; visual check (run the app, screenshot SRAIL/SNY/META/VNA value analysis).
-- Final diff review of the whole branch.
-- **Only then commit** (branch off main already done; end commit messages with the required Co-Authored-By/Claude-Session trailers; PR body with the Generated-with trailer).
+**Verification run:** backend `182 passed` (13 new Area-4 tests; the same 3 pre-existing
+`test_market_analysis_bundle` failures, unrelated). Frontend `tsc --noEmit` clean and
+`vite build` succeeds.
+
+### Still outstanding
+- **Visual check not yet done:** run the app and eyeball SRAIL/SNY/META/VNA value analysis, plus
+  the e2e specs (`e2e/valuation-zones.spec.ts`, `value-consistency-shot.spec.ts`). This session
+  had no cached `decisionguru.sqlite` and had to install `uv`/Node fresh, so the running-app
+  screenshot pass is the one remaining gate before commit.
+- Final diff review of the whole change, then commit (end messages with the required
+  Co-Authored-By/Claude-Session trailers; PR body with the Generated-with trailer).
 
 ### Possible follow-up (not required)
 - Cross-listing FX refinement: for non-ADR foreign listings (Novartis CHF/USD, Constellation CAD/USD) a single current-FX conversion of the final fair value could replace abstention; true ADRs (SNY) also need the ADR ratio. Currently we abstain (conservative) — revisit only if desired.
@@ -84,7 +112,7 @@ Review report (before/after, all columns): `https://claude.ai/code/artifact/3fa0
 ## How to run
 ```bash
 # backend tests
-cd backend && uv run pytest -q          # 169 pass; 3 pre-existing market_analysis_bundle fails are expected
+cd backend && uv run pytest -q          # 182 pass; 3 pre-existing market_analysis_bundle fails are expected
 
 # real engine on the 25 holdings (ad-hoc)
 export DG_DB_PATH="$(pwd)/data/decisionguru.sqlite"
@@ -92,10 +120,18 @@ uv run python   # then call app.services.valuation.value_analysis(symbol, price,
 ```
 Cached fundamentals live in `backend/data/decisionguru.sqlite` (`fundamentals_cache`, `price_cache`, `instruments`). The 25 holdings are `SELECT symbol FROM instruments WHERE kind='stock'`.
 
+> **Note:** the `uv`/Node toolchains are NOT preinstalled in a fresh session. Install with
+> `curl -LsSf https://astral.sh/uv/install.sh | sh` (backend) and a portable Node ≥20 for the
+> frontend (`npm install` at the repo root, then `cd frontend && npx tsc --noEmit && npx vite build`).
+
 ## Key files
 - `backend/app/services/valuation.py` — Areas 1–3 wired (routing, abstention, earning-power integration, output fields).
 - `backend/app/services/earning_power.py` — Area 3 engine (new).
-- `backend/tests/test_earning_power.py`, `test_valuation_area3.py`, `test_valuation_routing.py`, `test_valuation_price_independence.py` — new tests.
+- `backend/app/services/verdict.py` — Area 4 conservative buy-gate (`resolve_verdict`, `conservativeBuyBlocked`).
+- `backend/app/services/screener.py` — Area 4 `discover_attractiveness` MoS/tier gating.
+- `frontend/src/components/ValueAnalysis.tsx`, `frontend/src/modals/OpportunityModal.tsx`, `frontend/src/components/Verdict.tsx` — Area 4 UI.
+- `backend/tests/test_earning_power.py`, `test_valuation_area3.py`, `test_valuation_routing.py`, `test_valuation_price_independence.py`, `test_verdict_area4.py`, `test_discover_attractiveness_area4.py` — new tests.
 - Review artifacts: methodology + gates `https://claude.ai/code/artifact/e807fe0c-2748-4546-900d-a10bdf63556f` · methodology audit `https://claude.ai/code/artifact/1c3f6ce7-25f2-42b9-bb42-ec4b9373fe6a` · implementation tracker `https://claude.ai/code/artifact/9af1dc8c-3a6d-4231-bcc7-cf2a75eb84b6`.
 
-**Nothing is committed. Preserve Areas 1–3. Resume at Area 4.**
+**Areas 1–3 are committed (550d6d4). Area 4 is implemented in the working tree and NOT yet
+committed — the visual/e2e check is the remaining gate before commit.**

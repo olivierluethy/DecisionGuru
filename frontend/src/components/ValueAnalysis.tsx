@@ -131,6 +131,27 @@ export function ValueAnalysis({
   // conflict note); otherwise the valuation-only verdict the endpoint attached.
   const rec = verdict ?? data.recommendation ?? null;
 
+  // ---- Area 2/3/4: the conservative Graham/Buffett engine's decision -------------------
+  // `reliableValue === false` ⇒ NO RELIABLE FAIR VALUE: the engine abstained, so no fair
+  // value, band, MoS or zone chart may be drawn — only the reason. Book/NAV is a distinct
+  // framework (financials/REITs): 'below/near NAV', never a green 'undervalued'. The earnings
+  // framework keeps intrinsic value, confidence and margin of safety as SEPARATE concepts.
+  const reliable = data.reliableValue !== false; // default true for pre-Area-2 payloads
+  const framework = data.valuationFramework ?? null;
+  const bookNav = data.bookNav ?? null;
+  const isBookNav = framework === 'book_nav' || bookNav != null;
+  const ep = data.earningPower ?? null;
+  const GROWTH_BASIS_LABEL: Record<string, string> = {
+    none: 'no growth credited',
+    supported: 'growth supported by the record',
+    'high-capped': 'exceptional growth — capped, treat with caution',
+  };
+  // The dedicated "No reliable fair value" panel already states the reason, so drop the
+  // duplicate engine flag from the generic caution list when we abstain.
+  const shownFlags = reliable
+    ? data.flags
+    : data.flags.filter((f) => !f.startsWith('No reliable fair value'));
+
   return (
     <div className="space-y-5">
       {/* The unified verdict — same badge and rationale every surface renders. */}
@@ -145,14 +166,14 @@ export function ValueAnalysis({
         <span className="eyebrow">Estimate reliability</span>
         <span className={`font-medium ${conf.cls}`}>{conf.label}</span>
       </div>
-      {data.flags.length > 0 && (
+      {shownFlags.length > 0 && (
         <div className="card !p-3 border-l-2 border-l-warn bg-warn/5">
           <div className="flex items-start gap-2">
             <AlertTriangle size={15} className="text-warn shrink-0 mt-0.5" />
             <div className="text-[13px] text-text-muted space-y-1">
               <div className="font-medium text-text">Treat these numbers with caution</div>
               <ul className="list-disc pl-4 space-y-0.5">
-                {data.flags.map((f, i) => (
+                {shownFlags.map((f, i) => (
                   <li key={i}>{f}</li>
                 ))}
               </ul>
@@ -160,7 +181,59 @@ export function ValueAnalysis({
           </div>
         </div>
       )}
-      {/* Verdict headline: intrinsic value vs price */}
+      {/* NO RELIABLE FAIR VALUE — the conservative engine abstained rather than fake a
+          number (cross-listing, no cash conversion, deep cyclical trough, corrupt book,
+          too little profitable history). Show the reason; draw no fair value, band or chart. */}
+      {!reliable && (
+        <div className="card !p-4 border-l-2 border-l-warn bg-warn/5">
+          <div className="flex items-start gap-2">
+            <AlertTriangle size={16} className="text-warn shrink-0 mt-0.5" />
+            <div className="space-y-1">
+              <div className="font-semibold text-text">No reliable fair value</div>
+              <p className="text-[13px] text-text-muted leading-relaxed">
+                We can’t stand behind an intrinsic value for {symbol} on the data we have
+                {data.reliabilityReason ? <> — {data.reliabilityReason}</> : null}. Rather than
+                fake a precise number, the engine abstains: there is no margin of safety to act
+                on, so this is neither a buy nor a valuation-driven sell.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Book / NAV framework (financials & REITs): a discount to NAV is a starting point,
+          not a green "undervalued". Surface the leverage / asset-mark caveat; never auto-buy. */}
+      {reliable && isBookNav && bookNav && (
+        <div className="card !p-4 border-l-2 border-l-hairline-strong">
+          <div className="flex items-center justify-between mb-1">
+            <div className="eyebrow">Net asset value (book)</div>
+            {bookNav.priceToNav != null && (
+              <span
+                className={`text-[11px] font-medium ${bookNav.priceToNav < 1 ? 'text-text' : 'text-warn'}`}
+              >
+                {bookNav.priceToNav < 1 ? 'Below NAV' : bookNav.priceToNav > 1 ? 'Above NAV' : 'Near NAV'}
+              </span>
+            )}
+          </div>
+          <div className="font-mono text-2xl font-semibold tnum">
+            {money(bookNav.navPerShare)}
+            {nativeSub(bookNav.navPerShare) && (
+              <span className="ml-2 text-sm font-normal text-text-faint">{nativeSub(bookNav.navPerShare)}</span>
+            )}
+            <span className="ml-2 text-sm font-normal text-text-faint">/ sh</span>
+          </div>
+          {bookNav.priceToNav != null && (
+            <div className="text-[12px] text-text-muted mt-1">
+              Price / NAV <span className="font-mono tnum">{bookNav.priceToNav.toFixed(2)}×</span> at{' '}
+              {money(px)} today
+            </div>
+          )}
+          <p className="text-[11px] text-text-faint mt-2 leading-relaxed">{bookNav.caveat}</p>
+        </div>
+      )}
+
+      {/* Verdict headline: intrinsic value vs price (earnings framework, reliable only) */}
+      {reliable && !isBookNav && (
       <div className="grid sm:grid-cols-[minmax(200px,1fr)_2fr] gap-5">
         <div className={`card !p-4 border-l-2 ${showOvervalued ? 'border-l-loss' : showMoS ? 'border-l-gain' : 'border-l-hairline-strong'}`}>
           <div className="flex items-center justify-between mb-1">
@@ -232,6 +305,62 @@ export function ValueAnalysis({
           </p>
         </div>
       </div>
+      )}
+
+      {/* Area 3/4: intrinsic value · confidence · margin of safety kept SEPARATE — never
+          merged into one "Fair" label. The no-growth value is the conservative anchor; the
+          fair value adds only justified growth; an assumption-sensitive discount is flagged
+          "Not a conservative buy". */}
+      {reliable && !isBookNav && ep && (
+        <div className="card !p-4 space-y-3">
+          <div className="eyebrow">Intrinsic value · confidence · margin of safety</div>
+          <div className="grid sm:grid-cols-3 gap-4">
+            <div>
+              <div className="eyebrow mb-0.5">Intrinsic value · no growth</div>
+              <div className="font-mono text-lg tnum text-text">{money(ep.noGrowthValue)}</div>
+              <div className="text-[11px] text-text-faint mt-0.5">the conservative anchor</div>
+            </div>
+            <div>
+              <div className="eyebrow mb-0.5">Margin of safety</div>
+              <div className={`font-mono text-lg tnum ${showMoS ? 'text-gain' : showOvervalued ? 'text-loss' : 'text-text-muted'}`}>
+                {mos != null ? fmtPct(mos, 1) : '—'}
+              </div>
+              <div className="text-[11px] text-text-faint mt-0.5">
+                {showMoS ? 'discount to fair value' : 'no discount at today’s price'}
+              </div>
+            </div>
+            <div>
+              <div className="eyebrow mb-0.5">Confidence</div>
+              <div className={`font-medium ${conf.cls}`}>{conf.label.replace(' confidence', '')}</div>
+              <div className="text-[11px] text-text-faint mt-0.5">
+                {ep.assumptionSensitive ? 'assumption-sensitive' : 'basis reliable'}
+              </div>
+            </div>
+          </div>
+          {/* The growth assumption, stated as an internal guardrail — never a Graham/Buffett rule */}
+          <div className="pt-2 border-t border-hairline text-[12px] text-text-muted leading-relaxed">
+            <span className="font-medium text-text">Growth assumed: {fmtPct(ep.growthAssumption, 1)}/yr</span>
+            {' '}· {GROWTH_BASIS_LABEL[ep.growthBasis] ?? ep.growthBasis}. {ep.growthReason}
+            <div className="text-[11px] text-text-faint mt-1">
+              Earning power built on {ep.measure} of {money(ep.normalizedLevel)}/sh.
+            </div>
+          </div>
+          {/* Sensitivity: does the credited growth move the verdict off the no-growth anchor? */}
+          {ep.assumptionSensitive && (
+            <div className="border-l-2 border-l-warn bg-warn/5 !p-3 rounded-r text-[12px]">
+              <div className="font-medium text-warn mb-0.5">Not a conservative buy</div>
+              <p className="text-text-muted leading-relaxed">
+                The discount only appears once growth is credited — the fair value is
+                assumption-sensitive, so this is held, not bought. Fair value at{' '}
+                <span className="font-mono tnum">0%</span> {money(ep.sensitivity.at0)} ·{' '}
+                <span className="font-mono tnum">{fmtPct(ep.growthAssumption, 0)}</span>{' '}
+                {money(ep.sensitivity.atGrowth)} ·{' '}
+                <span className="font-mono tnum">+3pp</span> {money(ep.sensitivity.atGrowthPlus)}.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Bear / base / bull valuation range — no single "magic" fair value (Engine 2.0) */}
       {data.scenarios && data.valuationRange && (
@@ -300,8 +429,9 @@ export function ValueAnalysis({
         </div>
       )}
 
-      {/* Price history with shaded buy / fair / overvalued / sell zones */}
-      {data.band && (
+      {/* Price history with shaded buy / fair / overvalued / sell zones. Never drawn for the
+          book-NAV framework: a discount to NAV must not be painted as a green "buy" zone. */}
+      {reliable && !isBookNav && data.band && (
         <div className="card !p-4">
           <div className="flex items-center gap-1.5 mb-2">
             <div className="eyebrow">Price vs fair-value zones</div>
